@@ -1,4 +1,3 @@
-
 name: Import ZAIN.NET source
 
 on:
@@ -10,17 +9,19 @@ permissions:
 jobs:
   import-source:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Extract source code
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract ZAIN.NET source
         shell: bash
         run: |
           set -euo pipefail
           test -f ZAINNET_SOURCE_UPLOAD.tar.zst
           tar --zstd -xf ZAINNET_SOURCE_UPLOAD.tar.zst
 
-      - name: Remove exposed Midtrans Server Keys
+      - name: Remove exposed Midtrans keys
         shell: bash
         run: |
           set -euo pipefail
@@ -32,7 +33,7 @@ jobs:
               rb'(?:SB-)?Mid-server-[A-Za-z0-9_-]{10,}'
           )
 
-          text_ext = {
+          extensions = {
               '.ts', '.tsx', '.js', '.jsx',
               '.json', '.html', '.md', '.mjs',
               '.cjs', '.txt', '.yaml', '.yml',
@@ -41,42 +42,53 @@ jobs:
 
           count = 0
 
-          for path in Path('.').rglob('*'):
-              if not path.is_file():
+          for file in Path('.').rglob('*'):
+              if not file.is_file():
                   continue
-              if '.git' in path.parts:
+              if '.git' in file.parts:
                   continue
-              if path.suffix.lower() not in text_ext:
+              if file.suffix.lower() not in extensions:
                   continue
 
-              content = path.read_bytes()
-              clean, n = pattern.subn(b'', content)
+              data = file.read_bytes()
+              clean, n = pattern.subn(
+                  b'', data
+              )
 
               if n:
-                  path.write_bytes(clean)
+                  file.write_bytes(clean)
                   count += n
-                  print('Removed key from:', path)
+                  print('Sanitized:', file)
 
-          print('Total keys removed:', count)
+          print('Keys removed:', count)
 
           if count < 2:
               raise SystemExit(
-                  'Expected 2 exposed keys; inspect source'
+                  'Expected exposed keys not found'
               )
           PY
 
-      - name: Commit sanitized source
+      - name: Remove restricted workflow
         shell: bash
         run: |
           set -euo pipefail
+          rm -f .github/workflows/pages.yml
           rm -f ZAINNET_SOURCE_UPLOAD.tar.zst
+          echo "Restricted workflow excluded"
 
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+      - name: Commit ZAIN.NET source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add -A
 
-          if ! git diff --cached --quiet; then
-            git commit -m 'Import sanitized ZAIN.NET source code'
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Import ZAIN.NET source V3"
             git push origin HEAD:main
           fi

@@ -192,6 +192,12 @@ export const FileUpload: React.FC<FileUploadProps> = ({
               </div>
             </div>
           )}
+          {progress?.step === 'error' && (
+            <div role="alert" className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3 text-xs text-red-800 break-words">
+              <strong>Pembacaan file gagal.</strong> {progress.message}
+              <p className="mt-1">Coba file PDF lain atau tekan Ganti / Reset File. Untuk PDF scan, gunakan OCR setelah halaman PDF berhasil terbaca.</p>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -63,13 +63,9 @@ export default function App({
   const [batchFiles, setBatchFiles] = useState<File[]>([]);
   const [isReScanningOcr, setIsReScanningOcr] = useState<boolean>(false);
 
+  // Never show sample student data for a real uploaded document.
   const [metadata, setMetadata] = useState<ThesisMetadata>({
-    nama: 'M. RIFQI',
-    nim: '22382071037',
-    prodi: 'Hukum Keluarga Islam',
-    prodiCode: 'HKI',
-    judul: 'IMPLEMENTASI HUKUM KELUARGA ISLAM DALAM HAK ASUH ANAK PASCA PERCERAIAN',
-    email: 'm.rifqi@example.com',
+    nama: '', nim: '', prodi: '', prodiCode: '', judul: '', email: '',
   });
 
   const [sections, setSections] = useState<SectionRange[]>([]);
@@ -96,9 +92,14 @@ export default function App({
     const safeBuffer = buffer.slice(0);
     const isWord = name.toLowerCase().endsWith('.docx') || name.toLowerCase().endsWith('.doc');
 
-    setPdfBuffer(safeBuffer);
+    // A file is not considered ready until its pages are actually extracted.
+    setPdfBuffer(null);
+    setPdfDoc(null);
+    setPagesText([]);
+    setSections([]);
     setFileName(name);
     setFileSize(size);
+    setMetadata({ nama: '', nim: '', prodi: '', prodiCode: '', judul: '', email: '' });
 
     setProgress({
       step: 'reading',
@@ -142,8 +143,12 @@ export default function App({
         loadedDoc = pdfResult.pdfDoc;
       }
 
+      if (pages.length === 0) {
+        throw new Error('Tidak ada halaman yang berhasil diekstrak dari dokumen.');
+      }
       setPdfDoc(loadedDoc);
       setPagesText(pages);
+      setPdfBuffer(safeBuffer);
 
       // Step 2: Instant Client-side Heuristic Detection
       setProgress({
@@ -216,9 +221,13 @@ export default function App({
       });
     } catch (err: any) {
       console.error('Error processing PDF:', err);
+      setPdfBuffer(null);
+      setPdfDoc(null);
+      setPagesText([]);
+      setSections([]);
       setProgress({
         step: 'error',
-        message: 'Gagal memproses file PDF.',
+        message: `Gagal membaca dokumen: ${err?.message || 'Format file tidak didukung'}`,
         percentage: 0,
       });
     }
@@ -311,6 +320,7 @@ export default function App({
     setSections([]);
     setBatchFiles([]);
     setProgress(null);
+    setMetadata({ nama: '', nim: '', prodi: '', prodiCode: '', judul: '', email: '' });
   };
 
   const handleUpdateSectionRange = (key: string, startPage: number, endPage: number) => {

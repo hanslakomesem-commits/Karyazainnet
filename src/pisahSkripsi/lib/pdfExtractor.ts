@@ -23,93 +23,93 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 }
 
 /**
- * Extract text from every page of a PDF ArrayBuffer or Uint8Array.
- * Uses high-speed server extraction first (robust across all browsers/OS) with local PDF.js fallback.
+ * Extract the *actual* PDF page count and text.
+ * Prefer the browser's bundled PDF.js worker: no Render cold-start, no upload,
+ * real page progress, and a real PDFDocumentProxy for thumbnails.
+ * Use the existing Render endpoint only when browser PDF.js cannot open the file.
  */
 export async function extractPdfText(
   pdfBuffer: ArrayBuffer,
   onProgress?: (current: number, total: number) => void
 ): Promise<{ pages: PageTextInfo[]; pdfDoc: any }> {
-  const bufferCopy = pdfBuffer.slice(0);
+  let browserError: unknown = null;
 
-  // 1. Ultra-fast and bulletproof server extraction (bypasses browser worker/iframe limitations)
+  // First, use the local Vite-bundled PDF.js worker.
+  let loadingTask: ReturnType<typeof pdfjsLib.getDocument> | null = null;
   try {
-    onProgress?.(1, 10);
-    const fileBase64 = arrayBufferToBase64(bufferCopy);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-    const resp = await fetch('/api/extract-pdf-text', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileBase64 }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data.pages && Array.isArray(data.pages) && data.pages.length > 0) {
-        const pages: PageTextInfo[] = data.pages.map((p: any) => ({
-          pageNumber: p.pageNumber,
-          text: p.text || '',
-          isOcr: false,
-        }));
-
-        if (onProgress) {
-          onProgress(pages.length, pages.length);
-        }
-
-        const dummyPdfDoc: any = {
-          numPages: data.totalPages || pages.length,
-          _cachedThumbs: {},
-          getPage: async (num: number) => ({
-            pageNumber: num,
-            getViewport: () => ({ width: 595, height: 842 }),
-            render: () => ({ promise: Promise.resolve() }),
-          }),
-        };
-
-        return { pages, pdfDoc: dummyPdfDoc };
-      }
-    }
-  } catch (srvErr) {
-    console.warn('Server-side PDF text extraction failed, using client fallback:', srvErr);
-  }
-
-  // 2. Client fallback via PDF.js if available
-  try {
-    const loadingTask = pdfjsLib.getDocument({
-      data: new Uint8Array(bufferCopy),
+    loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(pdfBuffer.slice(0)),
       disableFontFace: true,
+      isEvalSupported: false,
     });
     const pdfDoc = await loadingTask.promise;
     const totalPages = pdfDoc.numPages;
-    const pages: PageTextInfo[] = [];
-
-    for (let i = 1; i <= totalPages; i++) {
-      const page = await pdfDoc.getPage(i);
-      const textContent = await page.getTextContent();
-      const text = textContent.items
-        .map((item: any) => item.str)
-        .join(' ')
-        .trim();
-
-      pages.push({
-        pageNumber: i,
-        text,
-        isOcr: false,
-      });
-
-      if (onProgress) {
-        onProgress(i, totalPages);
-      }
+    if (!totalPages || totalPages < 1) {
+      throw new Error('File PDF tidak berisi halaman yang dapat dibaca.');
     }
 
+    const pages: PageTextInfo[] = [];
+    for (let pageNumber = 1; pageNumber <= totalPages; pageNumber++) {
+      const page = await pdfDoc.getPage(pageNumber);
+      let text = '';
+      try {
+        const textContent = await page.getTextContent();
+        text = (textContent.items || [])
+          .map((item: any) => item.str || '')
+          .join(' ')
+          .trim();
+      } catch (textError) {
+        console.warn('[ZAIN.NET Link 3] Teks halaman tidak terbaca:', pageNumber, textError);
+      }
+
+      pages.push({ pageNumber, text, isOcr: false });
+      onProgress?.(pageNumber, totalPages);
+    }
     return { pages, pdfDoc };
-  } catch (clientErr) {
-    console.error('All PDF extraction strategies failed:', clientErr);
-    throw clientErr;
+  } catch (error) {
+    browserError = error;
+    console.warn('[ZAIN.NET Link 3] PDF.js browser gagal; mencoba Render:', error);
+    try { await loadingTask?.destroy(); } catch { /* ignore cleanup failure */ }
+  }
+
+  // Browser fallback: ask Render to extract text, but do not fabricate page counts.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
+  try {
+    const response = await fetch('/api/extract-pdf-text', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileBase64: arrayBufferToBase64(pdfBuffer) }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`Server pemrosesan PDF mengembalikan HTTP ${response.status}.`);
+    }
+    const data = await response.json();
+    if (!Array.isArray(data.pages) || data.pages.length === 0) {
+      throw new Error('Server tidak mengembalikan halaman PDF.');
+    }
+    const pages: PageTextInfo[] = data.pages.map((page: any, index: number) => ({
+      pageNumber: Number(page.pageNumber) || index + 1,
+      text: typeof page.text === 'string' ? page.text : '',
+      isOcr: false,
+    }));
+    pages.sort((a, b) => a.pageNumber - b.pageNumber);
+    onProgress?.(pages.length, pages.length);
+
+    // The server returns text only, not a PDF.js document. Keep it null rather
+    // than providing a fake renderer which would show blank thumbnails.
+    return { pages, pdfDoc: null };
+  } catch (serverError: any) {
+    const serverMessage = serverError?.name === 'AbortError'
+      ? 'Server cadangan melewati batas waktu 60 detik.'
+      : (serverError?.message || 'Gagal menghubungi server cadangan.');
+    throw new Error(
+      `PDF belum dapat dibaca. Browser: ${String((browserError as any)?.message || browserError)}. ` +
+      `Render: ${serverMessage}`
+    );
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

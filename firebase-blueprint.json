@@ -1,0 +1,217 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with quota, favorites and loyalty status",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" }
+      }
+    },
+    "UserDocument": {
+      "title": "UserDocument",
+      "description": "Academic drafts, essays, and articles created by user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "toolId": { "type": "string" },
+        "toolTitle": { "type": "string" },
+        "categoryTitle": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "notes": { "type": "string" },
+        "wordCount": { "type": "number" },
+        "fileType": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      }
+    },
+    "UserPurchase": {
+      "title": "UserPurchase",
+      "description": "Payment records, manual QRIS verification, and quota fulfillment",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "orderId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "itemId": { "type": "string" },
+        "itemTitle": { "type": "string" },
+        "itemType": { "type": "string" },
+        "amountPaid": { "type": "number" },
+        "purchasedAt": { "type": "number" },
+        "status": { "type": "string" },
+        "method": { "type": "string" },
+        "quotaGranted": { "type": "number" }
+      }
+    },
+    "UserData": {
+      "title": "UserData",
+      "description": "Per-user operational state including wallet balance, quotas, loyalty points, and reseller trial counts",
+      "type": "object",
+      "properties": {
+        "balance": { "type": "number" },
+        "purchaseCount": { "type": "number" },
+        "freeRewardsAvailable": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      }
+    },
+    "UserFavorite": {
+      "title": "UserFavorite",
+      "description": "User bookmarked tools and modules",
+      "type": "object",
+      "properties": {
+        "toolId": { "type": "string" },
+        "addedAt": { "type": "number" }
+      }
+    },
+    "AppSettings": {
+      "title": "AppSettings",
+      "description": "Global application configuration including roles, dynamic prices, and QRIS payment setup",
+      "type": "object",
+      "properties": {
+        "updatedAt": { "type": "number" }
+      }
+    },
+    "DeviceTrial": {
+      "title": "DeviceTrial",
+      "description": "Anti-abuse records locking 1x Free Trial per hardware fingerprint and IP address",
+      "type": "object",
+      "properties": {
+        "deviceFingerprint": { "type": "string" },
+        "ipAddress": { "type": "string" },
+        "osName": { "type": "string" },
+        "claimedAt": { "type": "number" },
+        "claimedByUid": { "type": "string" },
+        "claimedByEmail": { "type": "string" },
+        "toolId": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
+    "DailyTrafficStat": {
+      "title": "DailyTrafficStat",
+      "description": "Daily web visitor statistics tracking Page Views and Unique User Views per day with 30-day recap",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "pageViews": { "type": "number" },
+        "uniqueUsersCount": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      }
+    },
+    "MakalahPost": {
+      "title": "MakalahPost",
+      "description": "Public academic paper and essay blog post extracted from Word docx files with AI metadata",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "slug": { "type": "string" },
+        "theme": { "type": "string" },
+        "excerpt": { "type": "string" },
+        "contentHtml": { "type": "string" },
+        "author": { "type": "string" },
+        "institution": { "type": "string" },
+        "tags": { "type": "array" },
+        "readingTimeMinutes": { "type": "number" },
+        "createdAt": { "type": "number" },
+        "views": { "type": "number" },
+        "downloadCount": { "type": "number" },
+        "originalFileName": { "type": "string" },
+        "originalFileSize": { "type": "number" },
+        "fileHash": { "type": "string" },
+        "fileId": { "type": "string" },
+        "downloadUrl": { "type": "string" }
+      }
+    },
+    "NotaOrder": {
+      "title": "NotaOrder",
+      "description": "Hardcover thesis binding orders, student information, and uploaded manuscript records",
+      "type": "object",
+      "properties": {
+        "orderId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "university": { "type": "string" },
+        "fakultas": { "type": "string" },
+        "prodi": { "type": "string" },
+        "coverColor": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "coverType": { "type": "string" },
+        "coverCount": { "type": "number" },
+        "durationKey": { "type": "string" },
+        "durationLabel": { "type": "string" },
+        "pricePerCover": { "type": "number" },
+        "coversSubtotal": { "type": "number" },
+        "servicesSubtotal": { "type": "number" },
+        "printCost": { "type": "number" },
+        "totalCost": { "type": "number" },
+        "orderDate": { "type": "string" },
+        "pickupDate": { "type": "string" },
+        "status": { "type": "string" },
+        "transactionStatus": { "type": "string" },
+        "dpAmount": { "type": "number" },
+        "remainingAmount": { "type": "number" },
+        "adminConfirmed": { "type": "boolean" },
+        "createdAt": { "type": "number" }
+      }
+    }
+  },
+  "firestore": {
+    "/nota_orders/{orderId}": {
+      "schema": "NotaOrder",
+      "description": "Permanent thesis orders and uploaded files storage"
+    },
+    "/posts/{postId}": {
+      "schema": "MakalahPost",
+      "description": "Public academic articles repository readable by all visitors and managed by Admin"
+    },
+    "/daily_stats/{dateId}": {
+      "schema": "DailyTrafficStat",
+      "description": "Per-day traffic analytics tracking pageViews and uniqueUsersCount"
+    },
+    "/device_trials/{deviceHash}": {
+      "schema": "DeviceTrial",
+      "description": "Anti-abuse records of Free Trial usage per device hardware"
+    },
+    "/ip_trials/{ipHash}": {
+      "schema": "DeviceTrial",
+      "description": "Anti-abuse records of Free Trial usage per public IP network"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User root document"
+    },
+    "/users/{userId}/data/{dataType}": {
+      "schema": "UserData",
+      "description": "User operational data: wallet, quotas, loyalty, and reseller trials"
+    },
+    "/users/{userId}/favorites/{toolId}": {
+      "schema": "UserFavorite",
+      "description": "User bookmarked academic modules"
+    },
+    "/users/{userId}/documents/{documentId}": {
+      "schema": "UserDocument",
+      "description": "Saved academic documents and drafts"
+    },
+    "/users/{userId}/purchases/{purchaseId}": {
+      "schema": "UserPurchase",
+      "description": "User personal purchase receipts and transaction history"
+    },
+    "/transactions/{trxId}": {
+      "schema": "UserPurchase",
+      "description": "Global transactions log for accounting and admin verification"
+    },
+    "/settings/{settingId}": {
+      "schema": "AppSettings",
+      "description": "Global application settings (roles_config, prices, qris_config)"
+    },
+    "/test/{testId}": {
+      "schema": "AppSettings",
+      "description": "Connection test document for health checks"
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "summary": {
+    "tested_inputs": 200,
+    "real_theses": 2,
+    "synthetic_cases": 198,
+    "passed_extraction": 193,
+    "failed_extraction": 7,
+    "what_was_tested": "source-only extraction and rendered sample Word; production deployment not tested"
+  },
+  "sample_rendered_word_pages": {
+    "skripsi_A": {
+      "scale_035": 16,
+      "scale_045": 18
+    },
+    "skripsi_B": {
+      "scale_045": 15,
+      "scale_055": 17
+    }
+  },
+  "warnings": [
+    "Rendered sample Word used python-docx, not production JS DOCX and real footnotes.",
+    "Hosting must have LibreOffice for live DOCX page measurement."
+  ]
+}

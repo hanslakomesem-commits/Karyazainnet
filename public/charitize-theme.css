@@ -1,0 +1,75 @@
+/* Charitize (HTML Codex, CC BY 4.0) visual adaptation for the ZAIN.NET React shell.
+   Scope styles to the landing shell so document editors, print and payment views keep their layouts. */
+:root { --char-amber:#ffac00; --char-green:#1a685b; --char-ink:#051311; --char-cream:#fdf8ea; }
+html { scroll-behavior:smooth; }
+body { margin:0; background:var(--char-cream); }
+.zain-page-loader { min-height:100vh; display:grid; place-items:center; text-align:center; font:600 16px 'Open Sans',sans-serif; color:var(--char-green); }
+.zain-page-loader__card { padding:30px; } .zain-page-loader__logo { margin:auto; width:52px; height:52px; display:grid; place-items:center; background:var(--char-amber); color:var(--char-ink); font-size:28px; font-weight:900; border-radius:6px; }
+.charitize-shell { background:var(--char-cream); color:var(--char-ink); font-family:'Open Sans',Arial,sans-serif; }
+.charitize-shell h1, .charitize-shell h2, .charitize-shell h3, .charitize-shell h4 { font-family:'Josefin Sans','Open Sans',sans-serif; }
+.charitize-topbar { background:var(--char-green); color:white; min-height:64px; display:flex; align-items:center; gap:24px; padding:10px max(24px,calc((100vw - 1152px)/2)); font-size:12px; }
+.charitize-topbar strong { font-family:'Josefin Sans',sans-serif; color:var(--char-amber); font-size:28px; line-height:1; }
+.charitize-topbar a { margin-left:auto; color:white; text-decoration:none; font-weight:700; }
+.charitize-topbar a:hover { color:var(--char-amber); }
+.charitize-navbar { background:var(--char-amber) !important; border:0 !important; box-shadow:0 8px 20px #0b362821 !important; min-height:70px; }
+.charitize-navbar > div:first-child > div:first-child { background:var(--char-green) !important; border-radius:4px !important; box-shadow:none !important; }
+.charitize-navbar h1, .charitize-navbar nav, .charitize-navbar nav button, .charitize-navbar nav a { color:var(--char-ink) !important; }
+.charitize-navbar nav button:hover, .charitize-navbar nav a:hover { color:var(--char-green) !important; }
+.charitize-navbar nav > div:first-child { background:#ffe7a7 !important; border-color:#db9200 !important; }
+.charitize-navbar nav > div:first-child button[class*='bg-indigo'], .charitize-navbar nav > div:first-child button[class*='bg-gradient'] { background:var(--char-green) !important; color:#fff !important; }
+.charitize-navbar input { background:#fffaf0 !important; color:var(--char-ink) !important; border-color:#d89607 !important; }
+.charitize-navbar input::placeholder { color:#625632 !important; }
+.charitize-navbar button[class*='from-indigo-600'] { background:var(--char-green) !important; color:white !important; }
+.charitize-navbar > div:last-child { background:var(--char-green) !important; color:white !important; }
+.charitize-main { max-width:1200px !important; }
+.charitize-hero { background:linear-gradient(100deg,rgba(8,50,44,.95),rgba(26,104,91,.86)),url('/charitize/bg.jpg') center/cover; min-height:480px; border-radius:4px; padding:48px clamp(22px,5vw,70px); display:grid; grid-template-columns:1fr .92fr; gap:44px; align-items:center; overflow:hidden; color:#fff; box-shadow:0 16px 38px #0b362833; }
+.charitize-hero-copy { max-width:590px; }
+.charitize-eyebrow { color:var(--char-amber); font-size:12px; font-weight:800; letter-spacing:.11em; text-transform:uppercase; display:inline-flex; align-items:center; gap:8px; }
+.charitize-hero h1 { margin:16px 0; font-size:clamp(38px,4.6vw,68px); line-height:1.08; font-weight:700; text-transform:uppercase; letter-spacing:-.035em; }
+.charitize-hero h1 span { color:var(--char-amber); }
+.charitize-hero p { max-width:490px; line-height:1.8; color:#ecf7f2; font-size:15px; }
+.charitize-hero-actions { display:flex; gap:12px; flex-wrap:wrap; margin:32px 0 27px; }
+.charitize-primary-cta, .charitize-secondary-cta { display:inline-flex; justify-content:center; align-items:center; gap:9px; min-height:48px; padding:12px 20px; border:1px solid var(--char-amber); border-radius:3px; font-weight:800; font-size:13px; text-decoration:none; cursor:pointer; }
+.charitize-primary-cta { background:var(--char-amber); color:var(--char-ink); }
+.charitize-primary-cta:hover { background:#ffd266; }
+.charitize-secondary-cta { color:white; background:transparent; border-color:#dcece5; }
+.charitize-secondary-cta:hover { background:white; color:var(--char-green); }
+.charitize-hero-benefits { display:flex; flex-wrap:wrap; gap:10px 18px; font-size:12px; color:#ebf6f0; }
+.charitize-hero-benefits span { display:inline-flex; align-items:center; gap:6px; }
+.charitize-hero-benefits svg { color:var(--char-amber); }
+.charitize-hero-visual { position:relative; width:100%; }
+.charitize-hero-visual img { display:block; width:100%; height:365px; object-fit:cover; border-radius:4px; box-shadow:18px 18px 0 var(--char-amber); }
+.charitize-hero-caption { position:absolute; bottom:-18px; left:-22px; display:flex; align-items:center; gap:12px; padding:12px 17px; border-radius:3px; background:white; color:var(--char-green); box-shadow:0 10px 24px #0002; font-size:12px; }
+.charitize-hero-caption span { font:700 36px 'Josefin Sans',sans-serif; line-height:1; }
+.charitize-section-heading { text-align:center; padding:22px 8px 15px; }
+.charitize-section-heading span { color:var(--char-green); letter-spacing:.15em; font-size:11px; font-weight:800; }
+.charitize-section-heading h2 { margin:8px 0; font-size:clamp(28px,3vw,40px); font-weight:700; color:var(--char-ink); }
+.charitize-section-heading p { color:#52635e; font-size:13px; }
+.charitize-services > div[id^='section-'] { background:#fff !important; border:1px solid #e7dfcd !important; border-left:5px solid var(--char-amber) !important; border-radius:4px !important; box-shadow:0 4px 16px #17433911 !important; }
+.charitize-services > div[id^='section-']:hover { border-color:var(--char-amber) !important; }
+.charitize-services > div[id^='section-'] > button > div:first-child > div:first-child { background:var(--char-green) !important; color:#fff !important; border-radius:3px !important; }
+.charitize-services > div[id^='section-'] > button h2 { color:var(--char-ink) !important; }
+.charitize-services > div[id^='section-'] > button p { color:#586a63 !important; }
+.charitize-services > div[id^='section-'] > button > div:last-child { background:var(--char-amber) !important; color:var(--char-ink) !important; }
+.charitize-services > div[id^='section-'] > div:last-child { background:#fffcf4; }
+.charitize-shell > footer { background:var(--char-green) !important; border-color:#347a6e !important; }
+.charitize-shell > footer > div:first-child { background:linear-gradient(115deg,#18584e,#104439) !important; border-color:#347a6e !important; }
+.charitize-shell > footer .text-gray-400, .charitize-shell > footer .text-gray-500 { color:#d3e6dd !important; }
+.charitize-shell > footer h4 { color:var(--char-amber) !important; }
+@media(max-width:1050px){ .charitize-navbar nav { max-width:55vw; overflow-x:auto; white-space:nowrap; scrollbar-width:thin; } }
+@media(max-width:780px){ .charitize-topbar { padding:10px 18px; min-height:52px; gap:10px; } .charitize-topbar strong { font-size:20px; } .charitize-topbar span { display:none; } .charitize-topbar a { font-size:10px; } .charitize-hero { grid-template-columns:1fr; padding:34px 23px 46px; gap:22px; } .charitize-hero h1 { font-size:clamp(34px,8vw,48px); } .charitize-hero-visual img { height:220px; box-shadow:10px 10px 0 var(--char-amber); } .charitize-hero-caption { left:8px; bottom:-13px; } .charitize-navbar nav { max-width:none; } }
+@media(prefers-reduced-motion:reduce){ .charitize-shell * { scroll-behavior:auto !important; } }
+/* Expanded menu items retain all tool actions with a warm Charitize card skin. */
+.charitize-services [id^='tool-card-'] { background:#fff !important; border:1px solid #e8ddc3 !important; border-radius:4px !important; box-shadow:none !important; }
+.charitize-services [id^='tool-card-']:hover { border-color:var(--char-amber) !important; box-shadow:0 5px 16px #8d6b1b22 !important; }
+.charitize-services [id^='tool-card-'] h4 { color:var(--char-ink) !important; }
+.charitize-services [id^='tool-card-'] .text-gray-400 { color:#576b64 !important; }
+.charitize-services [id^='tool-card-'] button { border-radius:3px !important; }
+.charitize-services [id^='tool-card-'] button[class*='bg-blue-'],
+.charitize-services [id^='tool-card-'] button[class*='bg-indigo-'] { background:var(--char-green) !important; color:#fff !important; }
+.charitize-services [id^='tool-card-'] button[class*='from-indigo-'] { background:var(--char-amber) !important; color:var(--char-ink) !important; }
+
+.zain-first-paint { min-height:100vh; background:#fdf8ea; color:#1a685b; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:8px; padding:20px; font-family:Arial,sans-serif; }
+.zain-first-paint__brand { font-weight:900; font-size:32px; letter-spacing:.04em; }
+.zain-first-paint__title { color:#051311; font-size:18px; font-weight:700; }
+.zain-first-paint p { margin:0; color:#586a63; font-size:13px; }

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="theme-color" content="#0f467e" />
+<title>ZAIN.NET AI Cover Skripsi V4.1</title>
+<link rel="stylesheet" href="./style.css"/>
+</head>
+<body>
+<header class="topbar">
+ <div class="brand"><div class="logo">Z<span>•</span></div><div><strong>ZAIN.NET <span>AI COVER</span></strong><small>Hard Cover Studio · V4.1</small></div></div>
+ <div class="header-right"><span class="dot" id="serverDot"></span><span id="connection">Memeriksa layanan...</span></div>
+</header>
+<main class="container">
+ <div class="page-head"><div><p class="eyebrow">PRODUKSI PERCETAKAN</p><h1>Foto, PDF, Word <span>Jadi Cover Siap Cetak</span></h1><p class="subtitle">Upload foto (OCR Gemini), PDF asli (halaman 1), atau Word DOCX (halaman 1). Edit hasil, pilih warna dan ukuran tiap pesanan.</p></div><div class="format-chip">Polos 480 × 330 <small>Warna 475 × 320 mm</small></div></div>
+ <div class="stepper"><span class="active" data-step="1"><b>1</b> Upload Berkas</span><span data-step="2"><b>2</b> Periksa Teks</span><span data-step="3"><b>3</b> Ketebalan</span><span data-step="4"><b>4</b> PDF</span></div>
+ <div id="notice" class="notice hidden" role="alert"></div>
+ <div class="workspace">
+ <section class="card upload-panel">
+  <div class="section-head"><span class="section-icon">01</span><div><h2>3 cara memasukkan cover</h2><p>Foto OCR · PDF halaman 1 · Word halaman 1</p></div></div>
+  <label class="dropzone" id="dropzone" for="photoInput"><input type="file" id="photoInput" accept="image/jpeg,image/png,image/webp" multiple hidden/><div id="emptyPreview"><div class="drop-icon">↥</div><h3>Klik pilih foto, atau gunakan tombol PDF/Word di bawah</h3><p>Foto JPG, PNG, WebP · 40 pesanan · PDF/Word cukup halaman 1</p><div class="ghost-button">Pilih / Foto Sekarang</div></div><img id="imagePreview" class="hidden" alt="Pratinjau foto cover"/></label>
+  <input type="file" id="cameraInput" accept="image/jpeg,image/png,image/webp" capture="environment" hidden/>
+  <div class="upload-actions"><button type="button" class="btn btn-outline" id="cameraButton">📷 Kamera / OCR</button><button type="button" class="btn btn-outline" id="pdfUploadButton">📄 Upload PDF (hal. 1)</button><button type="button" class="btn btn-outline" id="wordUploadButton">📝 Upload Word (hal. 1)</button><button type="button" class="btn btn-outline" id="manualButton">+ Pesanan Manual</button></div>
+  <input type="file" id="pdfInput" accept="application/pdf,.pdf" multiple hidden/>
+  <input type="file" id="wordInput" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple hidden/>
+  <div class="input-modes"><div><b>Foto</b><small>Gemini OCR hanya untuk gambar</small></div><div><b>PDF</b><small>Teks halaman 1 lokal, OCR hanya jika scan</small></div><div><b>Word</b><small>Ekstraksi halaman pertama tanpa OCR</small></div></div>
+  <div class="batch-header"><div><h3>Daftar pesanan <span id="orderCount">(0)</span></h3><p>Setiap nama memiliki <b>jenis cover</b> dan ketebalan sendiri.</p></div></div>
+  <div id="ordersList" class="orders-list" aria-live="polite"><p class="empty-orders">Belum ada pesanan. Pilih beberapa foto sekaligus.</p></div>
+  <div id="batchProgress" class="batch-progress hidden" role="status"></div>
+  <div class="batch-actions"><button type="button" class="btn btn-primary" id="ocrAllButton">✦ Baca Semua Berkas</button><button type="button" class="btn btn-outline" id="ocrButton">Baca Berkas Terpilih</button><select id="batchOutputMode" class="batch-output" aria-label="Bentuk hasil PDF massal"><option value="separate">PDF per orang (ZIP)</option><option value="combined">Gabung satu PDF</option><option value="both">ZIP PDF per orang + PDF gabungan</option></select><button type="button" class="btn btn-secondary" id="batchJobsButton">↓ Download Hasil Batch</button></div>
+  <div class="batch-note">Untuk setiap mahasiswa: cek hasil AI → pilih ketebalan 10–28 mm → tandai diperiksa. Pilih <b>Polos, Merah, Maroon, atau Custom</b> untuk setiap foto. Unduh tiap orang dalam ZIP atau gabungkan semua sebagai satu PDF; ukuran tiap halaman tetap sesuai jenis cover.</div>
+  <div class="upload-actions"><button type="button" class="btn btn-quiet" id="clearPhoto">Hapus pesanan terpilih</button></div>
+  <div class="micro-note"><b>Hemat token:</b> PDF/Word dengan teks asli diproses lokal tanpa Gemini. PDF scan menggunakan OCR hanya halaman 1. Foto memakai Gemini. Jenis dokumen tidak otomatis dikunci SKRIPSI.</div>
+  <div class="info-section"><h3>Tata letak terkunci ke referensi asli</h3><p>Polos memakai tata letak Serli; merah dan maroon memakai posisi dari file PILIHAN WARNA.pdf, termasuk logo UIN Madura dan tulisan kuning. Punggung adaptif tiap pesanan.</p></div>
+ </section>
+ <section class="card editor-panel">
+  <div class="section-head"><span class="section-icon">02</span><div><h2>Data pesanan yang dipilih</h2><p id="activeOrderHeader">Pilih pesanan dari daftar di sebelah kiri</p></div><span class="editor-pill">EDITABLE</span></div>
+  <form id="dataForm" autocomplete="off">
+    <label class="field"><span>Judul dokumen <i>*</i></span><div class="rich-toolbar"><button type="button" class="format-btn" id="italicButton" title="Pilih beberapa kata lalu tekan Italic"><em>I</em> Italic</button><button type="button" class="format-btn" id="clearFormatting">Hapus italic</button><span>Pilih kata → Italic</span></div><div id="titleEditor" class="rich-editor" contenteditable="true" role="textbox" aria-label="Judul skripsi, bisa mengatur italic" spellcheck="false"></div><small>Kata miring dan karakter seperti ā, ḥ, ṣ, ḍ tetap ikut ke PDF.</small></label>
+    <div class="fields-grid">
+     <label class="field"><span>Nama mahasiswa <i>*</i></span><input name="nama" placeholder="Nama lengkap" required/></label>
+     <label class="field"><span>NIM <i>*</i></span><input name="nim" placeholder="Nomor induk" inputmode="text" required/></label>
+     <label class="field"><span>Program studi <i>*</i></span><input name="prodi" placeholder="Ekonomi Syariah" required/></label>
+     <label class="field"><span>Fakultas <i>*</i></span><input name="fakultas" placeholder="Ekonomi dan Bisnis Islam" required/></label>
+     <label class="field span2"><span>Universitas <i>*</i></span><input name="universitas" placeholder="Universitas Islam Negeri Madura" required/></label>
+     <label class="field"><span>Jenis dokumen</span><input name="jenis_dokumen" placeholder="SKRIPSI / TESIS / THESIS / DISERTASI / lainnya" required/></label>
+     <label class="field"><span>Bulan dan tahun <i>*</i></span><input name="bulan_tahun" placeholder="AGUSTUS 2026" required/></label>
+    </div>
+  </form>
+  <div id="ocrWarnings" class="warnings hidden"></div>
+  <div class="editor-actions"><button type="button" class="btn btn-success" id="approveOrder">✓ Tandai data sudah diperiksa</button><button type="button" class="btn btn-outline" id="fillExample">Isi Contoh Untuk Tes</button><button type="button" class="btn btn-quiet" id="resetForm">Kosongkan isian aktif</button></div>
+ </section>
+ </div>
+
+ <section class="card style-panel">
+  <div class="section-head"><span class="section-icon">03</span><div><h2>Jenis Cover Pesanan Terpilih</h2><p>Default Polos. Mode warna mengikuti PDF warna asli, dengan logo UIN Madura dan tulisan kuning.</p></div></div>
+  <div class="style-options" id="coverStyleOptions">
+   <button class="cover-style selected" type="button" data-cover-style="polos"><span class="swatch swatch-plain"></span><strong>Polos</strong><small>480 × 330 mm</small></button>
+   <button class="cover-style" type="button" data-cover-style="merah"><span class="swatch swatch-red"></span><strong>Merah</strong><small>475 × 320 mm</small></button>
+   <button class="cover-style" type="button" data-cover-style="maroon"><span class="swatch swatch-maroon"></span><strong>Maroon</strong><small>475 × 320 mm</small></button>
+   <button class="cover-style" type="button" data-cover-style="custom"><span class="swatch swatch-custom"></span><strong>Custom</strong><small>475 × 320 mm</small></button>
+  </div>
+  <label class="custom-color-row hidden" id="customColorRow">Warna custom: <input type="color" id="customColorPicker" value="#1458A8" aria-label="Pilih warna custom" /><span id="customColorCode">#1458A8</span></label>
+  <p class="template-msg">Mode polos <b>tanpa logo</b>, memakai tata letak Serli. Mode warna <b>dengan logo asli</b> dan huruf <b>kuning</b>, mengikuti tata letak file PDF warna, bukan tata letak polos. Ketebalan 10–28 mm dipilih terpisah per orang.</p>
+ </section>
+ <section class="card size-panel">
+  <div class="section-head"><span class="section-icon">04</span><div><h2>Ketebalan pesanan terpilih</h2><p>Judul punggung 2–3 baris otomatis: 10 mm = 8 pt; 11–28 mm = 9 pt. Jika perlu turun 1 pt setiap langkah sampai 6 pt.</p></div></div>
+  <div class="size-options" id="thicknessOptions"><span>Memuat template dari server...</span></div>
+  <div class="template-msg"><span>ⓘ</span> Template tersedia untuk <strong>10–28 mm lengkap</strong>, termasuk master <strong>27 mm</strong>. Tata letak depan polos mengikuti <strong>Serli</strong>; tata letak depan warna mengikuti <strong>PDF warna asli</strong>. Font menurun bertahap <strong>9 → 8 → 7 → 6 pt</strong> (10 mm mulai dari 8 pt). Judul harus tetap berada dalam batas cetak sebenarnya.</div>
+ </section>
+ <section class="card result-panel">
+  <div class="section-head"><span class="section-icon">05</span><div><h2>Pratinjau dan PDF cetak</h2><p>PDF dihasilkan langsung dari master vektor asli</p></div><span id="selectedSize" class="result-size">Belum dipilih</span></div>
+  <div class="result-actions"><button type="button" class="btn btn-primary" id="generateButton">◫ Buat & Lihat PDF</button><button type="button" class="btn btn-secondary" id="downloadButton" disabled>↓ Download PDF</button></div>
+  <div class="preview-outer"><div id="previewEmpty"><span>▣</span><strong>Pratinjau akan muncul di sini</strong><p>Isi data, pilih ketebalan, lalu tekan “Buat & Lihat PDF”.</p></div><iframe id="pdfPreview" class="hidden" title="Preview PDF Hard Cover" loading="lazy"></iframe></div>
+  <div class="micro-note"><a href="./contoh/SERLI_10MM_REFERENSI.pdf" target="_blank" rel="noopener">Lihat PDF contoh Serli 10 mm</a> &nbsp;·&nbsp; <a href="./contoh/SERLI_27MM_REFERENSI.pdf" target="_blank" rel="noopener">Lihat PDF contoh Serli 27 mm</a></div>
+  <div class="safety"><strong>Periksa setiap pesanan sebelum cetak.</strong> Font sumber adalah Times New Roman Bold. Jika font asli tidak tersedia pada server, aplikasi menggunakan font Tinos yang metriknya kompatibel; hasil tetap perlu diperiksa pada printer dan skala 100%.</div>
+ </section>
+ <footer>© ZAIN.NET • AI COVER SKRIPSI V4.1 • Batch OCR + ketebalan per pesanan · Layout diambil dari dokumen asli, logo tersedia khusus warna; batch pisah/gabung.</footer>
+</main>
+<script src="./deployment-config.js"></script>
+<script src="./app.js" defer></script>
+</body>
+</html>

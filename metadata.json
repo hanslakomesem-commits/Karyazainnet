@@ -1,0 +1,6 @@
+{
+  "name": "Sistem Jilid Skripsi & Nota Otomatis UIN Madura",
+  "description": "Aplikasi Pemesanan, Kalkulator Live, dan Cetak Nota Otomatis Jasa Jilid Hard Cover Skripsi untuk Mahasiswa UIN Madura.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

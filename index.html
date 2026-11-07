@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <script>
+      // Global Polyfills for ECMAScript 2024 / Legacy browsers (Firefox 115 ESR / Win7)
+      if (typeof globalThis === 'undefined') {
+        window.globalThis = window;
+      }
+      if (typeof globalThis.Iterator === 'undefined') {
+        function Iterator() {}
+        Iterator.prototype = Object.create(Object.prototype);
+        globalThis.Iterator = Iterator;
+      }
+      if (typeof globalThis.Iterator.prototype.join !== 'function') {
+        globalThis.Iterator.prototype.join = function(separator) {
+          var sep = separator === undefined ? ',' : String(separator);
+          try {
+            return Array.from(this).join(sep);
+          } catch(e) {
+            return '';
+          }
+        };
+      }
+      if (typeof Promise.withResolvers !== 'function') {
+        Promise.withResolvers = function() {
+          var resolve, reject;
+          var promise = new Promise(function(res, rej) {
+            resolve = res;
+            reject = rej;
+          });
+          return { promise: promise, resolve: resolve, reject: reject };
+        };
+      }
+      if (typeof Promise.try !== 'function') {
+        Promise.try = function(fn) {
+          var args = Array.prototype.slice.call(arguments, 1);
+          return new Promise(function(resolve) {
+            resolve(fn.apply(void 0, args));
+          });
+        };
+      }
+      if (typeof Object.hasOwn !== 'function') {
+        Object.hasOwn = function(obj, prop) {
+          return Object.prototype.hasOwnProperty.call(obj, prop);
+        };
+      }
+      if (!Array.prototype.at) {
+        Array.prototype.at = function(index) {
+          var k = index >= 0 ? index : this.length + index;
+          return (k < 0 || k >= this.length) ? undefined : this[k];
+        };
+      }
+
+      // Suppress harmless Vite HMR WebSocket connection errors in iframe preview environment
+      window.addEventListener('error', function(e) {
+        var msg = (e && e.message) || '';
+        var file = (e && e.filename) || '';
+        if (
+          msg.includes('WebSocket') ||
+          msg.includes('createWebSocketModuleRunnerTransport') ||
+          msg.includes('failed to connect') ||
+          file.includes('@vite/client')
+        ) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+          return true;
+        }
+      }, true);
+      window.addEventListener('unhandledrejection', function(e) {
+        var reason = (e && e.reason && (e.reason.message || String(e.reason))) || '';
+        if (
+          reason.includes('WebSocket') ||
+          reason.includes('createWebSocketModuleRunnerTransport') ||
+          reason.includes('failed to connect') ||
+          reason.includes('@vite/client')
+        ) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+          return;
+        }
+        // Auto-recover if dynamic chunk import fails due to client cache mismatch
+        if (
+          reason.includes('Failed to fetch dynamically imported module') ||
+          reason.includes('error loading dynamically imported module') ||
+          reason.includes('Importing a module script failed')
+        ) {
+          if (!sessionStorage.getItem('zain_chunk_reload')) {
+            sessionStorage.setItem('zain_chunk_reload', '1');
+            window.location.reload();
+          }
+        }
+      }, true);
+    </script>
+    <meta name="theme-color" content="#1a685b" />
+    <meta name="color-scheme" content="light" />
+    <title>Sistem Jilid Skripsi &amp; Nota Otomatis UIN Madura</title>
+    <meta
+      name="description"
+      content="Aplikasi Pemesanan, Kalkulator Live, dan Cetak Nota Otomatis Jasa Jilid Hard Cover Skripsi untuk Mahasiswa UIN Madura."
+    />
+    <meta property="og:title" content="Sistem Jilid Skripsi &amp; Nota Otomatis UIN Madura" />
+    <meta
+      property="og:description"
+      content="Aplikasi Pemesanan, Kalkulator Live, dan Cetak Nota Otomatis Jasa Jilid Hard Cover Skripsi untuk Mahasiswa UIN Madura."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop stop-color='%231a685b'/%3E%3Cstop offset='.55' stop-color='%23ffac00'/%3E%3Cstop offset='1' stop-color='%23051311'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='18' fill='url(%23g)'/%3E%3Cpath d='M18 18h30v7L29 43h19v8H17v-7l20-18H18z' fill='white'/%3E%3C/svg%3E"
+    />
+
+    <link rel="stylesheet" href="%BASE_URL%charitize-theme.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@600;700&family=Open+Sans:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="root">
+      <div class="zain-first-paint" aria-label="ZAIN.NET Layanan Akademik">
+        <div class="zain-first-paint__brand">ZAIN.NET</div>
+        <div class="zain-first-paint__title">Layanan Akademik &amp; Percetakan</div>
+        <p>Pilih layanan dokumen akademik Anda.</p>
+      </div>
+    </div>
+    <noscript>
+      Aplikasi ZAIN.NET memerlukan JavaScript. Aktifkan JavaScript pada browser untuk melanjutkan.
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

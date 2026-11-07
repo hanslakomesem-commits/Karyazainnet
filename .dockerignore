@@ -1,0 +1,13 @@
+node_modules
+.git
+.github
+dist
+dist-server
+.env
+.env.*
+!.env.example
+uploads
+academic_documents.json
+makalah_posts.json
+agc_posts.json
+r2_config.json

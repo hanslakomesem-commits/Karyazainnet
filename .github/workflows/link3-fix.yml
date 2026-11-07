@@ -1,0 +1,40 @@
+name: Perbaiki Link 3 Pisah Skripsi
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validasi patch
+        run: |
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          expected = {
+            'src/pisahSkripsi/App.tsx',
+            'src/pisahSkripsi/lib/pdfExtractor.ts',
+            'src/pisahSkripsi/components/FileUpload.tsx'
+          }
+          with ZipFile('ZAINNET_LINK3_PERBAIKAN.zip') as z:
+            assert set(z.namelist()) == expected, 'File patch tidak sesuai'
+          PY
+
+      - name: Pasang perbaikan
+        run: |
+          unzip -o ZAINNET_LINK3_PERBAIKAN.zip
+          rm ZAINNET_LINK3_PERBAIKAN.zip
+
+      - name: Simpan perbaikan
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Perbaikan Link 3 Pisah Skripsi"
+          git push origin HEAD:main

@@ -21,6 +21,7 @@ import { User } from 'firebase/auth';
 import { QRCodeSVG } from 'qrcode.react';
 import { doc, setDoc, onSnapshot } from '../storage/documents';
 import { db } from '../firebase';
+import { database } from '../storage/client';
 import { PaymentConfig, UserPurchase, AppUser } from '../types';
 
 interface TopUpModalProps {
@@ -32,6 +33,46 @@ interface TopUpModalProps {
   onTopUpSuccess?: (newBalance: number) => void;
   onOpenLogin?: () => void;
   initialAmount?: number;
+}
+
+// A top-up request is only "sent to admin" after the transaction is stored
+// in shared Supabase. We intentionally do not wait for Render's free-tier
+// cold start. One atomic insert writes admin and user history together.
+async function persistPendingTopUp(purchase: UserPurchase): Promise<void> {
+  const orderId = purchase.orderId;
+  const now = new Date().toISOString();
+  const rows = [{
+    path: `transactions/${orderId}`,
+    parent_path: 'transactions',
+    payload: purchase,
+    updated_at: now
+  }];
+  if (purchase.userId && purchase.userId !== 'guest') {
+    rows.push({
+      path: `users/${purchase.userId}/purchases/${orderId}`,
+      parent_path: `users/${purchase.userId}/purchases`,
+      payload: purchase,
+      updated_at: now
+    });
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    // ignoreDuplicates protects an existing request from a retry overwriting
+    // an already approved/rejected transaction back to "pending".
+    const { error } = await database()
+      .from('academic_documents')
+      .upsert(rows, { onConflict: 'path', ignoreDuplicates: true })
+      .abortSignal(controller.signal);
+    if (error) throw new Error(error.message);
+  } catch (err: any) {
+    if (controller.signal.aborted || err?.name === 'AbortError') {
+      throw new Error('Koneksi lebih dari 12 detik. Periksa daftar pengajuan admin sebelum mencoba lagi agar tidak ada permintaan ganda.');
+    }
+    throw new Error('Pengajuan belum tersimpan di Supabase: ' + (err?.message || 'koneksi gagal'));
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 const PRESET_AMOUNTS = [
@@ -104,7 +145,7 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
       setSubmittedPurchase(null);
       setIsSubmitting(false);
     }
-  }, [isOpen, user, paymentConfig.enableUniqueCode]);
+  }, [isOpen, user?.uid, paymentConfig.enableUniqueCode]);
 
   // Realtime Firestore Listener for Submitted Transaction Verification
   useEffect(() => {
@@ -120,36 +161,30 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
 
         if (data.status === 'completed' && !hasHandledTopupRef.current) {
           hasHandledTopupRef.current = true;
-          isSubscribed = false;
-          const topupAmt = data.amountPaid || effectiveAmount;
-          const newTotal = currentBalance + topupAmt;
-          if (onTopUpSuccessRef.current) {
-            onTopUpSuccessRef.current(newTotal);
-          }
-          if (user) {
-            try {
-              localStorage.setItem(`zain_wallet_${user.uid}`, newTotal.toString());
-              if (user.email) {
-                localStorage.setItem(`zain_wallet_${user.email}`, newTotal.toString());
-                const emailDocId = user.email.trim().toLowerCase().replace(/[^a-zA-Z0-9]/g, '_');
-                setDoc(doc(db, 'wallets_by_email', emailDocId), {
-                  userId: user.uid,
-                  userEmail: user.email,
-                  balance: newTotal,
-                  updatedAt: Date.now()
-                }, { merge: true }).catch(() => {});
+          // Never credit the wallet in the browser: admin approval alone does it.
+          // Only refresh from the already-approved balance stored in Supabase.
+          if (user?.uid) {
+            void (async () => {
+              const controller = new AbortController();
+              const timeout = setTimeout(() => controller.abort(), 8000);
+              try {
+                const { data: wallet, error } = await database()
+                  .from('academic_documents')
+                  .select('payload')
+                  .eq('path', `users/${user.uid}/data/wallet`)
+                  .maybeSingle()
+                  .abortSignal(controller.signal);
+                if (error) throw error;
+                const confirmedBalance = wallet?.payload?.balance;
+                if (typeof confirmedBalance === 'number' && Number.isFinite(confirmedBalance)) {
+                  onTopUpSuccessRef.current?.(confirmedBalance);
+                }
+              } catch (err) {
+                console.warn('Unable to refresh approved wallet:', err);
+              } finally {
+                clearTimeout(timeout);
               }
-              setDoc(doc(db, 'users', user.uid, 'data', 'wallet'), {
-                userId: user.uid,
-                userEmail: user.email || '',
-                balance: newTotal,
-                updatedAt: Date.now()
-              }, { merge: true }).catch(() => {});
-              setDoc(doc(db, 'users', user.uid), {
-                walletBalance: newTotal,
-                updatedAt: new Date().toISOString()
-              }, { merge: true }).catch(() => {});
-            } catch (_e) {}
+            })();
           }
         }
       }
@@ -186,9 +221,30 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     }
 
     setUploadError(null);
+    // Resize proof before sending it as JSON to avoid huge requests on phones.
     const reader = new FileReader();
+    reader.onerror = () => setUploadError('Gagal membaca gambar bukti transfer.');
     reader.onload = () => {
-      setProofImageBase64(reader.result as string);
+      const source = String(reader.result || '');
+      const picture = new Image();
+      picture.onload = () => {
+        try {
+          const ratio = Math.min(1, 1400 / Math.max(picture.width, picture.height));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(picture.width * ratio));
+          canvas.height = Math.max(1, Math.round(picture.height * ratio));
+          const ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('Canvas unavailable');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(picture, 0, 0, canvas.width, canvas.height);
+          setProofImageBase64(canvas.toDataURL('image/jpeg', 0.72));
+        } catch (_) {
+          setProofImageBase64(source);
+        }
+      };
+      picture.onerror = () => setProofImageBase64(source);
+      picture.src = source;
     };
     reader.readAsDataURL(file);
   };
@@ -239,32 +295,20 @@ export const TopUpModal: React.FC<TopUpModalProps> = ({
     };
 
     try {
-      // 1. Save to global transactions collection for Admin real-time notification & approval
-      await setDoc(doc(db, 'transactions', orderId), purchaseData);
-
-      // 2. Also save to user's personal purchases collection if logged in
-      if (user) {
-        await setDoc(doc(db, 'users', user.uid, 'purchases', orderId), purchaseData);
-      }
-
+      // Save exactly one pending request for the admin, no Render wait.
+      await persistPendingTopUp(purchaseData);
       setSubmittedPurchase(purchaseData);
 
-      // 3. Open WhatsApp with formatted confirmation message
+      // WhatsApp is offered only AFTER Supabase confirms the write.
       const waUrl = `https://wa.me/62${paymentConfig.adminWhatsApp.replace(/^0/, '')}?text=${encodeURIComponent(
         getWhatsAppMessage(purchaseData.senderName, purchaseData.senderBank, totalPayAmount)
       )}`;
-
       const opened = window.open(waUrl, '_blank');
-      if (!opened) {
-        window.location.href = waUrl;
-      }
+      if (!opened) window.location.href = waUrl;
     } catch (err: any) {
-      console.error('Error saving topup transaction:', err);
-      setSubmittedPurchase(purchaseData);
-      const waUrl = `https://wa.me/62${paymentConfig.adminWhatsApp.replace(/^0/, '')}?text=${encodeURIComponent(
-        getWhatsAppMessage(purchaseData.senderName, purchaseData.senderBank, totalPayAmount)
-      )}`;
-      window.open(waUrl, '_blank');
+      console.error('Top-up submission not confirmed:', err);
+      setUploadError(err?.message || 'Pengajuan tidak berhasil tersimpan. Periksa koneksi dan coba kembali.');
+      // Do not show "sent to admin" or send WhatsApp when storage is unconfirmed.
     } finally {
       setIsSubmitting(false);
     }

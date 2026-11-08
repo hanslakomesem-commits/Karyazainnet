@@ -21,16 +21,33 @@ const snapshot = (path: string, data?: any) => ({
 });
 
 export async function getDoc(r: Ref) {
-  // 1. Try server-side store first (shared memory/disk)
+  // For payment status and wallet, Supabase is authoritative. Render's
+  // in-memory cache may still show an old pending transaction.
+  if (r.path.startsWith('transactions/') || /\/data\/wallet$/.test(r.path)) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      const { data, error } = await database()
+        .from('academic_documents')
+        .select('payload')
+        .eq('path', r.path)
+        .maybeSingle()
+        .abortSignal(controller.signal);
+      if (!error && data?.payload !== undefined) return snapshot(r.path, data.payload);
+    } catch (_e) {} finally { clearTimeout(timeout); }
+  }
+  // Render remains a fallback, but a cold start must not block the UI.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6000);
   try {
-    const res = await fetch(`/api/academic/document?path=${encodeURIComponent(r.path)}`);
+    const res = await fetch(`/api/academic/document?path=${encodeURIComponent(r.path)}`, { signal: controller.signal });
     if (res.ok) {
       const json = await res.json();
       if (json && json.data && json.data.payload !== undefined) {
         return snapshot(r.path, json.data.payload);
       }
     }
-  } catch (_e) {}
+  } catch (_e) {} finally { clearTimeout(timeout); }
 
   // 2. Query Supabase directly
   try {
@@ -46,9 +63,11 @@ export async function getDoc(r: Ref) {
 export async function getDocs(r: Ref) {
   let docMap = new Map<string, any>();
 
-  // 1. Fetch from server endpoint
+  // 1. Fetch from server endpoint (bounded, so admin notifications do not freeze).
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6000);
   try {
-    const res = await fetch(`/api/academic/documents?parent_path=${encodeURIComponent(r.path)}`);
+    const res = await fetch(`/api/academic/documents?parent_path=${encodeURIComponent(r.path)}`, { signal: controller.signal });
     if (res.ok) {
       const json = await res.json();
       if (json && Array.isArray(json.data)) {
@@ -57,7 +76,7 @@ export async function getDocs(r: Ref) {
         });
       }
     }
-  } catch (_e) {}
+  } catch (_e) {} finally { clearTimeout(timeout); }
 
   // 2. Fetch from Supabase directly to ensure no multi-device misses
   try {
@@ -66,7 +85,8 @@ export async function getDocs(r: Ref) {
       if (error) break;
       if (Array.isArray(data)) {
         data.forEach((row: any) => {
-          if (row?.path && !docMap.has(row.path)) {
+          // Supabase is the source of truth for transaction approval state.
+          if (row?.path && (r.path === 'transactions' || !docMap.has(row.path))) {
             docMap.set(row.path, row.payload);
           }
         });

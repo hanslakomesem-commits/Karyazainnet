@@ -1,0 +1,102 @@
+name: Fix ZAIN.NET Reseller Login
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  fix-login:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Patch auth source without changing existing accounts
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/utils/authService.ts')
+          src = path.read_text(encoding='utf-8')
+          marker = '// 1. Primary Source of Truth: Query Supabase'
+          start = src.find('  ' + marker, src.find('export const loginWithEmailPassword'))
+          end = src.find('  const isAdmin = ', start)
+          if start < 0 or end < 0:
+              raise SystemExit('STOP: Struktur kode sudah berbeda, jangan timpa file.')
+          replacement = '''  // Read Supabase directly before using Render (avoid cold start).
+          let connectionError = '';
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 12000);
+            try {
+              const { data, error } = await database()
+                .from('academic_documents')
+                .select('payload')
+                .eq('path', `auth_accounts/${emailDocId}`)
+                .maybeSingle()
+                .abortSignal(controller.signal);
+              if (error) throw error;
+              if (data?.payload && !data.payload.isDeleted) {
+                account = data.payload as RegisteredUserAccount;
+              }
+            } finally {
+              clearTimeout(timer);
+            }
+          } catch (e: any) {
+            connectionError = e?.message || 'Supabase tidak dapat dihubungi';
+            console.warn('Account lookup unavailable:', connectionError);
+          }
+
+          // Mirror fallback with an explicit limit, never wait forever.
+          if (!account) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8000);
+            try {
+              const response = await fetch(
+                `/api/academic/document?path=${encodeURIComponent(`auth_accounts/${emailDocId}`)}`,
+                { signal: controller.signal }
+              );
+              if (response.ok) {
+                const result = await response.json();
+                const stored = result?.data?.payload;
+                if (stored && !stored.isDeleted) account = stored as RegisteredUserAccount;
+              }
+            } catch (e: any) {
+              if (!connectionError) connectionError = e?.name === 'AbortError'
+                ? 'Server Render tidak merespons dalam 8 detik'
+                : (e?.message || 'Server Render tidak dapat dihubungi');
+            } finally {
+              clearTimeout(timer);
+            }
+          }
+
+          // Last resort: same-browser legacy cache, do not overwrite remote user.
+          if (!account) {
+            account = getLocalAccounts().find(
+              a => a.email.toLowerCase() === cleanEmail && !a.isDeleted
+            );
+          }
+          if (!account && connectionError) {
+            return { success: false, error: 'Login belum terhubung ke database: ' + connectionError };
+          }
+
+          '''
+          src = src[:start] + replacement + src[end:]
+          old_role = 'role: resolveUserRole(account.email, payload.rolesConfig),'
+          if old_role not in src:
+              raise SystemExit('STOP: Lokasi status reseller tidak ditemukan.')
+          src = src.replace(old_role,
+            "role: account.role === 'reseller' ? 'reseller' : resolveUserRole(account.email, payload.rolesConfig),", 1)
+          path.write_text(src, encoding='utf-8')
+          print('OK: Login source patched, no records changed.')
+          PY
+      - name: Check changes
+        run: |
+          git diff --check
+          git diff --stat
+      - name: Save patch to main
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/utils/authService.ts
+          git commit -m 'Fix login by querying Supabase first with timeout and preserving reseller role'
+          git push origin HEAD:main

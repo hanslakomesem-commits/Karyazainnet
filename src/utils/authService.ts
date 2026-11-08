@@ -250,30 +250,62 @@ export const loginWithEmailPassword = async (payload: LoginPayload): Promise<Reg
   const emailDocId = cleanEmail.replace(/[^a-zA-Z0-9]/g, '_');
   let account: RegisteredUserAccount | undefined = undefined;
 
-  // 1. Primary Source of Truth: Query Supabase
+  // Read Supabase directly before using Render (avoid cold start).
+let connectionError = '';
+try {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
   try {
-    const authRef = doc(db, 'auth_accounts', emailDocId);
-    const snap = await getDoc(authRef);
-    if (snap.exists()) {
-      const data = snap.data() as RegisteredUserAccount;
-      if (!data?.isDeleted) {
-        account = data;
-      }
+    const { data, error } = await database()
+      .from('academic_documents')
+      .select('payload')
+      .eq('path', `auth_accounts/${emailDocId}`)
+      .maybeSingle()
+      .abortSignal(controller.signal);
+    if (error) throw error;
+    if (data?.payload && !data.payload.isDeleted) {
+      account = data.payload as RegisteredUserAccount;
     }
-  } catch (e) {
-    console.warn('Notice querying Supabase auth_accounts:', e);
+  } finally {
+    clearTimeout(timer);
   }
+} catch (e: any) {
+  connectionError = e?.message || 'Supabase tidak dapat dihubungi';
+  console.warn('Account lookup unavailable:', connectionError);
+}
 
-  // 2. Fallback to local cache if offline, and sync back to Supabase
-  if (!account) {
-    const localAccounts = getLocalAccounts();
-    account = localAccounts.find(a => a.email.toLowerCase() === cleanEmail && !a.isDeleted);
-    if (account) {
-      try {
-        setDoc(doc(db, 'auth_accounts', emailDocId), { ...account, updatedAt: Date.now() }, { merge: true }).catch(() => {});
-      } catch (_e) {}
+// Mirror fallback with an explicit limit, never wait forever.
+if (!account) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(
+      `/api/academic/document?path=${encodeURIComponent(`auth_accounts/${emailDocId}`)}`,
+      { signal: controller.signal }
+    );
+    if (response.ok) {
+      const result = await response.json();
+      const stored = result?.data?.payload;
+      if (stored && !stored.isDeleted) account = stored as RegisteredUserAccount;
     }
+  } catch (e: any) {
+    if (!connectionError) connectionError = e?.name === 'AbortError'
+      ? 'Server Render tidak merespons dalam 8 detik'
+      : (e?.message || 'Server Render tidak dapat dihubungi');
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+// Last resort: same-browser legacy cache, do not overwrite remote user.
+if (!account) {
+  account = getLocalAccounts().find(
+    a => a.email.toLowerCase() === cleanEmail && !a.isDeleted
+  );
+}
+if (!account && connectionError) {
+  return { success: false, error: 'Login belum terhubung ke database: ' + connectionError };
+}
 
   const isAdmin = cleanEmail === 'fastprint2026@gmail.com' || payload.rolesConfig.adminEmails.some(a => a.toLowerCase() === cleanEmail);
   const targetPin = (payload.rolesConfig.adminPinCode || 'Doraemon12').trim();
@@ -307,7 +339,7 @@ export const loginWithEmailPassword = async (payload: LoginPayload): Promise<Reg
       university: account.university,
       major: account.major,
       whatsapp: account.whatsapp,
-      role: resolveUserRole(account.email, payload.rolesConfig),
+      role: account.role === 'reseller' ? 'reseller' : resolveUserRole(account.email, payload.rolesConfig),
       createdAt: account.createdAt
     };
 

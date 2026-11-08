@@ -1,0 +1,339 @@
+name: Fix Menu 1 Link 7 - Auto 2 DOCX Tanpa ZIP
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zainnet-link7-dual-docx
+  cancel-in-progress: false
+
+jobs:
+  apply-fix:
+    name: Perbaiki 2 download Word dan cek build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository ZAIN.NET
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Apply safe scoped patch
+        shell: bash
+        run: |
+          cat > /tmp/zainnet_link7_dual_word_patch.py <<'PY'
+          #!/usr/bin/env python3
+          """ZAIN.NET Menu 1 Link 7: 2 DOCX downloads, no ZIP, never auto-exit.
+
+          Patch is idempotent. Run in the repository root.
+          """
+          from pathlib import Path
+          import re
+
+
+          def replace_once(source: str, old: str, new: str, label: str) -> str:
+              n = source.count(old)
+              if n != 1:
+                  raise RuntimeError(f"{label}: expected exactly one matching section; found {n}; stopping safely")
+              return source.replace(old, new, 1)
+
+
+          app_path = Path('src/journalConverter/App.tsx')
+          modal_path = Path('src/components/ToolViewerModal.tsx')
+          cover_path = Path('src/journalConverter/utils/coverCdExport.ts')
+          for path in [app_path, modal_path, cover_path]:
+              if not path.is_file():
+                  raise SystemExit(f"Missing {path} - run from ZAIN.NET repository root")
+
+          app = app_path.read_text(encoding='utf-8')
+          if 'ZAINNET_LINK7_DUAL_WORD_AUTO_DOWNLOAD' not in app:
+              app = replace_once(app,
+                  "import { exportJournalToDocx } from './utils/docxExport';",
+                  "import { buildJournalDocx, exportJournalToDocx } from './utils/docxExport';",
+                  'Add DOCX generator import')
+              app = replace_once(app,
+                  "import { buildJournalBundle, triggerBundleDownload, downloadCoverCdOnly } from './utils/bundleExport';",
+                  "import { triggerBundleDownload, downloadCoverCdOnly } from './utils/bundleExport';\nimport { buildCoverCdDocx } from './utils/coverCdExport';",
+                  'Add separate cover Word generator')
+              app = replace_once(app,
+                  "  const [isDownloadingBundle, setIsDownloadingBundle] = useState(false);",
+                  """  // ZAINNET_LINK7_DUAL_WORD_AUTO_DOWNLOAD
+            // A prepared pair remains available if the browser blocks multiple downloads.
+            const [preparedWordFiles, setPreparedWordFiles] = useState<{
+              articleBlob: Blob; coverBlob: Blob; articleName: string; coverName: string;
+            } | null>(null);
+            const [preparingWordPair, setPreparingWordPair] = useState(false);
+            const [wordDownloadNotice, setWordDownloadNotice] = useState('');
+          """.rstrip(),
+                  'Add download state')
+              app = replace_once(app,
+                  "  // Handle Journal AI Generation (Multi-stage process to prevent JSON truncation/timeouts)",
+                  """  const safeWordName = (value: string) =>
+              String(value || 'Mahasiswa').trim().slice(0, 45)
+                .replace(/[\\/\\\\?%*:|\"<>]/g, '').replace(/\\s+/g, '_') || 'Mahasiswa';
+
+            // Each file is a standalone DOCX, not a ZIP. Both blobs must be ready first.
+            const buildTwoWordFiles = async (readyArticle: JournalArticle) => {
+              const [articleBlob, coverBlob] = await Promise.all([
+                buildJournalDocx(readyArticle), buildCoverCdDocx(readyArticle),
+              ]);
+              const title = safeWordName(readyArticle.metadata?.judul || 'Artikel_Ilmiah');
+              const name = safeWordName(readyArticle.metadata?.nama || 'Mahasiswa');
+              return {
+                articleBlob, coverBlob,
+                articleName: `Artikel_Jurnal_${title}.docx`,
+                coverName: `Cover_CD_${name}.docx`,
+              };
+            };
+
+            const triggerTwoWordDownloads = (files: {
+              articleBlob: Blob; coverBlob: Blob; articleName: string; coverName: string;
+            }) => {
+              // Both requests are issued back-to-back. Browser download permissions
+              // control whether they really arrive on the user's device.
+              triggerBundleDownload(files.articleBlob, files.articleName);
+              triggerBundleDownload(files.coverBlob, files.coverName);
+              setWordDownloadNotice(
+                'Dua unduhan Word (.docx) telah diminta. Periksa daftar unduhan browser. ' +
+                'Jika Chrome/Firefox meminta izin download beberapa file, pilih Izinkan. ' +
+                'Jika salah satu tidak ada, gunakan tombol Unduh 2 File Word Lagi atau tombol masing-masing.'
+              );
+            };
+
+            // Handle Journal AI Generation (Multi-stage process to prevent JSON truncation/timeouts)""",
+                  'Add two-word helpers')
+
+              app = replace_once(app,
+                  """      setArticle(fullArticle);
+                onArticleComplete?.(`${(fullArticle.metadata as any)?.judul || 'Artikel'}.docx`);
+                setGenerationStatus({ stage: 0, message: '', percent: 100 });
+                setActiveTab('preview');""",
+                  """      // Keep the article editor open. Account/quota completion is tracked
+                // after AI generation, independently of the browser's download prompts.
+                setArticle(fullArticle);
+                setActiveTab('preview');
+                onArticleComplete?.(`${(fullArticle.metadata as any)?.judul || 'Artikel'}.docx`);
+                setGenerationStatus({ stage: 0, message: '', percent: 100 });
+
+                setPreparingWordPair(true);
+                setWordDownloadNotice('Artikel selesai. Menyiapkan 2 file Word secara terpisah...');
+                try {
+                  const files = await buildTwoWordFiles(fullArticle);
+                  setPreparedWordFiles(files);
+                  triggerTwoWordDownloads(files);
+                } catch (downloadErr: any) {
+                  console.error('Automatic two-file Word export failed:', downloadErr);
+                  setWordDownloadNotice(
+                    'Artikel berhasil dibuat, tetapi kedua file belum berhasil disiapkan: ' +
+                    (downloadErr?.message || 'Terjadi gangguan saat ekspor Word.') +
+                    ' Halaman tetap terbuka. Gunakan tombol unduh untuk mencoba kembali.'
+                  );
+                } finally {
+                  setPreparingWordPair(false);
+                }""",
+                  'Generate automatic two DOCX without leaving page')
+
+              app = replace_once(app,
+                  "      onArticleComplete?.(`Artikel_${article.id}.docx`);",
+                  "      // Quota already recorded after the 3 generation stages; re-download is free.",
+                  'Avoid re-marking quotas on repeated DOCX downloads')
+
+              marker_start = '  // Handle Complete Bundle Export (.zip Artikel + Cover CD)'
+              marker_end = '  // Open Editor Modal for a specific section'
+              if app.count(marker_start) != 1 or app.count(marker_end) != 1:
+                  raise RuntimeError('Cannot locate ZIP exporter block; stopping')
+              start = app.index(marker_start)
+              end = app.index(marker_end, start)
+              app = app[:start] + """  // Two separate Word downloads, triggered by an explicit click if browser
+            // blocks the initial automatic downloads. Never navigate to the home page.
+            const handleDownloadTwoWord = async () => {
+              if (!article || preparingWordPair) return;
+              setPreparingWordPair(true);
+              try {
+                // If the article has been edited, generate new files so changes are saved.
+                const files = preparedWordFiles || await buildTwoWordFiles(article);
+                setPreparedWordFiles(files);
+                triggerTwoWordDownloads(files);
+              } catch (err: any) {
+                console.error('Two-file Word download error:', err);
+                setWordDownloadNotice(
+                  'Gagal menyiapkan dua file Word: ' + (err?.message || 'Silakan coba lagi.') +
+                  ' Artikel tetap tersedia; Anda dapat mengunduhnya satu per satu.'
+                );
+              } finally {
+                setPreparingWordPair(false);
+              }
+            };
+
+          """ + app[end:]
+
+              # Invalidate prepared downloads if the user edits either the article or footnotes.
+              # This requires a wrapper instead of calling setArticle in several views directly.
+              app = replace_once(app,
+                  "  const [article, setArticle] = useState<JournalArticle | null>(null);",
+                  """  const [article, setArticle] = useState<JournalArticle | null>(null);
+            const handleUpdateArticleAndResetDownloads = (updated: JournalArticle) => {
+              setPreparedWordFiles(null);
+              setArticle(updated);
+            };""",
+                  'Invalidate cached downloads after editing')
+              app = replace_once(app,
+                  '            onUpdateArticle={setArticle}',
+                  '            onUpdateArticle={handleUpdateArticleAndResetDownloads}',
+                  'Hook article editor to cache invalidation')
+              app = replace_once(app,
+                  "      ...article,\n      footnotes: updatedFootnotes,\n    });",
+                  "      ...article,\n      footnotes: updatedFootnotes,\n    });\n    setPreparedWordFiles(null);",
+                  'Invalidate download cache on footnote editor')
+              # All section edits (abstract and other sections) must invalidate the pair.
+              app = replace_once(app,
+                  "  const handleSaveSection = (sectionKey: string, newContent: string) => {\n    if (!article) return;",
+                  "  const handleSaveSection = (sectionKey: string, newContent: string) => {\n    if (!article) return;\n    setPreparedWordFiles(null);",
+                  'Invalidate Word cache for every edited section')
+              # Hide the two ZIP actions without changing the other independent downloads.
+              if app.count('onDownloadBundle={handleDownloadBundle}') != 2:
+                  raise RuntimeError('Expected exactly two ZIP UI callbacks')
+              app = '\n'.join(line for line in app.split('\n') if 'onDownloadBundle={handleDownloadBundle}' not in line)
+              app = replace_once(app,
+                  '        isDownloading={isDownloadingDocx || isDownloadingCoverCd || isDownloadingBundle}',
+                  '        isDownloading={isDownloadingDocx || isDownloadingCoverCd || preparingWordPair}',
+                  'Update header busy state')
+              app = replace_once(app,
+                  '            isDownloadingBundle={isDownloadingBundle}\n',
+                  '',
+                  'Remove ZIP busy state')
+
+              app = replace_once(app,
+                  '      <main className="flex-1 pb-16">',
+                  """      <main className="flex-1 pb-16">
+                  {article && (
+                    <section role="status" aria-live="polite" className="max-w-5xl mx-auto mt-4 px-4">
+                      <div className="bg-indigo-50 border border-indigo-300 rounded-2xl p-4 text-indigo-950 shadow-sm">
+                        <p className="font-bold text-sm mb-2">Artikel berhasil dibuat — 2 file Word terpisah</p>
+                        <p className="text-sm leading-relaxed mb-3">{wordDownloadNotice || 'Menyiapkan file artikel dan Cover CD...'}</p>
+                        <button type="button" onClick={handleDownloadTwoWord} disabled={preparingWordPair}
+                          className="bg-indigo-700 text-white font-semibold text-sm px-4 py-2 rounded-lg disabled:opacity-50 hover:bg-indigo-600">
+                          {preparingWordPair ? 'Menyiapkan dua file Word...' : 'Unduh 2 File Word Lagi (.docx)'}
+                        </button>
+                        <p className="mt-2 text-xs text-indigo-700">Halaman ini tidak akan kembali otomatis ke beranda. Pastikan kedua berkas muncul di folder Download sebelum Anda menutup modul.</p>
+                      </div>
+                    </section>
+                  )}""",
+                  'Add retry/permission banner')
+
+          # The parent must not show its fullscreen completion overlay or navigate home
+          # for link 7, but completion and quota are still recorded exactly once.
+          modal = modal_path.read_text(encoding='utf-8')
+          if 'ZAINNET_LINK7_DUAL_WORD_STAY_OPEN' not in modal:
+              pattern = re.compile(r'  const handleAutoFinishDownload = \(fileName: string, reason: string\) => \{[\s\S]*?\n  \};(?=\n  useEffect\(\(\) => \{)')
+              new_handler = """  const handleAutoFinishDownload = (fileName: string, reason: string) => {
+              if (!tool || done.current) return;
+              // ZAINNET_LINK7_DUAL_WORD_STAY_OPEN
+              // Link 7 reports generation success BEFORE the browser downloads anything.
+              const keepArticleDownloadOpen = tool.id === 'art-7'
+                || tool.url === 'internal://journal-converter'
+                || tool.url === '/journal-converter';
+              done.current = true;
+              if (!keepArticleDownloadOpen) setCompleted(true);
+              setStatus(keepArticleDownloadOpen
+                ? 'Artikel selesai dibuat. Menyiapkan dua file Word; periksa panel unduhan dan izin browser.'
+                : 'Hasil siap — transaksi dinyatakan selesai & mengamankan sesi...');
+              recordSessionCompleted(tool, effectiveUserId, { fileName, reason }, [], 0);
+              Promise.resolve(finishRef.current?.(tool, reason)).then(() => {
+                if (!keepArticleDownloadOpen) {
+                  setStatus(isAdmin ? 'Selesai — hasil berhasil dibuat.' : 'Selesai — transaksi selesai & kuota berhasil digunakan.');
+                }
+              }).catch((e) => setStatus(`Hasil siap; penyimpanan akun tertunda. ${e.message}`));
+
+              // Never auto-close Link 7. The browser cannot verify that BOTH downloads
+              // were actually saved. Users can confirm them and close manually.
+              if (keepArticleDownloadOpen) return;
+
+              setStatus('File berhasil diunduh! Transaksi dinyatakan selesai. Mengalihkan kembali ke halaman utama ZAIN.NET...');
+              setTimeout(() => {
+                if (typeof window !== 'undefined') {
+                  window.history.pushState(null, '', '/');
+                  window.dispatchEvent(new PopStateEvent('popstate'));
+                }
+                onClose();
+              }, 1500);
+            };"""
+              modal, count = pattern.subn(lambda m: new_handler, modal, count=1)
+              if count != 1:
+                  raise RuntimeError(f'Modal finish handler not uniquely identified: {count}')
+
+          cover = cover_path.read_text(encoding='utf-8')
+          if "import.meta.env.BASE_URL" not in cover:
+              cover = replace_once(cover,
+                  "  const response = await fetch('/covercd-template.docx', { cache: 'force-cache' });",
+                  "  const response = await fetch(`${import.meta.env.BASE_URL}covercd-template.docx`, { cache: 'force-cache' });",
+                  'Fix GitHub Pages base path for cover template')
+
+          # Hard assertions before writing any of the three files.
+          assert 'ZAINNET_LINK7_DUAL_WORD_AUTO_DOWNLOAD' in app
+          assert 'onDownloadBundle={handleDownloadBundle}' not in app
+          assert 'const handleDownloadBundle = ' not in app
+          assert "buildCoverCdDocx(readyArticle)" in app
+          assert 'setActiveTab(\'preview\')' in app
+          assert 'ZAINNET_LINK7_DUAL_WORD_STAY_OPEN' in modal
+          assert 'if (keepArticleDownloadOpen) return;' in modal
+          assert 'import.meta.env.BASE_URL' in cover
+          app_path.write_text(app, encoding='utf-8')
+          modal_path.write_text(modal, encoding='utf-8')
+          cover_path.write_text(cover, encoding='utf-8')
+          print('SUCCESS: Menu 1 Link 7 patches applied to 3 files')
+          PY
+          python3 /tmp/zainnet_link7_dual_word_patch.py
+
+      - name: Verify dual DOCX behavior
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('src/journalConverter/App.tsx').read_text(encoding='utf-8')
+          modal = Path('src/components/ToolViewerModal.tsx').read_text(encoding='utf-8')
+          cover = Path('src/journalConverter/utils/coverCdExport.ts').read_text(encoding='utf-8')
+          checks = {
+              'auto pairs Word exports': 'buildJournalDocx(readyArticle), buildCoverCdDocx(readyArticle)' in app,
+              '2 distinct download triggers': 'triggerBundleDownload(files.articleBlob, files.articleName)' in app and 'triggerBundleDownload(files.coverBlob, files.coverName)' in app,
+              'manual two-file retry': 'onClick={handleDownloadTwoWord}' in app,
+              'no article ZIP UI': 'onDownloadBundle={handleDownloadBundle}' not in app,
+              'preview remains open': 'if (keepArticleDownloadOpen) return;' in modal,
+              'template path follows Vite base': 'import.meta.env.BASE_URL}covercd-template.docx' in cover,
+              'article recorded once': app.count('onArticleComplete?.(') == 1,
+          }
+          for name, ok in checks.items():
+              print(('PASS' if ok else 'FAIL'), name)
+          if not all(checks.values()):
+              raise SystemExit('Patch verification failed - no commit will be made')
+          PY
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Verify website can build
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+        run: npm run build
+
+      - name: Commit patch after successful build
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- src/journalConverter/App.tsx src/components/ToolViewerModal.tsx src/journalConverter/utils/coverCdExport.ts
+          if git diff --cached --quiet; then
+            echo "Patch already installed. Nothing to commit."
+          else
+            git commit -m "Link7: auto-download article and cover CD separately, keep preview open"
+            git push origin HEAD:main
+          fi

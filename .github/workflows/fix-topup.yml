@@ -1,0 +1,259 @@
+name: Fix ZAIN.NET Top Up & Admin Notification
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  fix-topup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Repair top-up submission and admin sync
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          
+          
+          def replace_once(src: str, before: str, after: str, file: str) -> str:
+              n=src.count(before)
+              if n != 1:
+                  raise SystemExit(f'STOP: expected exactly one occurrence in {file}: {before[:90]!r}; found {n}')
+              return src.replace(before, after, 1)
+          
+          topup_path = Path('src/components/TopUpModal.tsx')
+          shared_path = Path('src/storage/documents.ts')
+          if ('async function persistPendingTopUp(' in topup_path.read_text('utf-8')
+              and 'For payment status and wallet, Supabase is authoritative.' in shared_path.read_text('utf-8')):
+              print('Top Up patch already installed, no changes needed.')
+              raise SystemExit(0)
+          
+          p=topup_path
+          s=p.read_text('utf-8')
+          s=replace_once(s,"import { db } from '../firebase';", "import { db } from '../firebase';\nimport { database } from '../storage/client';",str(p))
+          
+          helper='''// A top-up request is only "sent to admin" after the transaction is stored
+          // in shared Supabase. We intentionally do not wait for Render's free-tier
+          // cold start. One atomic insert writes admin and user history together.
+          async function persistPendingTopUp(purchase: UserPurchase): Promise<void> {
+            const orderId = purchase.orderId;
+            const now = new Date().toISOString();
+            const rows = [{
+              path: `transactions/${orderId}`,
+              parent_path: 'transactions',
+              payload: purchase,
+              updated_at: now
+            }];
+            if (purchase.userId && purchase.userId !== 'guest') {
+              rows.push({
+                path: `users/${purchase.userId}/purchases/${orderId}`,
+                parent_path: `users/${purchase.userId}/purchases`,
+                payload: purchase,
+                updated_at: now
+              });
+            }
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 12000);
+            try {
+              // ignoreDuplicates protects an existing request from a retry overwriting
+              // an already approved/rejected transaction back to "pending".
+              const { error } = await database()
+                .from('academic_documents')
+                .upsert(rows, { onConflict: 'path', ignoreDuplicates: true })
+                .abortSignal(controller.signal);
+              if (error) throw new Error(error.message);
+            } catch (err: any) {
+              if (controller.signal.aborted || err?.name === 'AbortError') {
+                throw new Error('Koneksi lebih dari 12 detik. Periksa daftar pengajuan admin sebelum mencoba lagi agar tidak ada permintaan ganda.');
+              }
+              throw new Error('Pengajuan belum tersimpan di Supabase: ' + (err?.message || 'koneksi gagal'));
+            } finally {
+              clearTimeout(timeout);
+            }
+          }
+          
+          '''
+          s=replace_once(s, 'const PRESET_AMOUNTS = [', helper+'const PRESET_AMOUNTS = [',str(p))
+          s=replace_once(s, '}, [isOpen, user, paymentConfig.enableUniqueCode]);', '}, [isOpen, user?.uid, paymentConfig.enableUniqueCode]);',str(p))
+          
+          start=s.index("        if (data.status === 'completed' && !hasHandledTopupRef.current) {")
+          end=s.index("\n      }\n    }, (error) => {",start)
+          s=s[:start]+'''        if (data.status === 'completed' && !hasHandledTopupRef.current) {
+                    hasHandledTopupRef.current = true;
+                    // Never credit the wallet in the browser: admin approval alone does it.
+                    // Only refresh from the already-approved balance stored in Supabase.
+                    if (user?.uid) {
+                      void (async () => {
+                        const controller = new AbortController();
+                        const timeout = setTimeout(() => controller.abort(), 8000);
+                        try {
+                          const { data: wallet, error } = await database()
+                            .from('academic_documents')
+                            .select('payload')
+                            .eq('path', `users/${user.uid}/data/wallet`)
+                            .maybeSingle()
+                            .abortSignal(controller.signal);
+                          if (error) throw error;
+                          const confirmedBalance = wallet?.payload?.balance;
+                          if (typeof confirmedBalance === 'number' && Number.isFinite(confirmedBalance)) {
+                            onTopUpSuccessRef.current?.(confirmedBalance);
+                          }
+                        } catch (err) {
+                          console.warn('Unable to refresh approved wallet:', err);
+                        } finally {
+                          clearTimeout(timeout);
+                        }
+                      })();
+                    }
+                  }'''+s[end:]
+          
+          fileStart=s.index('    setUploadError(null);\n    const reader = new FileReader();',s.index('const handleFileChange'))
+          fileEnd=s.index('\n  };',fileStart)
+          s=s[:fileStart]+'''    setUploadError(null);
+              // Resize proof before sending it as JSON to avoid huge requests on phones.
+              const reader = new FileReader();
+              reader.onerror = () => setUploadError('Gagal membaca gambar bukti transfer.');
+              reader.onload = () => {
+                const source = String(reader.result || '');
+                const picture = new Image();
+                picture.onload = () => {
+                  try {
+                    const ratio = Math.min(1, 1400 / Math.max(picture.width, picture.height));
+                    const canvas = document.createElement('canvas');
+                    canvas.width = Math.max(1, Math.round(picture.width * ratio));
+                    canvas.height = Math.max(1, Math.round(picture.height * ratio));
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) throw new Error('Canvas unavailable');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(picture, 0, 0, canvas.width, canvas.height);
+                    setProofImageBase64(canvas.toDataURL('image/jpeg', 0.72));
+                  } catch (_) {
+                    setProofImageBase64(source);
+                  }
+                };
+                picture.onerror = () => setProofImageBase64(source);
+                picture.src = source;
+              };
+              reader.readAsDataURL(file);'''+s[fileEnd:]
+          
+          start=s.index('    try {\n      // 1. Save to global transactions collection for Admin real-time notification & approval',s.index('const handleSendViaWhatsApp'))
+          end=s.index('    } finally {\n      setIsSubmitting(false);\n    }',start)
+          s=s[:start]+'''    try {
+                // Save exactly one pending request for the admin, no Render wait.
+                await persistPendingTopUp(purchaseData);
+                setSubmittedPurchase(purchaseData);
+          
+                // WhatsApp is offered only AFTER Supabase confirms the write.
+                const waUrl = `https://wa.me/62${paymentConfig.adminWhatsApp.replace(/^0/, '')}?text=${encodeURIComponent(
+                  getWhatsAppMessage(purchaseData.senderName, purchaseData.senderBank, totalPayAmount)
+                )}`;
+                const opened = window.open(waUrl, '_blank');
+                if (!opened) window.location.href = waUrl;
+              } catch (err: any) {
+                console.error('Top-up submission not confirmed:', err);
+                setUploadError(err?.message || 'Pengajuan tidak berhasil tersimpan. Periksa koneksi dan coba kembali.');
+                // Do not show "sent to admin" or send WhatsApp when storage is unconfirmed.
+          '''+s[end:]
+          p.write_text(s,encoding='utf-8')
+          
+          p=Path('src/storage/documents.ts')
+          s=p.read_text('utf-8')
+          needle='''export async function getDoc(r: Ref) {
+            // 1. Try server-side store first (shared memory/disk)
+            try {
+              const res = await fetch(`/api/academic/document?path=${encodeURIComponent(r.path)}`);'''
+          replacement='''export async function getDoc(r: Ref) {
+            // For payment status and wallet, Supabase is authoritative. Render's
+            // in-memory cache may still show an old pending transaction.
+            if (r.path.startsWith('transactions/') || /\\/data\\/wallet$/.test(r.path)) {
+              const controller = new AbortController();
+              const timeout = setTimeout(() => controller.abort(), 8000);
+              try {
+                const { data, error } = await database()
+                  .from('academic_documents')
+                  .select('payload')
+                  .eq('path', r.path)
+                  .maybeSingle()
+                  .abortSignal(controller.signal);
+                if (!error && data?.payload !== undefined) return snapshot(r.path, data.payload);
+              } catch (_e) {} finally { clearTimeout(timeout); }
+            }
+            // Render remains a fallback, but a cold start must not block the UI.
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 6000);
+            try {
+              const res = await fetch(`/api/academic/document?path=${encodeURIComponent(r.path)}`, { signal: controller.signal });'''
+          s=replace_once(s,needle,replacement,str(p))
+          needle='''  } catch (_e) {}
+          
+            // 2. Query Supabase directly
+            try {
+              const { data, error } = await database().from('academic_documents').select('payload').eq('path', r.path).maybeSingle();'''
+          replacement='''  } catch (_e) {} finally { clearTimeout(timeout); }
+          
+            // 2. Query Supabase directly
+            try {
+              const { data, error } = await database().from('academic_documents').select('payload').eq('path', r.path).maybeSingle();'''
+          s=replace_once(s,needle,replacement,str(p))
+          
+          needle='''  // 1. Fetch from server endpoint
+            try {
+              const res = await fetch(`/api/academic/documents?parent_path=${encodeURIComponent(r.path)}`);'''
+          replacement='''  // 1. Fetch from server endpoint (bounded, so admin notifications do not freeze).
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 6000);
+            try {
+              const res = await fetch(`/api/academic/documents?parent_path=${encodeURIComponent(r.path)}`, { signal: controller.signal });'''
+          s=replace_once(s,needle,replacement,str(p))
+          needle='''  } catch (_e) {}
+          
+            // 2. Fetch from Supabase directly to ensure no multi-device misses
+            try {'''
+          replacement='''  } catch (_e) {} finally { clearTimeout(timeout); }
+          
+            // 2. Fetch from Supabase directly to ensure no multi-device misses
+            try {'''
+          s=replace_once(s,needle,replacement,str(p))
+          needle='''          if (row?.path && !docMap.has(row.path)) {
+                      docMap.set(row.path, row.payload);
+                    }'''
+          replacement='''          // Supabase is the source of truth for transaction approval state.
+                    if (row?.path && (r.path === 'transactions' || !docMap.has(row.path))) {
+                      docMap.set(row.path, row.payload);
+                    }'''
+          s=replace_once(s,needle,replacement,str(p))
+          p.write_text(s,encoding='utf-8')
+          
+          print('OK: TopUpModal and documents patch applied; no database changes')
+          PY
+      - name: Validate changes
+        run: |
+          git diff --check
+          git diff --stat
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build test before publishing
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: npm run build
+      - name: Commit patch to main
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/TopUpModal.tsx src/storage/documents.ts
+          if git diff --cached --quiet; then
+            echo 'No new changes. Patch is already installed.'
+          else
+            git commit -m 'Fix top-up pending submission timeout and admin refresh'
+            git push origin HEAD:main
+          fi

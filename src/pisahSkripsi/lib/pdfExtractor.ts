@@ -2,15 +2,10 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { PageTextInfo } from '../types';
 
-// Set up worker for pdfjs using local bundled worker or unpkg fallback
-if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-  try {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
-  } catch {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-  }
-}
-
+// ZAIN.NET - Perbaikan PDF Worker GitHub Pages.
+// Gunakan URL worker hasil build Vite secara langsung.
+// Jangan gunakan URL worker bawaan PDF.js.
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = '';

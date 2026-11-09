@@ -1,0 +1,115 @@
+name: Fix Link 3 - PDF Firefox dan Render
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zainnet-fix-link3-pdf
+  cancel-in-progress: false
+
+jobs:
+  fix-link3:
+    name: Perbaiki pembacaan PDF Link 3
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ambil source ZAIN.NET
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Siapkan Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Patch pembaca PDF Firefox lama dan server cadangan
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/pisahSkripsi/lib/pdfExtractor.ts')
+          if not path.is_file():
+              raise SystemExit('File pdfExtractor.ts Link 3 tidak ditemukan. Tidak ada perubahan.')
+          text = path.read_text(encoding='utf-8')
+
+          before = "import * as pdfjsLib from 'pdfjs-dist';"
+          after = "import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';"
+          if before in text:
+              text = text.replace(before, after, 1)
+          elif after not in text:
+              raise SystemExit('Import PDF.js berubah. Patch dihentikan agar tidak merusak source.')
+
+          before = "import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';"
+          after = "import pdfWorker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';"
+          if before in text:
+              text = text.replace(before, after, 1)
+          elif after not in text:
+              raise SystemExit('Import worker PDF.js berubah. Patch dihentikan.')
+
+          bridge = "import { backendUrl } from '../../utils/deploymentBridge';"
+          if bridge not in text:
+              anchor = "import { PageTextInfo } from '../types';"
+              if anchor not in text:
+                  raise SystemExit('Import PageTextInfo tidak ditemukan. Patch dihentikan.')
+              text = text.replace(anchor, anchor + '\n' + bridge, 1)
+
+          # Tetapkan worker dari versi yang SAMA setiap kali dokumen dibuka;
+          # hindari worker URL root/worker lain dari modul PDF yang berbeda.
+          old = "  // First, use the local Vite-bundled PDF.js worker.\n  let loadingTask: ReturnType<typeof pdfjsLib.getDocument> | null = null;"
+          new = "  // Use a matching legacy worker for older Firefox and Chromium.\n  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;\n  let loadingTask: ReturnType<typeof pdfjsLib.getDocument> | null = null;"
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise SystemExit('Blok inisialisasi worker berubah. Patch dihentikan.')
+
+          old = "  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(bufferCopy) });"
+          new = "  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;\n  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(bufferCopy) });"
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise SystemExit('Blok OCR berubah. Patch dihentikan.')
+
+          # GitHub Pages cannot handle /api/*. Prefer the configured Render URL;
+          # if the public build variable is absent, use ZAIN.NET's existing Render host.
+          old = "    const response = await fetch('/api/extract-pdf-text', {"
+          new = ("    const configuredEndpoint = backendUrl('/api/extract-pdf-text');\n"
+                 "    const endpoint = configuredEndpoint.startsWith('/api/') &&\n"
+                 "      typeof window !== 'undefined' && window.location.hostname.endsWith('.github.io')\n"
+                 "      ? 'https://zainnet-api.onrender.com/api/extract-pdf-text'\n"
+                 "      : configuredEndpoint;\n"
+                 "    const response = await fetch(endpoint, {")
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise SystemExit('Panggilan endpoint cadangan berubah. Patch dihentikan.')
+
+          path.write_text(text, encoding='utf-8')
+          print('Berhasil: PDF.js legacy + matching worker + fallback Render pada Link 3.')
+          PY
+
+      - name: Instal dependensi
+        run: npm install --no-audit --no-fund
+
+      - name: Uji build website
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: npm run build
+
+      - name: Simpan perbaikan hanya setelah build berhasil
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/pisahSkripsi/lib/pdfExtractor.ts
+          if git diff --cached --quiet; then
+            echo 'Perbaikan sudah terpasang; tidak ada perubahan baru.'
+          else
+            git commit -m 'Fix Link 3: legacy PDF.js worker and Render PDF fallback'
+            git push origin HEAD:main
+          fi

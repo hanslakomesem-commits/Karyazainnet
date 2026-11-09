@@ -52,6 +52,24 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
     window.addEventListener('zain_sync_status',sync);
     return () => window.removeEventListener('zain_sync_status',sync);
   },[tool?.id,effectiveUserId]);
+  // ZAINNET_LINK7_SAFE_CLOSE_PARENT_20261109
+  // Generation completion is NOT a download completion signal.
+  const handleLink7GenerationReady = (fileName: string) => {
+    if (!tool || done.current) return;
+    done.current = true;
+    setStatus('Artikel selesai. Menyiapkan 2 file Word. Modul tetap terbuka sampai keduanya dikonfirmasi terunduh.');
+    recordSessionCompleted(tool, effectiveUserId, { fileName, reason: 'Artikel Link 7 selesai dibuat' }, [], 0);
+    Promise.resolve(finishRef.current?.(tool, 'Artikel Link 7 selesai dibuat')).catch((err) => {
+      setStatus('Artikel selesai, tetapi pencatatan kuota tertunda: ' + (err?.message || 'Periksa akun.'));
+    });
+  };
+  const handleLink7DownloadsConfirmed = () => {
+    if (!done.current) return;
+    setStatus('Dua file Word dikonfirmasi terunduh. Kembali ke menu utama...');
+    setCompleted(true);
+    setTimeout(() => onClose(), 1200);
+  };
+  const isLink7 = tool?.id === 'art-7' || tool?.url === 'internal://journal-converter' || tool?.url === '/journal-converter';
   const handleAutoFinishDownload = (fileName: string, reason: string) => {
     if (!tool || done.current) return;
     done.current = true;
@@ -108,7 +126,13 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
     <header className="p-3 flex items-center gap-3 border-b border-slate-700">
       <div className="flex-1"><strong>{tool.title}</strong><p role="status" className="text-xs mt-1 text-slate-300">{status}</p></div>
       <button title="Layar penuh" onClick={() => containerRef.current?.requestFullscreen?.()}><Maximize2 size={20}/></button>
-      <button aria-label="Kembali ke menu" onClick={onClose}><X size={24}/></button>
+      <button aria-label="Kembali ke menu" onClick={() => {
+        if (isLink7 && done.current) {
+          setStatus('Periksa kedua unduhan Word terlebih dahulu dan tekan tombol konfirmasi di bawah hasil artikel.');
+          return;
+        }
+        onClose();
+      }}><X size={24}/></button>
     </header>
     <div className="flex-1 min-h-0 overflow-auto">
 {tool.id === 'num-2' ||
@@ -180,11 +204,9 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
           <div key={iframeKey} className="w-full h-full overflow-y-auto bg-slate-100">
             <JournalConverterApp
               onArticleComplete={(outFileName) => {
-                handleAutoFinishDownload(
-                  outFileName,
-                  'Penyusunan naskah artikel ilmiah + Cover CD (Gemini 3.1 Flash Lite) selesai'
-                );
+                handleLink7GenerationReady(outFileName);
               }}
+              onDownloadsConfirmed={handleLink7DownloadsConfirmed}
             />
           </div>
         ) : tool.id === 'split-3' || tool.url === 'internal://pisah-skripsi' || tool.url === '/pisah-skripsi' ? (

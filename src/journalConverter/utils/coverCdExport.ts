@@ -26,7 +26,8 @@ export async function buildCoverCdDocx(article: JournalArticle): Promise<Blob> {
     throw new Error('Lengkapi Nama, NIM, Prodi, Judul, serta Bulan dan Tahun Cover CD (contoh: SEPTEMBER 2026).');
   }
   const [, bulan, tahun] = match;
-  const response = await fetch('/covercd-template.docx', { cache: 'force-cache' });
+  // ZAINNET_LINK7_COVER_BASE_PATH_20261109: GitHub Pages lives under /Karyazainnet/.
+  const response = await fetch(`${import.meta.env.BASE_URL}covercd-template.docx`, { cache: 'force-cache' });
   if (!response.ok) throw new Error('Template asli Cover CD belum terpasang di folder public.');
 
   const zip = await JSZip.loadAsync(await response.arrayBuffer());

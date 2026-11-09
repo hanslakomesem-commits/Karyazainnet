@@ -5,16 +5,18 @@ import { JournalPreview } from './components/JournalPreview';
 import { SectionEditorModal } from './components/SectionEditorModal';
 import { FootnoteManager } from './components/FootnoteManager';
 import { SkripsiInput, JournalArticle, FootnoteItem } from './types/journal';
-import { exportJournalToDocx } from './utils/docxExport';
-import { buildJournalBundle, triggerBundleDownload, downloadCoverCdOnly } from './utils/bundleExport';
+import { buildJournalDocx, exportJournalToDocx } from './utils/docxExport';
+import { triggerBundleDownload, downloadCoverCdOnly } from './utils/bundleExport';
+import { buildCoverCdDocx } from './utils/coverCdExport';
 import { isSuspiciousFilenameTitle, isValidThesisTitle, extractMetadataFromSkripsiText } from './components/SkripsiUploader';
 import { AlertCircle } from 'lucide-react';
 
 interface JournalConverterAppProps {
   onArticleComplete?: (fileName: string) => void;
+  onDownloadsConfirmed?: () => void;
 }
 
-export default function App({ onArticleComplete }: JournalConverterAppProps) {
+export default function App({ onArticleComplete, onDownloadsConfirmed }: JournalConverterAppProps) {
   const [activeTab, setActiveTab] = useState<'upload' | 'preview' | 'footnotes'>('upload');
   const [article, setArticle] = useState<JournalArticle | null>(null);
 
@@ -28,7 +30,11 @@ export default function App({ onArticleComplete }: JournalConverterAppProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isDownloadingDocx, setIsDownloadingDocx] = useState(false);
   const [isDownloadingCoverCd, setIsDownloadingCoverCd] = useState(false);
-  const [isDownloadingBundle, setIsDownloadingBundle] = useState(false);
+  // ZAINNET_LINK7_TWO_DOCX_SAFE_CLOSE_20261109
+  // Browser websites cannot observe the OS download manager. Require the user
+  // to confirm both Word files exist before returning to the main menu.
+  const [wordPairPhase, setWordPairPhase] = useState<'idle' | 'preparing' | 'requested' | 'error'>('idle');
+  const [wordPairMessage, setWordPairMessage] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Selected Zainnet Model State (saved to localStorage so user choice persists)
@@ -141,6 +147,47 @@ export default function App({ onArticleComplete }: JournalConverterAppProps) {
     throw lastErr || new Error(`Gagal memproses ${stageName}.`);
   };
 
+  const makeSafeWordFileName = (value: string): string =>
+    String(value || 'Mahasiswa').trim().slice(0, 45)
+      .replace(/[\\/?%*:|"<>]/g, '').replace(/\s+/g, '_') || 'Mahasiswa';
+
+  // Prepare BOTH files before starting either browser download. A single error
+  // never closes the article preview; it can be retried without regenerating AI.
+  const requestTwoWordDownloads = async (readyArticle: JournalArticle) => {
+    setWordPairPhase('preparing');
+    setWordPairMessage('Menyiapkan Artikel Word dan Cover CD Word...');
+    try {
+      const [articleBlob, coverBlob] = await Promise.all([
+        buildJournalDocx(readyArticle), buildCoverCdDocx(readyArticle),
+      ]);
+      if (articleBlob.size < 100 || coverBlob.size < 100) {
+        throw new Error('Salah satu dokumen Word yang dihasilkan kosong.');
+      }
+      const title = makeSafeWordFileName(readyArticle.metadata?.judul || 'Artikel');
+      const name = makeSafeWordFileName(readyArticle.metadata?.nama || 'Mahasiswa');
+      triggerBundleDownload(articleBlob, `Artikel_Jurnal_${title}.docx`);
+      triggerBundleDownload(coverBlob, `Cover_CD_${name}.docx`);
+      setWordPairPhase('requested');
+      setWordPairMessage('Dua unduhan Word sudah diminta ke browser. Periksa folder Download dan izinkan beberapa unduhan bila diminta. Jika ada yang belum tersimpan, klik Unduh Ulang.');
+    } catch (err: any) {
+      console.error('[ZAIN.NET Link7] Gagal menyiapkan dua DOCX:', err);
+      setWordPairPhase('error');
+      setWordPairMessage(`Dua Word belum siap: ${err?.message || 'Terjadi kesalahan.'} Halaman tetap terbuka, silakan coba Unduh Ulang.`);
+    }
+  };
+
+  const retryTwoWordDownloads = async () => {
+    if (!article || wordPairPhase === 'preparing') return;
+    // Always use current article so manual edits are included in both documents.
+    await requestTwoWordDownloads(article);
+  };
+
+  const confirmTwoWordDownloads = () => {
+    if (wordPairPhase !== 'requested') return;
+    // The user confirms both files exist; the parent will now close the module.
+    onDownloadsConfirmed?.();
+  };
+
   // Handle Journal AI Generation (Multi-stage process to prevent JSON truncation/timeouts)
   const handleGenerateJournal = async (input: SkripsiInput) => {
     setIsLoading(true);
@@ -248,9 +295,12 @@ export default function App({ onArticleComplete }: JournalConverterAppProps) {
         throw new Error('Hasil belum lengkap. Silakan ulangi proses; sesi belum dianggap selesai.');
       }
       setArticle(fullArticle);
-      onArticleComplete?.(`${(fullArticle.metadata as any)?.judul || 'Artikel'}.docx`);
-      setGenerationStatus({ stage: 0, message: '', percent: 100 });
       setActiveTab('preview');
+      setGenerationStatus({ stage: 0, message: '', percent: 100 });
+      // Record creation/quota ONCE, without closing the module.
+      onArticleComplete?.(`${(fullArticle.metadata as any)?.judul || 'Artikel'}.docx`);
+      // Automatically request two standalone Word files, not a ZIP.
+      await requestTwoWordDownloads(fullArticle);
     } catch (err: any) {
       console.error('Generation Error:', err);
       setErrorMsg(err.message || 'Terjadi kesalahan saat memproses skripsi.');
@@ -266,7 +316,7 @@ export default function App({ onArticleComplete }: JournalConverterAppProps) {
     setIsDownloadingDocx(true);
     try {
       await exportJournalToDocx(article);
-      onArticleComplete?.(`Artikel_${article.id}.docx`);
+      // Re-download does not re-record the session or consume another quota.
     } catch (err: any) {
       console.error('Docx Export Error:', err);
       alert('Gagal mengunduh file Word artikel: ' + (err?.message || 'Harap coba lagi.'));
@@ -286,24 +336,6 @@ export default function App({ onArticleComplete }: JournalConverterAppProps) {
       alert('Gagal mengunduh Cover CD: ' + (err?.message || 'Pastikan Nama, NIM, dan Prodi terisi.'));
     } finally {
       setIsDownloadingCoverCd(false);
-    }
-  };
-
-  // Handle Complete Bundle Export (.zip Artikel + Cover CD)
-  const handleDownloadBundle = async () => {
-    if (!article) return;
-    setIsDownloadingBundle(true);
-    try {
-      const bundle = await buildJournalBundle(article);
-      triggerBundleDownload(bundle.blob, bundle.filename);
-      if (onArticleComplete) {
-        onArticleComplete(bundle.filename);
-      }
-    } catch (err: any) {
-      console.error('Bundle Export Error:', err);
-      alert('Gagal membuat paket ZIP Artikel + Cover CD: ' + (err?.message || 'Harap coba lagi.'));
-    } finally {
-      setIsDownloadingBundle(false);
     }
   };
 
@@ -362,12 +394,44 @@ export default function App({ onArticleComplete }: JournalConverterAppProps) {
         setActiveTab={handleTabChange}
         hasArticle={!!article}
         onDownloadDocx={handleDownloadDocx}
-        onDownloadBundle={handleDownloadBundle}
         onDownloadCoverCd={handleDownloadCoverCd}
-        isDownloading={isDownloadingDocx || isDownloadingCoverCd || isDownloadingBundle}
+        isDownloading={isDownloadingDocx || isDownloadingCoverCd || wordPairPhase === 'preparing'}
         selectedModel={selectedModel}
         onSelectModel={handleSelectModel}
       />
+
+      {/* 2-file download confirmation stays visible until the user confirms. */}
+      {article && (
+        <div role="status" className="sticky top-0 z-40 mx-auto w-full max-w-5xl bg-blue-950 text-white p-4 shadow-xl border-b-4 border-cyan-400">
+          <p className="font-bold text-base">Artikel selesai — 2 File Word (tanpa ZIP)</p>
+          <p className="text-sm mt-1" aria-live="polite">{wordPairMessage}</p>
+          <div className="flex flex-wrap gap-2 mt-3">
+            <button type="button" onClick={retryTwoWordDownloads}
+              disabled={wordPairPhase === 'preparing'}
+              className="rounded-lg bg-blue-600 px-4 py-2 font-semibold disabled:opacity-50">
+              {wordPairPhase === 'preparing' ? 'Menyiapkan 2 Word...' : 'Unduh Ulang 2 File Word'}
+            </button>
+            <button type="button" onClick={handleDownloadDocx}
+              disabled={isDownloadingDocx || wordPairPhase === 'preparing'}
+              className="rounded-lg bg-slate-700 px-4 py-2 font-semibold disabled:opacity-50">
+              Unduh Artikel.docx
+            </button>
+            <button type="button" onClick={handleDownloadCoverCd}
+              disabled={isDownloadingCoverCd || wordPairPhase === 'preparing'}
+              className="rounded-lg bg-slate-700 px-4 py-2 font-semibold disabled:opacity-50">
+              Unduh Cover_CD.docx
+            </button>
+            <button type="button" onClick={confirmTwoWordDownloads}
+              disabled={wordPairPhase !== 'requested'}
+              className="rounded-lg bg-emerald-600 px-4 py-2 font-bold disabled:opacity-50">
+              Saya Sudah Menerima Kedua File — Kembali ke Beranda
+            </button>
+          </div>
+          <p className="text-xs text-blue-100 mt-2">
+            Browser dapat memblokir unduhan otomatis ganda. ZAIN.NET tidak akan kembali ke beranda sebelum Anda mengonfirmasi kedua file sudah tersimpan.
+          </p>
+        </div>
+      )}
 
       {/* Main Workspace Body */}
       <main className="flex-1 pb-16">
@@ -440,10 +504,9 @@ export default function App({ onArticleComplete }: JournalConverterAppProps) {
             onUpdateArticle={setArticle}
             onDownloadDocx={handleDownloadDocx}
             onDownloadCoverCd={handleDownloadCoverCd}
-            onDownloadBundle={handleDownloadBundle}
             isDownloading={isDownloadingDocx}
             isDownloadingCoverCd={isDownloadingCoverCd}
-            isDownloadingBundle={isDownloadingBundle}
+            isDownloadingBundle={false}
             onEditSection={handleOpenSectionEditor}
           />
         )}

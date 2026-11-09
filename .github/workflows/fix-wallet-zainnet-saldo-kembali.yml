@@ -1,0 +1,137 @@
+name: Fix ZAIN.NET - Saldo Tidak Kembali Sendiri
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zainnet-wallet-balance-fix
+  cancel-in-progress: false
+
+jobs:
+  fix-wallet:
+    name: Perbaiki saldo, uji build, simpan source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ambil branch main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Siapkan Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Hentikan auto-restore saldo yang keliru
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          file = Path('src/App.tsx')
+          source = file.read_text(encoding='utf-8')
+          marker = 'ZAINNET_WALLET_NO_AUTO_RECREDIT_20261109'
+
+          def replace_once(old, new, label):
+              global source
+              n = source.count(old)
+              if n != 1:
+                  raise SystemExit(f'{label}: pola kode tidak cocok (jumlah={n}). Stop agar tidak merusak source.')
+              source = source.replace(old, new, 1)
+              print(f'OK: {label}')
+
+          if marker not in source:
+              start = '  // Auto-reconcile wallet balance: Ensure user never loses credited top-up balance'
+              end = '  }, [user?.uid, user?.email, purchases, userWalletBalance]);'
+              if source.count(start) != 1 or source.count(end) != 1:
+                  raise SystemExit('Blok auto-restore saldo berubah; tidak memodifikasi kode.')
+              a = source.index(start)
+              b = source.index(end, a) + len(end)
+              source = source[:a] + (
+                  '  // ' + marker + '\n'
+                  '  // Saldo hanya berasal dari dokumen dompet utama di Supabase.\n'
+                  '  // JANGAN mengisi ulang saldo berdasar daftar purchases yang bisa terlambat dimuat.\n'
+                  '  // Riwayat transaksi digunakan untuk audit, bukan untuk menimpa wallet.\n'
+              ) + source[b:]
+              print('OK: auto-reconcile yang salah dinonaktifkan')
+          else:
+              print('Auto-reconcile sudah diperbaiki sebelumnya')
+
+          old_snapshot = (
+              'setUserWalletBalance((prev) => {\n'
+              '              if (incomingBal === 0 && prev > 0) return prev;\n'
+              '              return incomingBal;\n'
+              '            });'
+          )
+          new_snapshot = 'setUserWalletBalance(incomingBal);'
+          if old_snapshot in source:
+              replace_once(old_snapshot, new_snapshot, 'Realtime wallet sesuai Supabase')
+          elif new_snapshot not in source:
+              raise SystemExit('Bagian realtime wallet tidak dikenali.')
+
+          old_cache_guard = 'if (incomingBal > 0) {'
+          new_cache_guard = 'if (incomingBal >= 0) {'
+          if old_cache_guard in source:
+              replace_once(old_cache_guard, new_cache_guard, 'Cache juga diperbarui saat saldo menjadi nol')
+          elif new_cache_guard not in source:
+              raise SystemExit('Pengaturan cache saldo tidak dikenali.')
+
+          replacements = [
+              ('setUserWalletBalance((prev) => Math.max(prev, cloudBal!));',
+               'setUserWalletBalance(cloudBal!);',
+               'Pemulihan sesi memakai saldo terbaru, bukan saldo terbesar'),
+              ('setUserWalletBalance((prev) => Math.max(prev, customBal!));',
+               'setUserWalletBalance(customBal!);',
+               'Login akun memakai saldo terbaru, bukan saldo terbesar'),
+          ]
+          for old, new, label in replacements:
+              if old in source:
+                  replace_once(old, new, label)
+              elif new not in source:
+                  raise SystemExit(f'{label}: bagian source tidak dikenali.')
+
+          file.write_text(source, encoding='utf-8')
+          print('Selesai patch App.tsx. TIDAK mengubah database atau nominal saldo.')
+          PY
+
+      - name: Pastikan hanya file App berubah
+        shell: bash
+        run: |
+          git diff --check
+          git diff --stat
+          git diff --name-only | while IFS= read -r f; do
+            case "$f" in
+              src/App.tsx) ;;
+              *) echo "Perubahan di luar cakupan: $f"; exit 1 ;;
+            esac
+          done
+          grep -q ZAINNET_WALLET_NO_AUTO_RECREDIT_20261109 src/App.tsx
+          if grep -q 'Auto-reconcile wallet balance: Ensure user never loses credited top-up balance' src/App.tsx; then
+            echo 'Auto-reconcile lama masih aktif!'; exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Periksa build website
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: npm run build
+
+      - name: Commit patch di branch main
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/App.tsx
+          if git diff --cached --quiet; then
+            echo 'Patch sudah ada, tidak ada file baru untuk disimpan.'
+          else
+            git commit -m 'Fix wallet: prevent stale auto-credit after module purchase'
+            git push origin HEAD:main
+          fi

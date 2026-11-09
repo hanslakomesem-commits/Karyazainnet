@@ -1,0 +1,215 @@
+name: Fix Menu 1 Link 7 - AI Stage 1 Timeout & Error Handling
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix-link7-stage1:
+    name: Repair article generation and validate build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Patch Link 7 stage 1 and Gemini backend
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          frontend = Path('src/journalConverter/App.tsx')
+          backend = Path('server/journal7/router.ts')
+
+          FRONTEND_REPLACEMENT = r'''  // Keep the generator at stage 1 while one request is being processed.
+            // Never retry a billable AI request blindly: an aborted request may still
+            // complete on the server and consume Gemini quota.
+            const safeFetchJson = async (
+              primaryPath: string,
+              options: RequestInit,
+              stageName: string,
+              _legacyMaxRetries = 1
+            ) => {
+              const fallbackPath = primaryPath.startsWith('/api/journal7/')
+                ? primaryPath.replace('/api/journal7/', '/api/')
+                : null;
+              const pathsToTry = fallbackPath ? [primaryPath, fallbackPath] : [primaryPath];
+
+              for (const targetUrl of pathsToTry) {
+                const controller = new AbortController();
+                const timeout = window.setTimeout(() => controller.abort(), 210000);
+                const slowNotice = window.setTimeout(() => {
+                  setGenerationStatus((prev) => ({
+                    ...prev,
+                    message: `${stageName}: server sedang menghubungi Gemini. Proses masih berjalan; jangan ulangi agar tidak memakai kuota dua kali.`,
+                  }));
+                }, 25000);
+                const longerNotice = window.setTimeout(() => {
+                  setGenerationStatus((prev) => ({
+                    ...prev,
+                    message: `${stageName}: permintaan masih diproses. Jika gagal, pesan penyebab akan ditampilkan otomatis.`,
+                  }));
+                }, 85000);
+                try {
+                  const response = await fetch(targetUrl, { ...options, signal: controller.signal });
+                  // Only retry on a confirmed missing route: no AI generation was started.
+                  if (response.status === 404 && targetUrl !== pathsToTry[pathsToTry.length - 1]) {
+                    continue;
+                  }
+                  const raw = await response.text();
+                  let data: any;
+                  try {
+                    data = JSON.parse(raw);
+                  } catch {
+                    throw new Error(
+                      `Server ${stageName} tidak mengirim JSON (HTTP ${response.status}). Periksa alamat Render di GitHub Pages: VITE_API_BASE_URL.`
+                    );
+                  }
+                  if (!response.ok) {
+                    const reason = typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`;
+                    if (response.status === 429) throw new Error(`Kuota Gemini API habis/terbatas: ${reason}`);
+                    if (response.status === 401 || response.status === 403) {
+                      throw new Error(`Akses API ditolak pada ${stageName} (HTTP ${response.status}): ${reason}`);
+                    }
+                    throw new Error(`${stageName} gagal (HTTP ${response.status}): ${reason}`);
+                  }
+                  if (!data || typeof data !== 'object') {
+                    throw new Error(`${stageName}: struktur respons API tidak valid.`);
+                  }
+                  return data;
+                } catch (err: any) {
+                  if (err?.name === 'AbortError') {
+                    throw new Error(
+                      `${stageName} melewati batas waktu. Jangan memulai ulang langsung: server mungkin masih menyelesaikan permintaan. Periksa Logs Render pada jam kejadian.`
+                    );
+                  }
+                  if (err instanceof TypeError || /Failed to fetch|NetworkError/i.test(String(err?.message))) {
+                    throw new Error(
+                      `${stageName} tidak terhubung ke backend Render. Cek https://zainnet-api.onrender.com/api/journal7/health dan VITE_API_BASE_URL, serta FRONTEND_ORIGINS di Render.`
+                    );
+                  }
+                  throw err;
+                } finally {
+                  window.clearTimeout(timeout);
+                  window.clearTimeout(slowNotice);
+                  window.clearTimeout(longerNotice);
+                }
+              }
+              throw new Error(`${stageName}: endpoint server tidak ditemukan (404). Periksa versi backend Render.`);
+            };
+
+          '''
+
+          BACKEND_REPLACEMENT = r'''// Bounded AI requests: do not loop through many models and retry bills silently.
+          // A client-side abort does NOT guarantee that Google cancels processing.
+          async function generateContentWithFallback(params: {
+            contents: string;
+            config?: any;
+            model?: string;
+            maxRetriesPerModel?: number;
+          }): Promise<any> {
+            const { contents, config, model: requestedModel } = params;
+            // Only a single fallback, and only for a model genuinely unavailable (404/503).
+            const models = Array.from(new Set([
+              requestedModel?.trim(),
+              'gemini-3.1-flash-lite',
+              'gemini-3.5-flash-lite',
+            ].filter((name): name is string => Boolean(name)))).slice(0, 2);
+            let lastError = 'Gemini tidak merespons';
+
+            for (let i = 0; i < models.length; i++) {
+              const modelName = models[i];
+              const controller = new AbortController();
+              const timeout = setTimeout(() => controller.abort(), 80000);
+              try {
+                console.info(`[Journal7 Gemini] Starting model ${modelName}, attempt ${i + 1}/${models.length}`);
+                const result: any = await ai.models.generateContent({
+                  model: modelName,
+                  contents,
+                  config: {
+                    ...(config || {}),
+                    abortSignal: controller.signal,
+                    httpOptions: { ...(config?.httpOptions || {}), timeout: 80000 },
+                  },
+                });
+                const textContent = getTextFromResponse(result);
+                if (!textContent?.trim()) throw new Error('Gemini mengirim hasil kosong');
+                console.info(`[Journal7 Gemini] Model ${modelName} succeeded`);
+                return result;
+              } catch (e: any) {
+                const msg = String(e?.message || e || 'Error tidak diketahui');
+                lastError = msg;
+                console.warn(`[Journal7 Gemini] Model ${modelName} failed:`, msg.slice(0, 300));
+                // Quota, billing and authentication errors must not trigger repeat billing.
+                if (/429|RESOURCE_EXHAUSTED|spending cap|quota|rate.limit|RESOURCE EXHAUSTED/i.test(msg)) {
+                  throw new Error('Gemini API mencapai batas kuota/rate limit (429). Periksa Usage & Rate Limits di Google AI Studio. ' + msg.slice(0, 150));
+                }
+                if (/401|403|API_KEY_INVALID|PERMISSION_DENIED|invalid.api.key/i.test(msg)) {
+                  throw new Error('GEMINI_API_KEY tidak valid atau akses model ditolak. Periksa Environment Render dan proyek Google AI Studio.');
+                }
+                // Never immediately rerun a potentially still-billable timeout.
+                if (controller.signal.aborted || /AbortError|aborted|timeout|ETIMEDOUT/i.test(msg)) {
+                  throw new Error('Gemini tidak menyelesaikan permintaan dalam 80 detik. Periksa Logs Render dan status penggunaan API sebelum mencoba lagi.');
+                }
+                const safeToFallback = /404|NOT_FOUND|not found|no longer available|503|UNAVAILABLE|overloaded|high demand/i.test(msg);
+                if (!safeToFallback || i === models.length - 1) {
+                  throw new Error('Gagal memproses artikel dengan Gemini: ' + msg.slice(0, 220));
+                }
+                console.warn(`[Journal7 Gemini] Trying one fallback model after ${modelName} was unavailable`);
+              } finally {
+                clearTimeout(timeout);
+              }
+            }
+            throw new Error('Tidak ada model Gemini yang merespons: ' + lastError.slice(0, 180));
+          }
+
+          '''
+
+          def replace_region(path: Path, begin: str, end: str, replacement: str) -> None:
+              text = path.read_text(encoding='utf-8')
+              if 'Bounded AI requests:' in text and path == backend:
+                  print('Backend already patched, skipping')
+                  return
+              if 'Keep the generator at stage 1' in text and path == frontend:
+                  print('Frontend already patched, skipping')
+                  return
+              assert text.count(begin) == 1, f'Unexpected start marker count in {path}'
+              start = text.index(begin)
+              assert end in text[start:], f'Missing end marker in {path}'
+              stop = text.index(end,start)
+              updated = text[:start] + replacement + text[stop:]
+              assert updated != text
+              path.write_text(updated,encoding='utf-8')
+              print('Patched', path)
+
+          replace_region(frontend,
+              '  // Helper to safely execute and parse JSON API responses with automatic retry and endpoint fallback',
+              '  // Handle Journal AI Generation', FRONTEND_REPLACEMENT)
+          replace_region(backend,
+              '// Robust wrapper with automatic exponential backoff retry and multi-model fallback',
+              '// Health check endpoint', BACKEND_REPLACEMENT)
+          PY
+      - name: Validate changes
+        run: |
+          git diff --check
+          npm install --no-audit --no-fund
+          npm run build
+      - name: Commit safe changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/journalConverter/App.tsx server/journal7/router.ts
+          if git diff --cached --quiet; then
+            echo 'Patch already present.'
+          else
+            git commit -m 'Fix Link 7 AI stage timeout and prevent uncontrolled Gemini retries'
+            git push
+          fi

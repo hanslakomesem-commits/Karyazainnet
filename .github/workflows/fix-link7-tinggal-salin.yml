@@ -1,0 +1,70 @@
+name: Fix Link 7 - Jalankan Patch Dua Word
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zainnet-link7-dua-word
+  cancel-in-progress: false
+
+jobs:
+  perbaiki-link7:
+    name: Pasang patch, build, simpan source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ambil source terbaru
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Siapkan Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Terapkan patch Link 7 yang sudah diunggah
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/fix-link7-dua-word-sebelum-tutup.yml')
+          if not path.exists():
+              raise SystemExit('Workflow patch lama belum ada di folder .github/workflows/')
+          source = path.read_text(encoding='utf-8')
+          begin = "          cat > /tmp/zainnet_fix_link7.py <<'PY_FIX'\n"
+          end = '\n          PY_FIX\n'
+          if source.count(begin) != 1 or source.count(end) != 1:
+              raise SystemExit('Isi patch Link 7 tidak sesuai. Jangan lanjutkan.')
+          embedded = source.split(begin, 1)[1].split(end, 1)[0]
+          script = '\n'.join(line[10:] for line in embedded.splitlines()) + '\n'
+          compile(script, 'zainnet_fix_link7.py', 'exec')
+          Path('/tmp/zainnet_fix_link7.py').write_text(script, encoding='utf-8')
+          print('Patch Link 7 berhasil diperiksa.')
+          PY
+          python3 /tmp/zainnet_fix_link7.py
+
+      - name: Pasang dependensi (tanpa npm ci)
+        run: npm install --no-audit --no-fund
+
+      - name: Uji build ZAIN.NET
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: npm run build
+
+      - name: Simpan perbaikan ke branch main
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/journalConverter/App.tsx src/components/ToolViewerModal.tsx src/journalConverter/utils/coverCdExport.ts
+          if git diff --cached --quiet; then
+            echo 'Source sudah diperbaiki; tidak ada commit baru.'
+          else
+            git commit -m 'Fix Link7: dua Word sebelum kembali ke beranda'
+            git push origin HEAD:main
+          fi

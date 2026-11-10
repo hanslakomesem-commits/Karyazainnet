@@ -1,0 +1,275 @@
+name: ZAIN.NET - Perbaiki OCR Foto Menu 10
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zainnet-fix-menu10-ocr
+  cancel-in-progress: false
+
+jobs:
+  fix-ocr:
+    name: Perbaiki OCR dan pemetaan foto
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Patch OCR frontend Menu 10
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          ocr_path = Path('src/gabungFile/utils/ocrService.ts')
+          app_path = Path('src/gabungFile/App.tsx')
+          ui_path = Path('src/gabungFile/components/ScanUploader.tsx')
+
+          def replace_once(text, old, new, name):
+              n = text.count(old)
+              if n != 1:
+                  raise RuntimeError(f'{name}: diharapkan tepat 1 kecocokan, ditemukan {n}. Source mungkin sudah berubah. Tidak ada file yang disimpan.')
+              return text.replace(old, new, 1)
+
+          ocr = ocr_path.read_text(encoding='utf-8')
+          app = app_path.read_text(encoding='utf-8')
+          ui = ui_path.read_text(encoding='utf-8')
+
+          if "backendUrl('/api/gemini/document-ocr')" in ocr:
+              raise RuntimeError('Patch tampaknya sudah terpasang. Hentikan agar tidak terpasang ganda.')
+          ocr = replace_once(ocr, 'export interface DocumentOcrResult {',
+              "import { backendUrl } from '../../utils/deploymentBridge';\n\n" +
+              'export interface DocumentOcrResult {', 'import backend')
+          ocr = replace_once(ocr, 'maxDim = 900', 'maxDim = 1500', 'resolusi gambar AI')
+          ocr = replace_once(ocr, "canvas.toDataURL('image/jpeg', 0.75)", "canvas.toDataURL('image/jpeg', 0.86)", 'kualitas gambar AI')
+          ocr = replace_once(ocr, "fetch('/api/gemini/document-ocr', {", "fetch(backendUrl('/api/gemini/document-ocr'), {", 'endpoint Render')
+          ocr = replace_once(ocr, 'controller.abort(), 12000', 'controller.abort(), 65000', 'timeout cold start Render')
+          # Kirim tipe yang telah dikenali secara eksplisit. Sebelumnya titleSnippet saja
+          # kadang tidak mengandung kata yang bisa dipetakan ke target.
+          start = ocr.index('export async function performQuickHeaderOcr(')
+          ocr = ocr[:start] + r'''// Worker OCR lokal yang digunakan saat Render/Gemini tidak bisa diakses.
+          // Memindai teks pada foto, BUKAN menebak dari nama WhatsApp Image.
+          async function recognizeLocally(file: File): Promise<string> {
+            const { createWorker } = await import('tesseract.js');
+            // Bahasa Indonesia + Inggris; data bahasa diunduh oleh Tesseract.js pada pemindaian pertama.
+            const worker = await createWorker('ind+eng', 1);
+            try {
+              const result = await worker.recognize(file);
+              const text = result?.data?.text || '';
+              const confidence = Number(result?.data?.confidence ?? 0);
+              if (confidence < 25 || text.trim().length < 6) return '';
+              return text.replace(/\s+/g, ' ').trim().slice(0, 2400);
+            } finally {
+              await worker.terminate();
+            }
+          }
+
+          const typeToHeading: Record<string, string> = {
+            pengesahan: 'HALAMAN PENGESAHAN TIM PENGUJI',
+            persetujuan: 'HALAMAN PERSETUJUAN PEMBIMBING',
+            keaslian: 'SURAT PERNYATAAN KEASLIAN TULISAN',
+            surat_tugas: 'SURAT TUGAS PEMBIMBING',
+            kartu_bimbingan_depan: 'KARTU BIMBINGAN HALAMAN DEPAN',
+            kartu_bimbingan_belakang: 'KARTU BIMBINGAN CATATAN KONSULTASI',
+            izin_penelitian: 'SURAT IZIN PENELITIAN',
+            telah_meneliti: 'SURAT TELAH MENELITI',
+            bebas_plagiasi: 'SURAT KETERANGAN BEBAS PLAGIASI',
+          };
+
+          /** Selalu coba OCR sungguhan: Gemini via Render, kemudian Tesseract di browser. */
+          export async function performQuickHeaderOcr(file: File): Promise<string> {
+            try {
+              const ai = await performDocumentAiOcr(file);
+              if (ai) {
+                const mappedType = ai.documentType && typeToHeading[ai.documentType];
+                // Jangan mengubah hasil berkeyakinan rendah menjadi pemetaan otomatis.
+                if (mappedType && ai.confidence !== 'low') {
+                  return `${mappedType} ${ai.titleSnippet || ''}`.trim();
+                }
+                if (ai.titleSnippet && ai.titleSnippet.trim().length > 5) {
+                  return ai.titleSnippet.trim();
+                }
+              }
+            } catch (err) {
+              console.warn('[Menu 10] OCR Gemini gagal:', err);
+            }
+
+            try {
+              const result = await recognizeLocally(file);
+              if (result) return result;
+            } catch (err) {
+              console.warn('[Menu 10] OCR lokal tidak tersedia:', err);
+            }
+
+            // Fallback nama file hanya jika nama memang bermakna, bukan WhatsApp Image.
+            const name = file.name.toUpperCase();
+            for (const [type, heading] of Object.entries(typeToHeading)) {
+              const tokens: Record<string, RegExp> = {
+                pengesahan: /PENGESAHAN/,
+                persetujuan: /PERSETUJUAN/,
+                keaslian: /KEASLIAN|ORISINALITAS/,
+                surat_tugas: /SURAT[ _-]*TUGAS/,
+                kartu_bimbingan_depan: /KARTU.*BIMBINGAN.*(DEPAN|1)/,
+                kartu_bimbingan_belakang: /KARTU.*BIMBINGAN.*(BELAKANG|2)/,
+                izin_penelitian: /IZIN.*PENELITIAN/,
+                telah_meneliti: /TELAH.*MENELITI/,
+                bebas_plagiasi: /BEBAS.*PLAGIASI/,
+              };
+              if (tokens[type].test(name)) return heading;
+            }
+            return '';
+          }
+          '''
+          # Handler terpisah untuk pemindaian satu foto dan seluruh foto secara BERURUTAN.
+          app = replace_once(app,
+              "  const [isOcrRunning, setIsOcrRunning] = useState(false);",
+              "  const [isOcrRunning, setIsOcrRunning] = useState(false);\n  const [ocrProgress, setOcrProgress] = useState('');",
+              'status OCR')
+
+          p1 = app.index('  const handleRunOcrForScan = async (scanId: string) => {')
+          p2 = app.index('  const handleAssignTarget = (', p1)
+          app = app[:p1] + r'''  const handleRunOcrForScan = async (scanId: string) => {
+              if (isOcrRunning) return;
+              const scan = scans.find((s) => s.id === scanId);
+              if (!scan) return;
+              setIsOcrRunning(true);
+              setOcrProgress(`Memindai ${scan.name}...`);
+              try {
+                const text = (await performQuickHeaderOcr(scan.file)).trim();
+                if (!text) {
+                  alert('OCR belum bisa membaca foto ini. Coba crop area kertas, perjelas cahaya, atau pilih jenis dokumen secara manual. Periksa juga jaringan/layanan Render.');
+                  return;
+                }
+                const nextScans = scans.map((s) => s.id === scanId
+                  ? { ...s, ocrSnippet: text, detectionSource: 'ocr' as const }
+                  : { ...s });
+                const result = autoMapScansToTargets(targets, nextScans);
+                setTargets(result.updatedTargets);
+                setScans(result.updatedScans);
+                const detected = result.updatedScans.find(s => s.id === scanId)?.matchedTargetId;
+                if (!detected) {
+                  alert(`Teks berhasil dibaca, tetapi jenis dokumen belum dikenali:\n${text.slice(0, 220)}\n\nPilih target secara manual.`);
+                }
+              } catch (err) {
+                console.error('[Menu 10] Gagal OCR foto', err);
+                alert('Pemindaian OCR mengalami kesalahan. Pilih target manual atau coba browser terbaru.');
+              } finally {
+                setOcrProgress('');
+                setIsOcrRunning(false);
+              }
+            };
+
+            const handleRunOcrForAllScans = async () => {
+              if (isOcrRunning || scans.length === 0) return;
+              setIsOcrRunning(true);
+              let readable = 0;
+              try {
+                // Jangan jalankan forEach(async ...): hasil React state dapat saling menimpa.
+                const nextScans = scans.map((s) => ({ ...s }));
+                for (let i = 0; i < nextScans.length; i++) {
+                  const item = nextScans[i];
+                  setOcrProgress(`Memindai foto ${i + 1} dari ${nextScans.length}: ${item.name}`);
+                  try {
+          const text = (await performQuickHeaderOcr(item.file)).trim();
+          if (text) {
+            item.ocrSnippet = text;
+            item.detectionSource = 'ocr';
+            readable++;
+          }
+                  } catch (err) {
+          console.warn('[Menu 10] OCR foto dilewati:', item.name, err);
+                  }
+                }
+                // HANYA satu kali pemetaan & setState setelah semua hasil tersedia.
+                const result = autoMapScansToTargets(targets, nextScans);
+                setTargets(result.updatedTargets);
+                setScans(result.updatedScans);
+                const mapped = result.updatedScans.filter(s => !!s.matchedTargetId).length;
+                alert(`Pemindaian selesai. Teks terbaca: ${readable}/${nextScans.length}. Dokumen dipetakan: ${mapped}/${nextScans.length}.\n\nFoto yang belum dipetakan dapat dipilih targetnya secara manual.`);
+              } finally {
+                setOcrProgress('');
+                setIsOcrRunning(false);
+              }
+            };
+
+          ''' + app[p2:]
+          app = replace_once(app,
+              '          onRunOcrForScan={handleRunOcrForScan}',
+              '          onRunOcrForScan={handleRunOcrForScan}\n          onRunOcrForAll={handleRunOcrForAllScans}\n          ocrProgress={ocrProgress}',
+              'operasi OCR batch')
+
+          ui = replace_once(ui,
+              '  onRunOcrForScan: (id: string) => void;',
+              '  onRunOcrForScan: (id: string) => void;\n  onRunOcrForAll: () => void;\n  ocrProgress?: string;',
+              'props OCR batch')
+          ui = replace_once(ui,
+              '  onRunOcrForScan,\n  onAssignTarget,',
+              '  onRunOcrForScan,\n  onRunOcrForAll,\n  ocrProgress,\n  onAssignTarget,',
+              'handler OCR batch')
+          ui = replace_once(ui,
+              'scans.forEach((s) => onRunOcrForScan(s.id));',
+              'onRunOcrForAll();',
+              'hapus OCR paralel')
+          ui = replace_once(ui,
+              '                Pindai OCR Semua Dokumen\n              </button>',
+              "                {isOcrRunning ? 'Sedang Memindai...' : 'Pindai OCR Semua Dokumen'}\n              </button>",
+              'label tombol OCR')
+          ui = replace_once(ui,
+              '                      {/* Detection badge info */}',
+              '''                      {scan.ocrSnippet && (
+                        <p className="text-[10px] text-slate-600 mt-1 whitespace-normal break-words" title={scan.ocrSnippet}>
+                          OCR membaca: {scan.ocrSnippet.slice(0, 170)}
+                        </p>
+                      )}
+                      {/* Detection badge info */}''',
+              'pratinjau teks OCR')
+          ui = replace_once(ui,
+              '          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200">',
+              '''          {ocrProgress && (
+            <p role="status" className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg p-2">
+              {ocrProgress}. Foto yang gagal akan tetap bisa dipilih manual.
+            </p>
+          )}
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200">''',
+              'progres OCR')
+
+          ocr_path.write_text(ocr, encoding='utf-8')
+          app_path.write_text(app, encoding='utf-8')
+          ui_path.write_text(ui, encoding='utf-8')
+          print('OK: OCR sungguhan (Render/Gemini + Tesseract lokal), batch berurutan, feedback, preview OCR.')
+          PY
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build website
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: |
+          npm run build
+          test -s dist/index.html
+
+      - name: Commit changes after build passes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/gabungFile/utils/ocrService.ts src/gabungFile/App.tsx src/gabungFile/components/ScanUploader.tsx
+          if git diff --cached --quiet; then
+            echo 'Tidak ada perubahan yang perlu disimpan.'
+          else
+            git commit -m 'Fix Menu10: OCR foto via Render dan Tesseract, pemetaan batch aman'
+            git push origin HEAD:main
+          fi

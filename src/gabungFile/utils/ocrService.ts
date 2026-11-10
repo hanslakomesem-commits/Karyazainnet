@@ -108,7 +108,7 @@ export async function performDocumentAiOcr(file: File): Promise<DocumentOcrResul
 async function recognizeLocally(file: File): Promise<string> {
   const { createWorker } = await import('tesseract.js');
   // Bahasa Indonesia + Inggris; data bahasa diunduh oleh Tesseract.js pada pemindaian pertama.
-  const worker = await createWorker('ind+eng', 1);
+  const worker = await createWorker(['ind', 'eng'], 1);
   try {
     const result = await worker.recognize(file);
     const text = result?.data?.text || '';

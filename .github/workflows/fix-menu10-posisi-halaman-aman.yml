@@ -1,0 +1,279 @@
+name: 'ZAIN.NET - Perbaiki Menu 10 Posisi Halaman'
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-menu10-posisi-halaman-aman.yml
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: zainnet-fix-menu10
+  cancel-in-progress: false
+
+jobs:
+  fix-menu10:
+    name: Perbaiki deteksi dan penempatan 3 halaman skripsi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Perbaiki 4 file Menu 10 secara aman
+        shell: bash
+        run: |
+          python3 - <<'PY_FIX_MENU10'
+          from pathlib import Path
+
+          PARSER = Path('src/gabungFile/utils/docxParser.ts')
+          MODIFIER = Path('src/gabungFile/utils/docxModifier.ts')
+          MAPPING = Path('src/gabungFile/components/MappingTable.tsx')
+          OUTLINE = Path('src/gabungFile/components/DocumentOutlineModal.tsx')
+
+
+          def replace_once(source: str, old: str, new: str, label: str) -> str:
+              if source.count(old) != 1:
+                  if new in source and old not in source:
+                      print(f'[OK] {label} already installed')
+                      return source
+                  raise RuntimeError(f'{label}: expected exactly 1 original block, found {source.count(old)}. Source unchanged!')
+              print(f'[OK] {label}')
+              return source.replace(old, new, 1)
+
+
+          def replace_between(source: str, opening: str, closing: str, replacement: str, label: str) -> str:
+              if source.count(opening) != 1 or source.count(closing) != 1:
+                  raise RuntimeError(f'{label}: anchor mismatch. Stop without writing.')
+              start = source.index(opening)
+              stop = source.index(closing, start)
+              if stop <= start:
+                  raise RuntimeError(f'{label}: invalid anchor order')
+              print(f'[OK] {label}')
+              return source[:start] + replacement + source[stop:]
+
+
+          # Only write the files once every transformation has succeeded.
+          parser = PARSER.read_text(encoding='utf-8')
+          modifier = MODIFIER.read_text(encoding='utf-8')
+          mapping = MAPPING.read_text(encoding='utf-8')
+          outline = OUTLINE.read_text(encoding='utf-8')
+
+          heading_helper = r'''
+          /**
+           * Standalone titles only. Never use mentions inside table of contents or
+           * ordinary paragraphs as replacement anchors for signed thesis pages.
+           * Ambiguous matches are deliberately left for manual position selection.
+           */
+          function isGenuineSignedHeading(el: DocxElement, kind: string): boolean {
+            if (el.tag !== 'w:p') return false;
+            if (/w:pStyle\\b[^>]*w:val="(?:TOC|TableOfContents|DaftarIsi)/i.test(el.rawXml)) return false;
+            if (/<w:tab\\b|w:leader=|<w:tabs\\b/i.test(el.rawXml)) return false;
+            const text = el.text.toUpperCase().normalize('NFKC')
+              .replace(/\\u00A0/g, ' ').replace(/[^A-Z0-9]+/g, ' ').replace(/\\s+/g, ' ').trim();
+            if (!text || text.length > 100) return false;
+            if (/\\b(?:[IVXLCDM]{1,7}|\\d{1,4})$/.test(text) && /\\s(?:[IVXLCDM]{1,7}|\\d{1,4})$/.test(el.text.trim())) return false;
+            if (kind === 'persetujuan') {
+              return /^(?:(?:HALAMAN|LEMBAR|SURAT|TANDA) )?PERSETUJUAN(?: (?:SKRIPSI|TESIS|PEMBIMBING|DOSEN PEMBIMBING|KARYA ILMIAH))?$/.test(text);
+            }
+            if (kind === 'pengesahan') {
+              return /^(?:(?:HALAMAN|LEMBAR|SURAT|TANDA) )?PENGESAHAN(?: (?:SKRIPSI|TESIS|TIM PENGUJI|DEWAN PENGUJI|UJIAN SKRIPSI|KELULUSAN|PANITIA UJIAN))?$/.test(text);
+            }
+            if (kind === 'keaslian') {
+              return /^(?:(?:HALAMAN|LEMBAR|SURAT) )?(?:(?:PERNYATAAN (?:KEASLIAN(?: (?:TULISAN|SKRIPSI|KARYA(?: ILMIAH)?))?|ORISINALITAS|BUKAN PLAGIAT))|(?:KEASLIAN TULISAN)|(?:ORISINALITAS))$/.test(text);
+            }
+            return false;
+          }
+
+          '''
+          # Remove escaping inserted by Python raw double quotes; the TypeScript regexp needs \b, \s, \u.
+          heading_helper = heading_helper.replace('\\\\', '\\')
+          parser = replace_once(parser, 'export function checkAnchorKeyword(', heading_helper + 'export function checkAnchorKeyword(', 'Strict signed heading classifier')
+          parser = replace_between(parser,
+              '    // Special handling for KEASLIAN TULISAN:',
+              '      // 5 Lampiran (Surat Tugas, Kartu Bimbingan, Izin, Telah Meneliti, Bebas Plagiasi)',
+              '''    // Keep signed pages strictly within genuine title paragraphs, not TOC or
+              // statements referring to another document. If ambiguous, use Manual Pick.
+              if (spec.category === 'signed_page') {
+                const limit = spec.id === 'keaslian' || bab1ElementIndex === -1
+                  ? elements.length
+                  : bab1ElementIndex;
+                const candidates = elements.slice(0, limit).filter((el) => isGenuineSignedHeading(el, spec.id));
+                if (candidates.length === 1) {
+                  foundIndex = candidates[0].index;
+                  foundPage = candidates[0].estimatedPage;
+                }
+                // Never guess "next paragraph", "after approval" or "40 paragraphs
+                // after references": a wrong guess can remove unrelated thesis text.
+              } else {
+          ''', 'Exact anchor detection without guessed fallback')
+
+          modifier = replace_between(modifier,
+              '  // Auto-resolve pengesahanIdx if scanPengesahan exists and persetujuanIdx is found',
+              '  // Jika kedua scan ada, proses bersamaan agar transisi halaman sempurna',
+              '''  // Never infer Pengesahan from Persetujuan: the document can contain
+            // acknowledgements, blank sheets or other signed pages in between.
+            const signedPagesForReplace = targets.filter((t) => t.category === 'signed_page' && t.assignedScanId);
+            const signedAnchors = new Set<number>();
+            for (const signedTarget of signedPagesForReplace) {
+              const location = signedTarget.customTargetElementIndex ?? signedTarget.elementIndex;
+              if (location === undefined || location < 0 || location >= elements.length) {
+                throw new Error(`Posisi ${signedTarget.title} belum terdeteksi dengan pasti. Gunakan "Pilih Posisi Manual" di Bagian A sebelum memproses.`);
+              }
+              if (signedAnchors.has(location)) {
+                throw new Error('Dua lembar tanda tangan memilih titik Word yang sama. Periksa dan koreksi posisi manual.');
+              }
+              signedAnchors.add(location);
+            }
+
+          ''','Prohibit guessed Pengesahan placement and validate assigned page positions')
+
+          modifier = replace_between(modifier,
+              '  // Jika kedua scan ada, proses bersamaan agar transisi halaman sempurna',
+              '  // Individual fallbacks jika hanya salah satu yang diunggah',
+              '''  // Always replace each signed page independently. The former combined
+            // replacement deleted everything between Persetujuan and Pengesahan, which
+            // could erase the Keaslian page and other unrelated content.
+
+          ''','Disable dangerous combined-page replacement')
+          modifier = replace_once(modifier,
+              '  if (!persetujuanProcessed && scanPersetujuan && persetujuanIdx !== undefined) {',
+              '  if (scanPersetujuan && persetujuanIdx !== undefined) {',
+              'Single-page Persetujuan')
+          modifier = replace_once(modifier,
+              '  if (!pengesahanProcessed && scanPengesahan && pengesahanIdx !== undefined) {',
+              '  if (scanPengesahan && pengesahanIdx !== undefined) {',
+              'Single-page Pengesahan')
+          modifier = replace_once(modifier,
+              '''  if (keaslianTarget?.assignedScanId) {
+              const scan = scanMap.get(keaslianTarget.assignedScanId);''',
+              '''  const keaslianAnchor = keaslianTarget?.customTargetElementIndex ?? keaslianTarget?.elementIndex;
+            if (keaslianTarget?.assignedScanId) {
+              if (keaslianAnchor === undefined) {
+                throw new Error('Posisi Surat Pernyataan Keaslian tidak ditemukan. Silakan klik Pilih Posisi Manual untuk dokumen ini.');
+              }
+              const scan = scanMap.get(keaslianTarget.assignedScanId);''',
+              'Keaslian requires a genuine/manual anchor')
+          modifier = replace_once(modifier,
+              '      let keaslianStart = keaslianTarget.elementIndex ?? 0;',
+              '      let keaslianStart = keaslianAnchor;',
+              'Never silently replace cover (element 0)')
+          modifier = replace_once(modifier,
+              '      let keaslianEnd = keaslianTarget.endElementIndex || findPageEnd(keaslianTarget.elementIndex ?? 0);',
+              '''      let keaslianEnd = keaslianTarget.customTargetElementIndex !== undefined
+                  ? findPageEnd(keaslianAnchor)
+                  : (keaslianTarget.endElementIndex ?? findPageEnd(keaslianAnchor));''',
+              'Honor manual placement for Keaslian end range')
+          modifier = replace_once(modifier,
+              '''    if (cur.endIndex >= next.startIndex) {
+                cur.endIndex = Math.max(cur.startIndex, next.startIndex - 1);
+              }''',
+              '''    if (cur.endIndex >= next.startIndex) {
+                throw new Error('Rentang penggantian halaman saling bertumpuk. Periksa posisi Persetujuan, Pengesahan dan Keaslian di Pilih Posisi Manual; naskah asli tidak diubah.');
+              }''',
+              'Fail safely instead of silently truncating overlapping ranges')
+
+          mapping = replace_once(mapping,
+              '''            isFound ? (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-800">
+                          <MapPin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                          <span className="font-semibold">Halaman ~{target.estimatedPage} (Teks Dicari)</span>
+                        </div>
+                      ) : (''',
+              '''            isFound ? (
+                        <div className="flex flex-col gap-1.5 text-xs text-slate-800">
+                          <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                            <span className="font-semibold">Perkiraan Hal ~{target.estimatedPage} (Periksa posisi)</span></span>
+                          {onOpenManualPick && (
+                            <button type="button" onClick={() => onOpenManualPick(target)}
+                              className="inline-flex items-center self-start gap-1 px-2 py-0.5 text-[10px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-300 rounded-md">
+                              Koreksi Posisi Manual
+                            </button>
+                          )}
+                        </div>
+                      ) : (''',
+              'Allow manual correction even for an automatically detected position')
+
+          outline = replace_between(outline,
+              '  // Check if persetujuan exists to recommend next page',
+              '  return (',
+              '''  // Never recommend 'approval index + 10' as an actual Pengesahan page.
+            // Real Word page boundaries do not correspond to a fixed number of XML paragraphs.
+
+          ''',
+              'Remove guessed Pengesahan index calculation')
+          outline = replace_between(outline,
+              '        {/* Quick Recommendation if picking for Pengesahan */}',
+              '        {/* Search Bar */}',
+              '''        {targetToPick?.id === 'pengesahan' && (
+                    <div className="mx-4 mt-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                      Pilih judul <strong>Halaman Pengesahan</strong> yang benar dari daftar di bawah.
+                      Jangan menggunakan perkiraan otomatis "Persetujuan + 10 paragraf".
+                    </div>
+                  )}
+
+          ''', 'Remove misleading +10 paragraphs suggestion')
+
+          for path, new_content in [(PARSER, parser), (MODIFIER, modifier), (MAPPING, mapping), (OUTLINE, outline)]:
+              path.write_text(new_content, encoding='utf-8')
+              print(f'Saved {path}')
+          PY_FIX_MENU10
+      - name: Instal dependensi dan build
+        shell: bash
+        run: |
+          npm install --no-audit --no-fund --package-lock=false
+          npm run build
+      - name: Tes deteksi halaman (hindari Daftar Isi)
+        shell: bash
+        run: |
+          node --import tsx --input-type=module <<'JS_TEST'
+          import JSZip from 'jszip';
+          import { parseDocx } from './src/gabungFile/utils/docxParser.ts';
+          const paragraph = (t) => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`;
+          async function classify(titles) {
+            const zip = new JSZip();
+            zip.file('word/document.xml', `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${titles.map(paragraph).join('')}</w:body></w:document>`);
+            const data = await zip.generateAsync({type:'uint8array'});
+            const result = await parseDocx(data, 'fixture.docx');
+            return result.detectedTargets;
+          }
+          const real = await classify(['DAFTAR ISI','HALAMAN PERSETUJUAN .... iii', 'HALAMAN PENGESAHAN .... iv','PERNYATAAN KEASLIAN TULISAN .... v','HALAMAN PERSETUJUAN','HALAMAN PENGESAHAN','SURAT PERNYATAAN KEASLIAN TULISAN','BAB I PENDAHULUAN']);
+          for (const id of ['persetujuan','pengesahan','keaslian']) {
+            const target = real.find(x => x.id === id);
+            if (target?.elementIndex === undefined || target.elementIndex < 4) throw Error(`Fixture ${id}: wrong anchor ${target?.elementIndex}`);
+          }
+          const tocOnly = await classify(['DAFTAR ISI','HALAMAN PERSETUJUAN .... iii', 'HALAMAN PENGESAHAN .... iv','PERNYATAAN KEASLIAN TULISAN .... v', 'BAB I PENDAHULUAN']);
+          for (const id of ['persetujuan','pengesahan','keaslian']) {
+            if (tocOnly.find(x => x.id === id)?.elementIndex !== undefined) throw Error(`TOC matched as ${id}`);
+          }
+          console.log('OK: 3 judul asli dikenali, baris daftar isi diabaikan; posisi tak ada tidak ditebak.');
+          JS_TEST
+      - name: Commit source jika tes berhasil
+        id: save
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/gabungFile/utils/docxParser.ts src/gabungFile/utils/docxModifier.ts src/gabungFile/components/MappingTable.tsx src/gabungFile/components/DocumentOutlineModal.tsx
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'Tidak ada perubahan baru.'
+          else
+            git commit -m 'Fix Menu 10: deteksi halaman valid, tanpa tebak posisi atau hapus rentang salah'
+            git push origin HEAD:main
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Minta deploy GitHub Pages
+        if: steps.save.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run pages.yml --ref main || echo 'Jalankan deploy pages.yml manual jika auto deploy ditolak.'

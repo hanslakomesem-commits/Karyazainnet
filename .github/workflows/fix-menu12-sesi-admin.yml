@@ -1,0 +1,114 @@
+name: ZAIN.NET - Fix Menu 12 Tanpa Login Ulang
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fix-menu12-sesi-admin.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: zainnet-fix-menu12-admin
+  cancel-in-progress: false
+
+jobs:
+  fix-menu12:
+    name: Perbaiki navigasi admin Menu 12 dan uji build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ambil source code ZAIN.NET
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Siapkan Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Perbaiki hanya navigasi Menu 12
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          
+          path = Path('src/App.tsx')
+          code = path.read_text(encoding='utf-8')
+          
+          old = """                  if (tool.id === 'cover-1' || tool.url === 'https://hanslakomesem-commits.github.io/Edit-Hard-Cover/' || tool.url === '/edit-hard-cover' || tool.url === 'internal://edit-hard-cover') {
+                              if (onNavigateToPath) {
+                                onNavigateToPath('/edit-hard-cover');
+                              } else {
+                                window.history.pushState(null, '', '/edit-hard-cover');
+                                window.dispatchEvent(new PopStateEvent('popstate'));
+                              }
+                              return;
+                            }
+          """
+          
+          new = """                  if (tool.id === 'cover-1' || tool.url === 'https://hanslakomesem-commits.github.io/Edit-Hard-Cover/' || tool.url === '/edit-hard-cover' || tool.url === 'internal://edit-hard-cover') {
+                              // Tetap dalam sesi aplikasi utama; route terpisah meminta login ulang.
+                              // Hanya role admin yang boleh membuka modul iframe ini.
+                              if (userRole !== 'admin') {
+                                setSelectedIframeLockedTool(tool);
+                                setShowIframeLockedModal(true);
+                                return;
+                              }
+                              setActiveTool(tool);
+                              return;
+                            }
+          """
+          
+          if code.count(old) == 1:
+              if "if (isIframeTool(tool) && userRole !== 'admin')" not in code:
+                  raise SystemExit('Pengaman menu iframe tidak ditemukan. Patch dibatalkan.')
+              path.write_text(code.replace(old, new), encoding='utf-8')
+              print('OK: Menu 12 memakai sesi admin aplikasi utama.')
+          elif code.count(new) == 1:
+              print('OK: Patch sudah terpasang; tidak mengubah ulang.')
+          else:
+              raise SystemExit('Source Menu 12 berbeda dengan yang diperiksa. Patch dibatalkan.')
+          PY
+
+      - name: Instal dependensi untuk pemeriksaan build
+        run: npm install --no-audit --no-fund --package-lock=false
+
+      - name: Periksa build tanpa mengubah fitur lain
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+        run: npm run build
+
+      - name: Simpan perbaikan ke GitHub
+        id: save
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/App.tsx
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'Tidak ada perubahan baru.'
+          else
+            git commit -m 'Fix Menu 12 admin: gunakan sesi ZAIN.NET tanpa login ulang'
+            git push origin HEAD:main
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+            echo 'Perbaikan Menu 12 tersimpan di main.'
+          fi
+
+      - name: Minta GitHub Pages deploy versi terbaru
+        if: steps.save.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh workflow run pages.yml --ref main; then
+            echo 'Deploy GitHub Pages diminta. Pantau workflow Deploy ZAIN.NET.'
+          else
+            echo '::warning::Patch berhasil disimpan tetapi deploy otomatis ditolak. Jalankan workflow pages.yml secara manual.'
+          fi

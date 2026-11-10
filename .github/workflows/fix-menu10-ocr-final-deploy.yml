@@ -1,0 +1,92 @@
+name: ZAIN.NET - Fix OCR Menu 10 dan Deploy Otomatis
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-menu10-ocr-final-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: zainnet-fix-menu10-ocr-final
+  cancel-in-progress: false
+
+jobs:
+  perbaiki-dan-publikasikan:
+    name: Koreksi Tesseract, build, deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Ambil source terbaru
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Siapkan Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validasi dan koreksi pemanggilan OCR lokal
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/gabungFile/utils/ocrService.ts')
+          if not p.is_file():
+              raise SystemExit('ERROR: File OCR Menu 10 tidak ditemukan; source tidak diubah.')
+          s = p.read_text(encoding='utf-8')
+          before = "createWorker('ind+eng', 1)"
+          after = "createWorker(['ind', 'eng'], 1)"
+          if before in s:
+              s = s.replace(before, after)
+              p.write_text(s, encoding='utf-8')
+              print('OK: Tesseract sekarang menggunakan array bahasa Indonesia + Inggris.')
+          elif after in s:
+              print('OK: Pemanggilan Tesseract sudah benar.')
+          else:
+              raise SystemExit('ERROR: Pola kode OCR sudah berubah. Tidak melakukan patch berisiko.')
+          if "backendUrl('/api/gemini/document-ocr')" not in s:
+              raise SystemExit('ERROR: URL OCR Render belum dikonfigurasi di source.')
+          a = Path('src/gabungFile/App.tsx').read_text(encoding='utf-8')
+          if 'handleRunOcrForAllScans' not in a or 'onRunOcrForAll={handleRunOcrForAllScans}' not in a:
+              raise SystemExit('ERROR: Patch batch OCR sebelumnya belum terpasang.')
+          print('OK: Patch OCR Gemini, lokal, dan batch telah diperiksa.')
+          PY
+
+      - name: Install dependency
+        run: npm install --no-audit --no-fund --package-lock=false
+
+      - name: Periksa build ZAIN.NET
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: |
+          npm run build
+          test -s dist/index.html
+
+      - name: Simpan source terbaru
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/gabungFile/utils/ocrService.ts
+          if git diff --cached --quiet; then
+            echo 'Tidak ada perubahan source tambahan.'
+          else
+            git commit -m 'Fix Menu10: Tesseract bilingual OCR'
+            git push origin HEAD:main
+          fi
+
+      - name: Jalankan deploy ulang GitHub Pages dari main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main
+          echo 'Deploy dipicu. Periksa Actions > Deploy ZAIN.NET to GitHub Pages.'

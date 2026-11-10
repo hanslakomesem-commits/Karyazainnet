@@ -2236,12 +2236,14 @@ function AcademicHubMainApp({ onNavigateToPath, initialToolId }: { onNavigateToP
                     return;
                   }
                   if (tool.id === 'cover-1' || tool.url === 'https://hanslakomesem-commits.github.io/Edit-Hard-Cover/' || tool.url === '/edit-hard-cover' || tool.url === 'internal://edit-hard-cover') {
-                    if (onNavigateToPath) {
-                      onNavigateToPath('/edit-hard-cover');
-                    } else {
-                      window.history.pushState(null, '', '/edit-hard-cover');
-                      window.dispatchEvent(new PopStateEvent('popstate'));
+                    // Tetap dalam sesi aplikasi utama; route terpisah meminta login ulang.
+                    // Hanya role admin yang boleh membuka modul iframe ini.
+                    if (userRole !== 'admin') {
+                      setSelectedIframeLockedTool(tool);
+                      setShowIframeLockedModal(true);
+                      return;
                     }
+                    setActiveTool(tool);
                     return;
                   }
                   setActiveTool(tool);

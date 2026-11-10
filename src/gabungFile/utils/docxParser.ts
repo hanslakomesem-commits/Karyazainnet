@@ -201,6 +201,32 @@ export function matchesKeywords(text: string, keywords: string[]): boolean {
   });
 }
 
+
+/**
+ * Standalone titles only. Never use mentions inside table of contents or
+ * ordinary paragraphs as replacement anchors for signed thesis pages.
+ * Ambiguous matches are deliberately left for manual position selection.
+ */
+function isGenuineSignedHeading(el: DocxElement, kind: string): boolean {
+  if (el.tag !== 'w:p') return false;
+  if (/w:pStyle\b[^>]*w:val="(?:TOC|TableOfContents|DaftarIsi)/i.test(el.rawXml)) return false;
+  if (/<w:tab\b|w:leader=|<w:tabs\b/i.test(el.rawXml)) return false;
+  const text = el.text.toUpperCase().normalize('NFKC')
+    .replace(/\u00A0/g, ' ').replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!text || text.length > 100) return false;
+  if (/\b(?:[IVXLCDM]{1,7}|\d{1,4})$/.test(text) && /\s(?:[IVXLCDM]{1,7}|\d{1,4})$/.test(el.text.trim())) return false;
+  if (kind === 'persetujuan') {
+    return /^(?:(?:HALAMAN|LEMBAR|SURAT|TANDA) )?PERSETUJUAN(?: (?:SKRIPSI|TESIS|PEMBIMBING|DOSEN PEMBIMBING|KARYA ILMIAH))?$/.test(text);
+  }
+  if (kind === 'pengesahan') {
+    return /^(?:(?:HALAMAN|LEMBAR|SURAT|TANDA) )?PENGESAHAN(?: (?:SKRIPSI|TESIS|TIM PENGUJI|DEWAN PENGUJI|UJIAN SKRIPSI|KELULUSAN|PANITIA UJIAN))?$/.test(text);
+  }
+  if (kind === 'keaslian') {
+    return /^(?:(?:HALAMAN|LEMBAR|SURAT) )?(?:(?:PERNYATAAN (?:KEASLIAN(?: (?:TULISAN|SKRIPSI|KARYA(?: ILMIAH)?))?|ORISINALITAS|BUKAN PLAGIAT))|(?:KEASLIAN TULISAN)|(?:ORISINALITAS))$/.test(text);
+  }
+  return false;
+}
+
 export function checkAnchorKeyword(text: string, customKeyword?: string): boolean {
   const clean = text.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
   const unspaced = clean.replace(/\s+/g, '');
@@ -440,125 +466,19 @@ export async function parseDocx(
     let hasExistingDrawing = false;
     let endIndex = -1;
 
-    // Special handling for KEASLIAN TULISAN:
-    if (spec.id === 'keaslian') {
-      // Look for real heading (distinguish from TOC / Daftar Isi / Daftar Lampiran)
-      type Candidate = { index: number; page: number; score: number };
-      const candidates: Candidate[] = [];
-
-      for (let i = 0; i < elements.length; i++) {
-        const el = elements[i];
-        const u = el.text.toUpperCase().trim();
-        if (!u) continue;
-        if (!matchesKeywords(u, spec.keywords)) continue;
-
-        // Strict TOC filtering
-        const isTocLine =
-          el.rawXml.includes('<w:tab') ||
-          el.rawXml.includes('w:leader=') ||
-          el.rawXml.includes('<w:tabs') ||
-          /(?:\.{2,}|\.\s+\.|\t+\d+|\t+[ivxlcdm]+|\s+[ivxlcdm\d]{1,4}$)/i.test(el.text);
-
-        let score = 0;
-        if (isTocLine) {
-          score -= 100;
-        }
-
-        // Check if paragraph has its own page break or follows a page break
-        if (el.hasPageBreak) score += 40;
-        if (i > 0 && (elements[i - 1].hasPageBreak || elements[i - 1].hasSectPr)) score += 30;
-        if (el.isHeading) score += 20;
-
-        // Check if surrounding lines look like a real document page (e.g. blank lines or statement body)
-        let emptyFollowers = 0;
-        let hasStatementBody = false;
-        for (let k = i + 1; k < Math.min(i + 15, elements.length); k++) {
-          const followerText = elements[k].text.trim().toLowerCase();
-          if (!followerText) {
-            emptyFollowers++;
-          } else if (
-            followerText.includes('saya yang bertanda tangan') ||
-            followerText.includes('nama :') ||
-            followerText.includes('nama:') ||
-            followerText.includes('nim') ||
-            followerText.includes('program studi') ||
-            followerText.includes('menyatakan bahwa') ||
-            followerText.includes('skripsi ini') ||
-            followerText.includes('materai')
-          ) {
-            hasStatementBody = true;
-          }
-        }
-        if (emptyFollowers >= 3) score += 30;
-        if (hasStatementBody) score += 50;
-
-        // Front matter check: after Pengesahan and before BAB I
-        if (bab1ElementIndex !== -1 && i < bab1ElementIndex) {
-          score += 15;
-        }
-
-        candidates.push({ index: i, page: el.estimatedPage, score });
-      }
-
-      // Sort candidates by score descending
-      candidates.sort((a, b) => b.score - a.score);
-      if (candidates.length > 0 && candidates[0].score > -50) {
+    // Keep signed pages strictly within genuine title paragraphs, not TOC or
+    // statements referring to another document. If ambiguous, use Manual Pick.
+    if (spec.category === 'signed_page') {
+      const limit = spec.id === 'keaslian' || bab1ElementIndex === -1
+        ? elements.length
+        : bab1ElementIndex;
+      const candidates = elements.slice(0, limit).filter((el) => isGenuineSignedHeading(el, spec.id));
+      if (candidates.length === 1) {
         foundIndex = candidates[0].index;
-        foundPage = candidates[0].page;
+        foundPage = candidates[0].estimatedPage;
       }
-
-      // 2. Fallback: If not found, check after Pengesahan or after Daftar Rujukan
-      if (foundIndex === -1) {
-        const pengesahanFound = detectedTargets.find((t) => t.id === 'pengesahan' && t.elementIndex !== undefined);
-        if (pengesahanFound && pengesahanFound.elementIndex !== undefined) {
-          const pEnd = pengesahanFound.endElementIndex || pengesahanFound.elementIndex;
-          if (pEnd + 1 < elements.length && pEnd + 1 < (bab1ElementIndex !== -1 ? bab1ElementIndex : 250)) {
-            foundIndex = pEnd + 1;
-            foundPage = elements[foundIndex].estimatedPage;
-          }
-        }
-      }
-      if (foundIndex === -1 && daftarRujukanElementIndex !== -1) {
-        foundIndex = Math.min(daftarRujukanElementIndex + 40, elements.length - 1);
-        foundPage = elements[foundIndex].estimatedPage + 1;
-      }
-    } else if (spec.category === 'signed_page') {
-      // Persetujuan & Pengesahan (in front matter before BAB I or up to first 300 elements)
-      const searchLimit = bab1ElementIndex !== -1 ? Math.max(bab1ElementIndex, 100) : Math.min(elements.length, 300);
-      for (let i = 0; i < searchLimit; i++) {
-        const el = elements[i];
-        // Never treat real page headings as TOC unless real leader dots exist
-        const looksLikeTocEntry = /(?:\.{2,}|\.\s+\.|\t+\d+|\t+[ivxlcdm]+)/i.test(el.text);
-        if (looksLikeTocEntry) continue;
-
-        if (matchesKeywords(el.text, spec.keywords)) {
-          if (el.hasPageBreak || el.hasSectPr || foundIndex === -1) {
-            foundIndex = i;
-            foundPage = el.estimatedPage;
-            if (el.hasPageBreak || el.hasSectPr) break;
-          }
-        }
-      }
-
-      // Fallback: If Pengesahan was not detected by keyword, check the page immediately after Persetujuan!
-      if (spec.id === 'pengesahan' && foundIndex === -1) {
-        const persetujuanFound = detectedTargets.find((t) => t.id === 'persetujuan' && t.elementIndex !== undefined);
-        if (persetujuanFound && persetujuanFound.elementIndex !== undefined) {
-          const pStart = persetujuanFound.elementIndex;
-          for (let k = pStart + 1; k < Math.min(pStart + 45, elements.length); k++) {
-            const el = elements[k];
-            if (matchesKeywords(el.text, ['PENGESAHAN', 'PENGUJI', 'DEWAN PENGUJI', 'TIM PENGUJI', 'PANITIA UJIAN', 'DISAHKAN', 'DEKAN'])) {
-              foundIndex = k;
-              foundPage = el.estimatedPage;
-              break;
-            }
-            if (foundIndex === -1 && (el.hasPageBreak || el.hasSectPr) && k + 1 < elements.length) {
-              foundIndex = k + 1;
-              foundPage = elements[k + 1].estimatedPage;
-            }
-          }
-        }
-      }
+      // Never guess "next paragraph", "after approval" or "40 paragraphs
+      // after references": a wrong guess can remove unrelated thesis text.
     } else {
       // 5 Lampiran (Surat Tugas, Kartu Bimbingan, Izin, Telah Meneliti, Bebas Plagiasi)
       // Prioritize searching after DAFTAR RUJUKAN / BAB V, strictly skipping DAFTAR LAMPIRAN (TOC)

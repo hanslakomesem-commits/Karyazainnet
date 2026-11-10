@@ -444,68 +444,27 @@ export async function applyScansToDocx(
   const scanPersetujuan = persetujuanTarget?.assignedScanId ? scanMap.get(persetujuanTarget.assignedScanId) : null;
   const scanPengesahan = pengesahanTarget?.assignedScanId ? scanMap.get(pengesahanTarget.assignedScanId) : null;
 
-  // Auto-resolve pengesahanIdx if scanPengesahan exists and persetujuanIdx is found
-  if (scanPersetujuan && scanPengesahan && persetujuanIdx !== undefined && pengesahanIdx === undefined) {
-    const endPersetujuan = findPageEnd(persetujuanIdx);
-    pengesahanIdx = Math.min(endPersetujuan + 1, elements.length - 1);
-    logs.push(`ℹ Posisi Halaman Pengesahan otomatis dipetakan ke halaman setelah Persetujuan (elemen ~${pengesahanIdx})`);
+  // Never infer Pengesahan from Persetujuan: the document can contain
+  // acknowledgements, blank sheets or other signed pages in between.
+  const signedPagesForReplace = targets.filter((t) => t.category === 'signed_page' && t.assignedScanId);
+  const signedAnchors = new Set<number>();
+  for (const signedTarget of signedPagesForReplace) {
+    const location = signedTarget.customTargetElementIndex ?? signedTarget.elementIndex;
+    if (location === undefined || location < 0 || location >= elements.length) {
+      throw new Error(`Posisi ${signedTarget.title} belum terdeteksi dengan pasti. Gunakan "Pilih Posisi Manual" di Bagian A sebelum memproses.`);
+    }
+    if (signedAnchors.has(location)) {
+      throw new Error('Dua lembar tanda tangan memilih titik Word yang sama. Periksa dan koreksi posisi manual.');
+    }
+    signedAnchors.add(location);
   }
 
-  let persetujuanProcessed = false;
-  let pengesahanProcessed = false;
-
-  // Jika kedua scan ada, proses bersamaan agar transisi halaman sempurna
-  if (scanPersetujuan && scanPengesahan && persetujuanIdx !== undefined && pengesahanIdx !== undefined) {
-    const { rId: rIdSetuju } = await registerImage(scanPersetujuan, 'persetujuan');
-    const { rId: rIdSah } = await registerImage(scanPengesahan, 'pengesahan');
-
-    logs.push(`✓ Mempertahankan semua margin asli skripsi 100%`);
-    logs.push(`✓ Halaman Persetujuan & Pengesahan disematkan foto asli (In Front of Text)`);
-
-    const dimSetuju = calculateDimensionsInFrontOfText(scanPersetujuan);
-    const dimSah = calculateDimensionsInFrontOfText(scanPengesahan);
-
-    let repCombined = '';
-    // Halaman Persetujuan mulai setelah Cover (selalu halaman baru)
-    if (persetujuanIdx > 0) {
-      repCombined += generatePageBreakXml();
-    }
-    repCombined += generateInFrontOfTextDrawingXml(rIdSetuju, nextDocPrId++, dimSetuju.cx, dimSetuju.cy, 'Halaman Persetujuan');
-    // Pemisah halaman ke Halaman Pengesahan (halaman baru tersendiri)
-    repCombined += generatePageBreakXml();
-    repCombined += generateInFrontOfTextDrawingXml(rIdSah, nextDocPrId++, dimSah.cx, dimSah.cy, 'Halaman Pengesahan');
-
-    const persetujuanStart = persetujuanIdx;
-    let pengesahanEnd = findPageEnd(pengesahanIdx);
-    while (
-      pengesahanEnd + 1 < elements.length &&
-      !elements[pengesahanEnd + 1].text.trim() &&
-      !elements[pengesahanEnd + 1].hasSectPr
-    ) {
-      pengesahanEnd++;
-    }
-
-    // Jika rentang elemen yang diganti memiliki sectPr asli, pertahankan sectPr tersebut
-    const deletedRange = elements.slice(persetujuanStart, Math.max(pengesahanEnd, pengesahanIdx) + 1);
-    const origSectPr = deletedRange.map((e) => e.rawXml).find((xml) => xml.includes('<w:sectPr'));
-    if (origSectPr) {
-      const matchSect = origSectPr.match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/);
-      if (matchSect) {
-        repCombined += `<w:p><w:pPr>${matchSect[0]}</w:pPr></w:p>`;
-      }
-    }
-
-    replacements.push({
-      startIndex: persetujuanStart,
-      endIndex: Math.max(pengesahanEnd, pengesahanIdx),
-      replacementXml: repCombined,
-    });
-    persetujuanProcessed = true;
-    pengesahanProcessed = true;
-  }
+  // Always replace each signed page independently. The former combined
+  // replacement deleted everything between Persetujuan and Pengesahan, which
+  // could erase the Keaslian page and other unrelated content.
 
   // Individual fallbacks jika hanya salah satu yang diunggah
-  if (!persetujuanProcessed && scanPersetujuan && persetujuanIdx !== undefined) {
+  if (scanPersetujuan && persetujuanIdx !== undefined) {
     const { rId } = await registerImage(scanPersetujuan, 'persetujuan');
     logs.push(`✓ Halaman Persetujuan disematkan foto asli (In Front of Text)`);
     const dim = calculateDimensionsInFrontOfText(scanPersetujuan);
@@ -530,7 +489,7 @@ export async function applyScansToDocx(
     });
   }
 
-  if (!pengesahanProcessed && scanPengesahan && pengesahanIdx !== undefined) {
+  if (scanPengesahan && pengesahanIdx !== undefined) {
     const { rId } = await registerImage(scanPengesahan, 'pengesahan');
     logs.push(`✓ Halaman Pengesahan disematkan foto asli (In Front of Text)`);
     const dim = calculateDimensionsInFrontOfText(scanPengesahan);
@@ -562,7 +521,11 @@ export async function applyScansToDocx(
   // =========================================================================
   const keaslianTarget = targets.find((t) => t.id === 'keaslian');
 
+  const keaslianAnchor = keaslianTarget?.customTargetElementIndex ?? keaslianTarget?.elementIndex;
   if (keaslianTarget?.assignedScanId) {
+    if (keaslianAnchor === undefined) {
+      throw new Error('Posisi Surat Pernyataan Keaslian tidak ditemukan. Silakan klik Pilih Posisi Manual untuk dokumen ini.');
+    }
     const scan = scanMap.get(keaslianTarget.assignedScanId);
     if (scan) {
       const { rId } = await registerImage(scan, 'keaslian');
@@ -570,7 +533,7 @@ export async function applyScansToDocx(
       logs.push(`✓ Mempertahankan 100% margin asli file skripsi`);
       const dim = calculateDimensionsInFrontOfText(scan);
 
-      let keaslianStart = keaslianTarget.elementIndex ?? 0;
+      let keaslianStart = keaslianAnchor;
       while (
         keaslianStart > 0 &&
         !elements[keaslianStart - 1].text.trim() &&
@@ -588,7 +551,9 @@ export async function applyScansToDocx(
       }
       rep += generateInFrontOfTextDrawingXml(rId, nextDocPrId++, dim.cx, dim.cy, 'Surat Pernyataan Keaslian Tulisan');
 
-      let keaslianEnd = keaslianTarget.endElementIndex || findPageEnd(keaslianTarget.elementIndex ?? 0);
+      let keaslianEnd = keaslianTarget.customTargetElementIndex !== undefined
+        ? findPageEnd(keaslianAnchor)
+        : (keaslianTarget.endElementIndex ?? findPageEnd(keaslianAnchor));
       while (
         keaslianEnd + 1 < elements.length &&
         !elements[keaslianEnd + 1].text.trim() &&
@@ -854,7 +819,7 @@ export async function applyScansToDocx(
     const cur = replacements[i];
     const next = replacements[i + 1];
     if (cur.endIndex >= next.startIndex) {
-      cur.endIndex = Math.max(cur.startIndex, next.startIndex - 1);
+      throw new Error('Rentang penggantian halaman saling bertumpuk. Periksa posisi Persetujuan, Pengesahan dan Keaslian di Pilih Posisi Manual; naskah asli tidak diubah.');
     }
   }
 

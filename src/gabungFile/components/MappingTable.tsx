@@ -106,9 +106,15 @@ export const MappingTable: React.FC<MappingTableProps> = ({
         <td className="py-3 px-4">
           {isSignedPage ? (
             isFound ? (
-              <div className="flex items-center gap-1.5 text-xs text-slate-800">
-                <MapPin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                <span className="font-semibold">Halaman ~{target.estimatedPage} (Teks Dicari)</span>
+              <div className="flex flex-col gap-1.5 text-xs text-slate-800">
+                <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                  <span className="font-semibold">Perkiraan Hal ~{target.estimatedPage} (Periksa posisi)</span></span>
+                {onOpenManualPick && (
+                  <button type="button" onClick={() => onOpenManualPick(target)}
+                    className="inline-flex items-center self-start gap-1 px-2 py-0.5 text-[10px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-300 rounded-md">
+                    Koreksi Posisi Manual
+                  </button>
+                )}
               </div>
             ) : (
               <div className="flex flex-col gap-1 items-start">

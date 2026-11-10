@@ -37,11 +37,8 @@ export const DocumentOutlineModal: React.FC<DocumentOutlineModalProps> = ({
     }
   };
 
-  // Check if persetujuan exists to recommend next page
-  const persetujuanTarget = analysis.detectedTargets.find((t) => t.id === 'persetujuan' && t.elementIndex !== undefined);
-  const persetujuanPage = persetujuanTarget?.estimatedPage ?? 3;
-  const recommendedPengesahanPage = persetujuanPage + 1;
-  const recommendedPengesahanIndex = persetujuanTarget?.elementIndex !== undefined ? persetujuanTarget.elementIndex + 10 : 50;
+  // Never recommend 'approval index + 10' as an actual Pengesahan page.
+  // Real Word page boundaries do not correspond to a fixed number of XML paragraphs.
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
@@ -70,26 +67,10 @@ export const DocumentOutlineModal: React.FC<DocumentOutlineModalProps> = ({
           </button>
         </div>
 
-        {/* Quick Recommendation if picking for Pengesahan */}
-        {targetToPick?.id === 'pengesahan' && onSelectPosition && (
-          <div className="mx-4 mt-4 p-3 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
-              <div>
-                <span className="text-xs font-bold text-blue-950 block">
-                  Rekomendasi Cepat: Halaman ~{recommendedPengesahanPage}
-                </span>
-                <span className="text-[11px] text-blue-700">
-                  Tepat setelah Halaman Persetujuan (standar urutan dokumen skripsi)
-                </span>
-              </div>
-            </div>
-            <button
-              onClick={() => handleSelect(recommendedPengesahanIndex, recommendedPengesahanPage)}
-              className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shrink-0 cursor-pointer shadow-xs transition"
-            >
-              Gunakan Rekomendasi
-            </button>
+        {targetToPick?.id === 'pengesahan' && (
+          <div className="mx-4 mt-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+            Pilih judul <strong>Halaman Pengesahan</strong> yang benar dari daftar di bawah.
+            Jangan menggunakan perkiraan otomatis "Persetujuan + 10 paragraf".
           </div>
         )}
 

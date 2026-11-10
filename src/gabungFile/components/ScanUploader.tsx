@@ -29,6 +29,8 @@ interface ScanUploaderProps {
   onRemoveScan: (id: string) => void;
   onRotateScan: (id: string) => void;
   onRunOcrForScan: (id: string) => void;
+  onRunOcrForAll: () => void;
+  ocrProgress?: string;
   onAssignTarget: (scanId: string, targetId: string | undefined) => void;
   isOcrRunning: boolean;
   isConvertingPdf?: boolean;
@@ -46,6 +48,8 @@ export const ScanUploader: React.FC<ScanUploaderProps> = ({
   onRemoveScan,
   onRotateScan,
   onRunOcrForScan,
+  onRunOcrForAll,
+  ocrProgress,
   onAssignTarget,
   isOcrRunning,
   isConvertingPdf,
@@ -359,7 +363,12 @@ export const ScanUploader: React.FC<ScanUploaderProps> = ({
                         ))}
                       </select>
 
-                      {/* Detection badge info */}
+                      {scan.ocrSnippet && (
+              <p className="text-[10px] text-slate-600 mt-1 whitespace-normal break-words" title={scan.ocrSnippet}>
+                OCR membaca: {scan.ocrSnippet.slice(0, 170)}
+              </p>
+            )}
+            {/* Detection badge info */}
                       <div className="flex items-center justify-between mt-2">
                         {assignedTarget ? (
                           <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-medium">
@@ -394,20 +403,25 @@ export const ScanUploader: React.FC<ScanUploaderProps> = ({
             })}
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200">
+          {ocrProgress && (
+  <p role="status" className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg p-2">
+    {ocrProgress}. Foto yang gagal akan tetap bisa dipilih manual.
+  </p>
+)}
+<div className="mt-4 flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200">
             <p className="text-xs text-slate-500">
               Total <strong className="text-slate-800">{scans.length} file scan</strong> diunggah.
             </p>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => {
-                  scans.forEach((s) => onRunOcrForScan(s.id));
+                  onRunOcrForAll();
                 }}
                 disabled={isOcrRunning}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium cursor-pointer transition disabled:opacity-50"
               >
                 <ScanText className="w-3.5 h-3.5 text-indigo-600" />
-                Pindai OCR Semua Dokumen
+                {isOcrRunning ? 'Sedang Memindai...' : 'Pindai OCR Semua Dokumen'}
               </button>
             </div>
           </div>

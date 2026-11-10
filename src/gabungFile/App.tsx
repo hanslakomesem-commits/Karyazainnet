@@ -45,6 +45,7 @@ export default function App({ onExportComplete }: GabungFileProps = {}) {
   const [isLoadingDocx, setIsLoadingDocx] = useState(false);
   const [isLoadingSample, setIsLoadingSample] = useState(false);
   const [isOcrRunning, setIsOcrRunning] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState('');
   const [isConvertingPdf, setIsConvertingPdf] = useState(false);
   const [pdfConversionStatus, setPdfConversionStatus] = useState<string>('');
 
@@ -539,21 +540,65 @@ export default function App({ onExportComplete }: GabungFileProps = {}) {
   };
 
   const handleRunOcrForScan = async (scanId: string) => {
+    if (isOcrRunning) return;
     const scan = scans.find((s) => s.id === scanId);
     if (!scan) return;
-
+    setIsOcrRunning(true);
+    setOcrProgress(`Memindai ${scan.name}...`);
     try {
-      setIsOcrRunning(true);
-      const ocrText = await performQuickHeaderOcr(scan.file);
-      const updatedScan = { ...scan, ocrSnippet: ocrText, detectionSource: 'ocr' as const };
-
-      const { updatedTargets, updatedScans } = autoMapScansToTargets(
-        targets,
-        scans.map((s) => (s.id === scanId ? updatedScan : s))
-      );
-      setTargets(updatedTargets);
-      setScans(updatedScans);
+      const text = (await performQuickHeaderOcr(scan.file)).trim();
+      if (!text) {
+        alert('OCR belum bisa membaca foto ini. Coba crop area kertas, perjelas cahaya, atau pilih jenis dokumen secara manual. Periksa juga jaringan/layanan Render.');
+        return;
+      }
+      const nextScans = scans.map((s) => s.id === scanId
+        ? { ...s, ocrSnippet: text, detectionSource: 'ocr' as const }
+        : { ...s });
+      const result = autoMapScansToTargets(targets, nextScans);
+      setTargets(result.updatedTargets);
+      setScans(result.updatedScans);
+      const detected = result.updatedScans.find(s => s.id === scanId)?.matchedTargetId;
+      if (!detected) {
+        alert(`Teks berhasil dibaca, tetapi jenis dokumen belum dikenali:\n${text.slice(0, 220)}\n\nPilih target secara manual.`);
+      }
+    } catch (err) {
+      console.error('[Menu 10] Gagal OCR foto', err);
+      alert('Pemindaian OCR mengalami kesalahan. Pilih target manual atau coba browser terbaru.');
     } finally {
+      setOcrProgress('');
+      setIsOcrRunning(false);
+    }
+  };
+
+  const handleRunOcrForAllScans = async () => {
+    if (isOcrRunning || scans.length === 0) return;
+    setIsOcrRunning(true);
+    let readable = 0;
+    try {
+      // Jangan jalankan forEach(async ...): hasil React state dapat saling menimpa.
+      const nextScans = scans.map((s) => ({ ...s }));
+      for (let i = 0; i < nextScans.length; i++) {
+        const item = nextScans[i];
+        setOcrProgress(`Memindai foto ${i + 1} dari ${nextScans.length}: ${item.name}`);
+        try {
+const text = (await performQuickHeaderOcr(item.file)).trim();
+if (text) {
+  item.ocrSnippet = text;
+  item.detectionSource = 'ocr';
+  readable++;
+}
+        } catch (err) {
+console.warn('[Menu 10] OCR foto dilewati:', item.name, err);
+        }
+      }
+      // HANYA satu kali pemetaan & setState setelah semua hasil tersedia.
+      const result = autoMapScansToTargets(targets, nextScans);
+      setTargets(result.updatedTargets);
+      setScans(result.updatedScans);
+      const mapped = result.updatedScans.filter(s => !!s.matchedTargetId).length;
+      alert(`Pemindaian selesai. Teks terbaca: ${readable}/${nextScans.length}. Dokumen dipetakan: ${mapped}/${nextScans.length}.\n\nFoto yang belum dipetakan dapat dipilih targetnya secara manual.`);
+    } finally {
+      setOcrProgress('');
       setIsOcrRunning(false);
     }
   };
@@ -849,6 +894,8 @@ export default function App({ onExportComplete }: GabungFileProps = {}) {
           onRemoveScan={handleRemoveScan}
           onRotateScan={handleRotateScan}
           onRunOcrForScan={handleRunOcrForScan}
+          onRunOcrForAll={handleRunOcrForAllScans}
+          ocrProgress={ocrProgress}
           onAssignTarget={handleAssignTarget}
           isOcrRunning={isOcrRunning}
           isConvertingPdf={isConvertingPdf}

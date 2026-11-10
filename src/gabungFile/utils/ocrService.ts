@@ -9,6 +9,8 @@
  * 2. Fallback: Local Tesseract.js / Canvas heuristics with strict safety timeout.
  */
 
+import { backendUrl } from '../../utils/deploymentBridge';
+
 export interface DocumentOcrResult {
   documentType?: 'pengesahan' | 'persetujuan' | 'keaslian' | 'surat_tugas' | 'kartu_bimbingan_depan' | 'kartu_bimbingan_belakang' | 'izin_penelitian' | 'telah_meneliti' | 'bebas_plagiasi' | 'unknown';
   titleSnippet: string;
@@ -20,7 +22,7 @@ export interface DocumentOcrResult {
 /**
  * Creates a fast downscaled base64 JPEG from an image file (max 900px)
  */
-async function fileToCompressedBase64(file: File, maxDim = 900): Promise<{ base64: string; mimeType: string }> {
+async function fileToCompressedBase64(file: File, maxDim = 1500): Promise<{ base64: string; mimeType: string }> {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -42,7 +44,7 @@ async function fileToCompressedBase64(file: File, maxDim = 900): Promise<{ base6
         ctx.fillStyle = '#FFFFFF';
         ctx.fillRect(0, 0, w, h);
         ctx.drawImage(img, 0, 0, w, h);
-        const base64 = canvas.toDataURL('image/jpeg', 0.75);
+        const base64 = canvas.toDataURL('image/jpeg', 0.86);
         resolve({ base64, mimeType: 'image/jpeg' });
       };
       img.onerror = () => {
@@ -64,9 +66,9 @@ export async function performDocumentAiOcr(file: File): Promise<DocumentOcrResul
     if (!base64) return null;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000); // 12-second safety timeout
+    const timeoutId = setTimeout(() => controller.abort(), 65000); // 12-second safety timeout
 
-    const resp = await fetch('/api/gemini/document-ocr', {
+    const resp = await fetch(backendUrl('/api/gemini/document-ocr'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -101,42 +103,75 @@ export async function performDocumentAiOcr(file: File): Promise<DocumentOcrResul
  * Extracts text from the top 35% of the image where document headers/titles are printed.
  * Uses Gemini AI first, then quick heuristics if offline. Never hangs for 5 minutes.
  */
-export async function performQuickHeaderOcr(file: File): Promise<string> {
-  // 1. Try Gemini AI OCR first
+// Worker OCR lokal yang digunakan saat Render/Gemini tidak bisa diakses.
+// Memindai teks pada foto, BUKAN menebak dari nama WhatsApp Image.
+async function recognizeLocally(file: File): Promise<string> {
+  const { createWorker } = await import('tesseract.js');
+  // Bahasa Indonesia + Inggris; data bahasa diunduh oleh Tesseract.js pada pemindaian pertama.
+  const worker = await createWorker('ind+eng', 1);
   try {
-    const aiResult = await performDocumentAiOcr(file);
-    if (aiResult && aiResult.titleSnippet) {
-      return aiResult.titleSnippet;
+    const result = await worker.recognize(file);
+    const text = result?.data?.text || '';
+    const confidence = Number(result?.data?.confidence ?? 0);
+    if (confidence < 25 || text.trim().length < 6) return '';
+    return text.replace(/\s+/g, ' ').trim().slice(0, 2400);
+  } finally {
+    await worker.terminate();
+  }
+}
+
+const typeToHeading: Record<string, string> = {
+  pengesahan: 'HALAMAN PENGESAHAN TIM PENGUJI',
+  persetujuan: 'HALAMAN PERSETUJUAN PEMBIMBING',
+  keaslian: 'SURAT PERNYATAAN KEASLIAN TULISAN',
+  surat_tugas: 'SURAT TUGAS PEMBIMBING',
+  kartu_bimbingan_depan: 'KARTU BIMBINGAN HALAMAN DEPAN',
+  kartu_bimbingan_belakang: 'KARTU BIMBINGAN CATATAN KONSULTASI',
+  izin_penelitian: 'SURAT IZIN PENELITIAN',
+  telah_meneliti: 'SURAT TELAH MENELITI',
+  bebas_plagiasi: 'SURAT KETERANGAN BEBAS PLAGIASI',
+};
+
+/** Selalu coba OCR sungguhan: Gemini via Render, kemudian Tesseract di browser. */
+export async function performQuickHeaderOcr(file: File): Promise<string> {
+  try {
+    const ai = await performDocumentAiOcr(file);
+    if (ai) {
+      const mappedType = ai.documentType && typeToHeading[ai.documentType];
+      // Jangan mengubah hasil berkeyakinan rendah menjadi pemetaan otomatis.
+      if (mappedType && ai.confidence !== 'low') {
+        return `${mappedType} ${ai.titleSnippet || ''}`.trim();
+      }
+      if (ai.titleSnippet && ai.titleSnippet.trim().length > 5) {
+        return ai.titleSnippet.trim();
+      }
     }
-    if (aiResult && aiResult.documentType && aiResult.documentType !== 'unknown') {
-      const typeToTitle: Record<string, string> = {
-        pengesahan: 'HALAMAN PENGESAHAN TIM PENGUJI',
-        persetujuan: 'HALAMAN PERSETUJUAN PEMBIMBING',
-        keaslian: 'SURAT PERNYATAAN KEASLIAN TULISAN',
-        surat_tugas: 'SURAT TUGAS PEMBIMBING',
-        kartu_bimbingan_depan: 'KARTU BIMBINGAN HALAMAN DEPAN',
-        kartu_bimbingan_belakang: 'KARTU BIMBINGAN CATATAN KONSULTASI',
-        izin_penelitian: 'SURAT IZIN PENELITIAN',
-        telah_meneliti: 'SURAT TELAH SELESAI MENELITI',
-        bebas_plagiasi: 'SURAT KETERANGAN BEBAS PLAGIASI',
-      };
-      return typeToTitle[aiResult.documentType] || '';
-    }
-  } catch (e) {
-    console.warn('Primary AI OCR attempt bypassed:', e);
+  } catch (err) {
+    console.warn('[Menu 10] OCR Gemini gagal:', err);
   }
 
-  // 2. Fast Client Fallback: Heuristic keyword check from filename
-  const fn = file.name.toUpperCase();
-  if (fn.includes('PENGESAHAN')) return 'HALAMAN PENGESAHAN';
-  if (fn.includes('PERSETUJUAN')) return 'HALAMAN PERSETUJUAN';
-  if (fn.includes('KEASLIAN')) return 'SURAT PERNYATAAN KEASLIAN';
-  if (fn.includes('TUGAS')) return 'SURAT TUGAS PEMBIMBING';
-  if (fn.includes('BIMBINGAN') && (fn.includes('DEPAN') || fn.includes('1'))) return 'KARTU BIMBINGAN DEPAN';
-  if (fn.includes('BIMBINGAN') && (fn.includes('BELAKANG') || fn.includes('2'))) return 'KARTU BIMBINGAN BELAKANG';
-  if (fn.includes('IZIN')) return 'SURAT IZIN PENELITIAN';
-  if (fn.includes('TELAH') || fn.includes('SELESAI')) return 'SURAT TELAH MENELITI';
-  if (fn.includes('PLAGIASI') || fn.includes('BEBAS')) return 'SURAT BEBAS PLAGIASI';
+  try {
+    const result = await recognizeLocally(file);
+    if (result) return result;
+  } catch (err) {
+    console.warn('[Menu 10] OCR lokal tidak tersedia:', err);
+  }
 
+  // Fallback nama file hanya jika nama memang bermakna, bukan WhatsApp Image.
+  const name = file.name.toUpperCase();
+  for (const [type, heading] of Object.entries(typeToHeading)) {
+    const tokens: Record<string, RegExp> = {
+      pengesahan: /PENGESAHAN/,
+      persetujuan: /PERSETUJUAN/,
+      keaslian: /KEASLIAN|ORISINALITAS/,
+      surat_tugas: /SURAT[ _-]*TUGAS/,
+      kartu_bimbingan_depan: /KARTU.*BIMBINGAN.*(DEPAN|1)/,
+      kartu_bimbingan_belakang: /KARTU.*BIMBINGAN.*(BELAKANG|2)/,
+      izin_penelitian: /IZIN.*PENELITIAN/,
+      telah_meneliti: /TELAH.*MENELITI/,
+      bebas_plagiasi: /BEBAS.*PLAGIASI/,
+    };
+    if (tokens[type].test(name)) return heading;
+  }
   return '';
 }

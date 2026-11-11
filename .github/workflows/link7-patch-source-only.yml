@@ -1,0 +1,111 @@
+
+name: ZAIN.NET - Perbaikan Final Link 7 PDF Otomatis
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/link7-patch-source-only.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: zainnet-link7-source-only
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Pasang patch Link 7
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          source = Path(
+              ".github/workflows/fix-link7-auto-pdf-zip.yml"
+          )
+          if not source.is_file():
+              raise SystemExit("Patch Link 7 awal tidak ditemukan")
+
+          data = source.read_text(encoding="utf-8")
+          start = "          python3 - <<'PY_PATCH'\n"
+          end = "          PY_PATCH\n"
+
+          if data.count(start) != 1 or data.count(end) != 1:
+              raise SystemExit("Format patch tidak sesuai")
+
+          body = data.split(start, 1)[1].split(end, 1)[0]
+          lines = body.splitlines()
+
+          if any(
+              not line.startswith("          ")
+              for line in lines if line.strip()
+          ):
+              raise SystemExit("Indentasi patch tidak sesuai")
+
+          patch = "\n".join(
+              line[10:] for line in lines
+          ) + "\n"
+
+          compile(patch, "link7-patch.py", "exec")
+          temp = Path("/tmp/link7-patch.py")
+          temp.write_text(patch, encoding="utf-8")
+
+          subprocess.run(
+              [sys.executable, str(temp)],
+              check=True
+          )
+          PY
+
+      - name: Install dependensi
+        run: npm install --no-audit --no-fund
+
+      - name: Test build
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: npm run build
+
+      - name: Simpan perubahan source
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -- \
+            src/journalConverter/App.tsx \
+            src/journalConverter/utils/bundleExport.ts \
+            server/journal7/router.ts
+
+          if git diff --cached --quiet; then
+            echo "Tidak ada perubahan baru"
+          else
+            git commit -m "Fix Link 7 Auto PDF ZIP 5 File"
+            git push origin HEAD:main
+          fi
+
+      - name: Deploy GitHub Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run pages.yml --ref main
+          echo "Deploy Render setelah kode terbaru tersimpan"

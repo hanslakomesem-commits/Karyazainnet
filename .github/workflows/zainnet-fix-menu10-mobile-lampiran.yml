@@ -1,0 +1,402 @@
+name: ZAIN.NET - Menu 10 HP dan Nomor Lampiran Otomatis
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/zainnet-fix-menu10-mobile-lampiran.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: zainnet-menu10-mobile-lampiran
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    name: Perbaiki pencarian HP dan urutan Lampiran
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - name: Pasang patch Menu 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/zain_menu10/src/gabungFile/utils
+          cat > /tmp/zain_menu10/src/gabungFile/utils/lampiranSequence.ts <<'LAMPIRAN_HELPER_TS'
+          import type { DocxElement } from '../types/skripsi';
+
+          export interface LampiranHeading {
+            index: number;
+            number: number;
+            text: string;
+          }
+          export interface LampiranInsertionChoice {
+            afterNumber: number;
+            afterHeadingIndex: number;
+            insertionIndex: number;
+            description: string;
+          }
+
+          function parseRoman(raw: string): number {
+            const vals: Record<string, number> = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
+            let result = 0;
+            const chars = raw.toUpperCase();
+            for (let i = 0; i < chars.length; i++) {
+              const a = vals[chars[i]] || 0;
+              const b = vals[chars[i + 1]] || 0;
+              result += a < b ? -a : a;
+            }
+            return result;
+          }
+
+          function headingPattern(text: string): RegExpMatchArray | null {
+            return text.match(/^\s*LAMPIRAN\s*(?:KE[\s.-]*)?(\d{1,3}|[IVXLCDM]{1,8})(?=$|[\s.:)\-])/i);
+          }
+
+          function looksLikeContentsEntry(el: DocxElement): boolean {
+            return /<w:tab\b|w:leader=|<w:instrText\b|TOC\\o|\.\s*\.\s*\./i.test(el.rawXml) ||
+              /(?:\.{3,}|\s{2,}\d{1,3})\s*$/.test(el.text);
+          }
+
+          /** Headings in body only. Ignore references and entries in DAFTAR ISI/LAMPIRAN. */
+          export function getLampiranHeadings(elements: DocxElement[]): LampiranHeading[] {
+            const firstBodyChapter = elements.findIndex(el => /^BAB\s+(?:I|1)(?=\s|\.|$)/i.test(el.text.trim()));
+            return elements.flatMap((el, index) => {
+              if (firstBodyChapter >= 0 && index < firstBodyChapter) return [];
+              if (el.tag !== 'w:p' || looksLikeContentsEntry(el)) return [];
+              const text = el.text.trim();
+              if (text.length > 170) return [];
+              const matched = headingPattern(text);
+              if (!matched) return [];
+              const num = /^\d+$/.test(matched[1]) ? Number(matched[1]) : parseRoman(matched[1]);
+              if (!Number.isInteger(num) || num < 1 || num > 99) return [];
+              return [{index, number: num, text}];
+            });
+          }
+
+          export function getLampiranInsertionChoices(elements: DocxElement[]): LampiranInsertionChoice[] {
+            const headings = getLampiranHeadings(elements);
+            return headings.map((heading, i) => {
+              const next = headings[i + 1];
+              let insertionIndex = next?.index;
+              if (insertionIndex === undefined) {
+                // Last appendix: insert before the author's biography / final sectPr if present.
+                const nextBoundary = elements.findIndex((el, j) => j > heading.index &&
+                  (/^(?:DAFTAR\s+RIWAYAT\s+HIDUP|RIWAYAT\s+HIDUP|BIODATA(?:\s+PENULIS)?|CURRICULUM\s+VITAE)(?=\s|$)/i.test(el.text.trim()) || el.tag === 'w:sectPr'));
+                insertionIndex = nextBoundary >= 0 ? nextBoundary : Math.min(elements.length - 1, heading.index + 1);
+              }
+              return {
+                afterNumber: heading.number,
+                afterHeadingIndex: heading.index,
+                insertionIndex,
+                description: next ? `sebelum Lampiran ${next.number}` : 'di akhir bagian lampiran',
+              };
+            });
+          }
+
+          /** Retains the original OOXML runs, style and caption text; replaces only heading numeral. */
+          export function replaceLampiranHeadingNumber(rawXml: string, toNumber: number): string {
+            const matches = [...rawXml.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/g)];
+            if (!matches.length) return rawXml;
+            const text = matches.map(m => m[1]).join('');
+            const heading = headingPattern(text);
+            if (!heading) return rawXml;
+            const token = heading[1];
+            const numAt = (heading.index || 0) + heading[0].lastIndexOf(token);
+            const numEnd = numAt + token.length;
+            const out: string[] = [];
+            let prevEnd = 0;
+            let cursor = 0;
+            let replaced = false;
+            for (const m of matches) {
+              const pos = m.index!;
+              out.push(rawXml.slice(prevEnd, pos));
+              const start = cursor;
+              const end = cursor + m[1].length;
+              let nextText = m[1];
+              if (end > numAt && start < numEnd) {
+                const left = m[1].slice(0, Math.max(0, numAt - start));
+                const right = m[1].slice(Math.min(m[1].length, numEnd - start));
+                nextText = left + (replaced ? '' : String(toNumber)) + right;
+                replaced = true;
+              }
+              out.push(m[0].replace(m[1], nextText));
+              prevEnd = pos + m[0].length;
+              cursor = end;
+            }
+            out.push(rawXml.slice(prevEnd));
+            return replaced ? out.join('') : rawXml;
+          }
+          LAMPIRAN_HELPER_TS
+          cat > /tmp/zain_menu10/apply_patch.py <<'LAMPIRAN_PATCH_PY'
+          from pathlib import Path
+
+          ROOT = Path.cwd()
+          marker = 'ZAINNET_MENU10_AUTO_SEQUENCE_V1'
+          if all(marker in (ROOT / p).read_text(encoding='utf-8') for p in [
+              'src/gabungFile/App.tsx',
+              'src/gabungFile/components/StructureInspector.tsx',
+              'src/gabungFile/utils/docxModifier.ts',
+          ] if (ROOT / p).is_file()) and (ROOT / 'src/gabungFile/utils/lampiranSequence.ts').is_file():
+              print('SKIP: perbaikan sudah terpasang; aman dijalankan ulang.')
+              raise SystemExit(0)
+
+          def replace_exact(filename, old, new, label):
+              p=ROOT/filename
+              if not p.is_file():
+                  raise SystemExit(f'File {filename} tidak ditemukan')
+              text=p.read_text(encoding='utf-8')
+              marker='ZAINNET_MENU10_AUTO_SEQUENCE_V1'
+              if marker in text:
+                  print(f'SKIP {filename}: penanda update sudah terpasang')
+                  return
+              count=text.count(old)
+              if count!=1:
+                  raise SystemExit(f'{label}: posisi kode tidak sesuai, ditemukan {count} (harus 1). Tidak menyimpan file.')
+              p.write_text(text.replace(old,new,1),encoding='utf-8')
+              print(f'OK: {label}')
+
+          # The helper is an independently tested module; keep its exact source outside edits to protected workflows.
+          util_dst=ROOT/'src/gabungFile/utils/lampiranSequence.ts'
+          util_src=Path(__file__).resolve().parent/'src/gabungFile/utils/lampiranSequence.ts'
+          if not util_dst.parent.is_dir():
+              raise SystemExit('Folder util gabungFile tidak ditemukan')
+          if not util_src.is_file():
+              raise SystemExit('Berkas sumber helper tidak ditemukan')
+          if util_dst.is_file() and util_dst.read_text(encoding='utf-8') != util_src.read_text(encoding='utf-8'):
+              raise SystemExit('Modul lampiranSequence.ts sudah ada dengan isi berbeda, hentikan patch.')
+          util_dst.write_text(util_src.read_text(encoding='utf-8'),encoding='utf-8')
+          print('OK: helper lampiranSequence.ts')
+
+          mod='src/gabungFile/utils/docxModifier.ts'
+          replace_exact(mod,
+              "import { findHighestExistingLampiranNumber } from './docxParser';",
+              "import { findHighestExistingLampiranNumber } from './docxParser';\nimport { getLampiranHeadings, replaceLampiranHeadingNumber } from './lampiranSequence'; // ZAINNET_MENU10_AUTO_SEQUENCE_V1",
+              'Import mesin urutan lampiran')
+
+          p=ROOT/mod
+          s=p.read_text(encoding='utf-8')
+          old='''  const highestExisting = findHighestExistingLampiranNumber(
+              elements,
+              anchorMatch ? anchorMatch.index : undefined
+            );
+            let currentLampiranNum = highestExisting > 0 ? highestExisting + 1 : 4;'''
+          new='''  // Nomor pertama hanya mengikuti lampiran sebelum TITIK SISIP,
+            // bukan nomor tertinggi di seluruh dokumen (yang mungkin berada sesudah sisipan).
+            const existingBeforeAnchor = anchorMatch && options.useAnchorFor5Attachments
+              ? getLampiranHeadings(elements).filter(h => h.index < anchorMatch.index)
+              : [];
+            const highestExisting = existingBeforeAnchor.length > 0
+              ? existingBeforeAnchor[existingBeforeAnchor.length - 1].number
+              : anchorMatch && options.useAnchorFor5Attachments
+                ? 0
+                : findHighestExistingLampiranNumber(elements);
+            let currentLampiranNum = highestExisting > 0 ? highestExisting + 1 : 4;'''
+          if s.count(old)!=1:raise SystemExit('Logika nomor awal tidak cocok. Stop.')
+          s=s.replace(old,new,1)
+          old='''  if (anchorMatch && options.useAnchorFor5Attachments && activeItems.length > 0) {
+              logs.push(`✓ Titik penempatan 5 Lampiran aktif pada kata kunci anchor (In Line with Text, Margin Asli Skripsi)`);'''
+          new='''  if (anchorMatch && options.useAnchorFor5Attachments && activeItems.length > 0) {
+              // Ubah penomoran judul asli setelah titik sisip sehingga tidak ada Lampiran 4 ganda.
+              // Hanya judul paragraf asli yang diubah; Daftar Isi, isi naskah, dan Word asli aman.
+              const headingsAfter = getLampiranHeadings(elements).filter(h => h.index >= anchorMatch.index);
+              let nextExistingNum = currentLampiranNum;
+              for (const heading of headingsAfter) {
+                const original = elements[heading.index];
+                const fixedXml = replaceLampiranHeadingNumber(original.rawXml, nextExistingNum);
+                if (fixedXml !== original.rawXml) {
+                  elements[heading.index] = {
+                    ...original,
+                    rawXml: fixedXml,
+                    text: original.text.replace(/^\\s*Lampiran\\s*(?:ke[\\s.-]*)?(?:\\d+|[IVXLCDM]+)(?=$|[\\s.:)\\-])/i,
+                      `Lampiran ${nextExistingNum}`),
+                  };
+                  logs.push(`✓ Renumber Lampiran ${heading.number} → ${nextExistingNum} pada naskah setelah sisipan`);
+                }
+                nextExistingNum++;
+              }
+              logs.push(`✓ ${activeItems.length} lampiran baru dilanjutkan setelah Lampiran ${highestExisting || 3}; judul lampiran asli setelahnya diperbarui.`);
+              logs.push(`✓ Titik penempatan 5 Lampiran aktif pada kata kunci anchor (In Line with Text, Margin Asli Skripsi)`);'''
+          if s.count(old)!=1:raise SystemExit('Anchor branch kode tidak cocok. Stop.')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          print('OK: penomoran judul Word setelah sisipan')
+
+          app='src/gabungFile/App.tsx'
+          replace_exact(app,
+              "import { parseDocx, checkAnchorKeyword } from './utils/docxParser';",
+              "import { parseDocx, checkAnchorKeyword } from './utils/docxParser';\nimport { getLampiranInsertionChoices } from './utils/lampiranSequence'; // ZAINNET_MENU10_AUTO_SEQUENCE_V1",
+              'Import pilihan sisip untuk HP')
+          p=ROOT/app
+          s=p.read_text(encoding='utf-8')
+          old='''      const parsed = await parseDocx(buffer, file.name, options.anchorKeyword);
+                setAnalysis(parsed);'''
+          new='''      const parsed = await parseDocx(buffer, file.name, options.anchorKeyword);
+                // Jika pengguna tidak memiliki kata kunci, lokasi bisa dipilih otomatis.
+                if (!parsed.anchorKeywordMatch) {
+                  const quickPositions = getLampiranInsertionChoices(parsed.elements);
+                  const selected = quickPositions[quickPositions.length - 1];
+                  if (selected) {
+                    const anchorElement = parsed.elements[selected.insertionIndex];
+                    parsed.anchorKeywordMatch = {
+                      index: selected.insertionIndex,
+                      page: anchorElement?.estimatedPage || 1,
+                      text: anchorElement?.text || '',
+                      matchedKeyword: `Penempatan otomatis setelah Lampiran ${selected.afterNumber}`,
+                    };
+                  }
+                }
+                setAnalysis(parsed);'''
+          if s.count(old)!=1:raise SystemExit('Upload handler tidak cocok. Stop.')
+          s=s.replace(old,new,1)
+          old='''            onRecheckAnchor={() => handleRecheckAnchor()}
+                      onOpenManualPick={handleOpenManualPick}'''
+          new='''            onRecheckAnchor={() => handleRecheckAnchor()}
+                      onChooseLampiran={(choice) => {
+                        const at = analysis.elements[choice.insertionIndex];
+                        setAnalysis(prev => prev ? ({
+                          ...prev,
+                          anchorKeywordMatch: {
+                            index: choice.insertionIndex,
+                            page: at?.estimatedPage || 1,
+                            text: at?.text || '',
+                            matchedKeyword: `Penempatan otomatis setelah Lampiran ${choice.afterNumber}`,
+                          },
+                        }) : prev);
+                        setOptions(prev => ({ ...prev, useAnchorFor5Attachments: true }));
+                      }}
+                      onOpenManualPick={handleOpenManualPick}'''
+          if s.count(old)!=1:raise SystemExit('JSX StructureInspector tidak cocok. Stop.')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          print('OK: auto posisi dan pilihan penempatan dari HP')
+
+          ui='src/gabungFile/components/StructureInspector.tsx'
+          replace_exact(ui,
+              "import { CheckCircle2, AlertCircle, Clock, MapPin, Tag } from 'lucide-react';",
+              "import { CheckCircle2, AlertCircle, Clock, MapPin, Tag } from 'lucide-react';\nimport { getLampiranInsertionChoices, type LampiranInsertionChoice } from '../utils/lampiranSequence'; // ZAINNET_MENU10_AUTO_SEQUENCE_V1",
+              'Import pilihan mobile')
+          p=ROOT/ui
+          s=p.read_text(encoding='utf-8')
+          old='''  onRecheckAnchor: () => void;
+            onOpenManualPick?: (target: TargetDocument) => void;'''
+          new='''  onRecheckAnchor: () => void;
+            onChooseLampiran: (choice: LampiranInsertionChoice) => void;
+            onOpenManualPick?: (target: TargetDocument) => void;'''
+          if s.count(old)!=1:raise SystemExit('UI props tidak cocok. Stop.')
+          s=s.replace(old,new,1)
+          old='''  onRecheckAnchor,
+            onOpenManualPick,
+          }) => {
+            if (!analysis) return null;'''
+          new='''  onRecheckAnchor,
+            onChooseLampiran,
+            onOpenManualPick,
+          }) => {
+            if (!analysis) return null;
+            const quickPositions = getLampiranInsertionChoices(analysis.elements);
+            const chosenAuto = analysis.anchorKeywordMatch?.matchedKeyword.startsWith('Penempatan otomatis setelah Lampiran')
+              ? quickPositions.find(c => c.insertionIndex === analysis.anchorKeywordMatch?.index)
+              : undefined;'''
+          if s.count(old)!=1:raise SystemExit('UI arg dan pilihan tidak cocok. Stop.')
+          s=s.replace(old,new,1)
+          old='''        {/* Anchor Status Indicator */}'''
+          new='''        {/* Pencarian tanpa keyboard untuk HP: pilih nomor lampiran langsung. */}
+                  <div className="mt-3 p-3 rounded-lg border border-blue-200 bg-white space-y-2">
+                    <label htmlFor="zainnet-menu10-auto-lampiran" className="block text-sm font-bold text-slate-800">
+                      Sisip Lampiran Tanpa Mengetik (HP)
+                    </label>
+                    <p className="text-xs text-slate-600">
+                      Pilih setelah nomor lampiran yang ada. Contoh: setelah Lampiran 3, dokumen baru otomatis mulai Lampiran 4 dan lampiran lama sesudahnya bergeser.
+                    </p>
+                    <select
+                      id="zainnet-menu10-auto-lampiran"
+                      value={chosenAuto?.insertionIndex ?? ''}
+                      onChange={event => {
+                        const position = quickPositions.find(c => String(c.insertionIndex) === event.target.value);
+                        if (position) onChooseLampiran(position);
+                      }}
+                      className="w-full min-h-12 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 font-semibold text-slate-900"
+                      style={{ fontSize: 16 }}
+                      aria-label="Pilih penempatan setelah lampiran"
+                    >
+                      <option value="">-- Pilih posisi lampiran --</option>
+                      {quickPositions.map(choice => (
+                        <option key={`${choice.afterHeadingIndex}-${choice.insertionIndex}`} value={choice.insertionIndex}>
+                          Setelah Lampiran {choice.afterNumber} ({choice.description})
+                        </option>
+                      ))}
+                    </select>
+                    {quickPositions.length > 0 ? (
+                      <button type="button" onClick={() => onChooseLampiran(quickPositions[quickPositions.length - 1])}
+                        className="w-full min-h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-sm px-3 py-2">
+                        Otomatis Setelah Lampiran Terakhir
+                      </button>
+                    ) : (
+                      <p className="text-amber-700 text-xs">Nomor judul Lampiran belum ditemukan. Gunakan kata kunci atau pilih posisi manual pada Pratinjau Halaman.</p>
+                    )}
+                  </div>
+
+                  {/* Anchor Status Indicator */}'''
+          if s.count(old)!=1:raise SystemExit('Posisi box UI tidak cocok. Stop.')
+          s=s.replace(old,new,1)
+          old='''                Kata kunci ditemukan di <strong>Halaman ~{analysis.anchorKeywordMatch.page}</strong> (Paragraf #{analysis.anchorKeywordMatch.index}):'''
+          new='''                {analysis.anchorKeywordMatch.matchedKeyword.startsWith('Penempatan otomatis setelah Lampiran')
+                            ? 'Titik sisip otomatis dipilih pada'
+                            : 'Kata kunci ditemukan di'} <strong>Halaman ~{analysis.anchorKeywordMatch.page}</strong> (Paragraf #{analysis.anchorKeywordMatch.index}):'''
+          if s.count(old)!=1:raise SystemExit('Teks status UI tidak cocok. Stop.')
+          s=s.replace(old,new,1)
+          old='''              placeholder="Contoh: karyazainnet"
+                        className="w-full text-xs'''
+          new='''              placeholder="Contoh: karyazainnet"
+                        style={{ fontSize: 16 }}
+                        autoComplete="off"
+                        className="w-full text-xs'''
+          if s.count(old)!=1:raise SystemExit('Atribut input UI tidak cocok. Stop.')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          print('OK: kontrol mobile + status lampiran')
+          print('Patch Menu 10 dipasang pada source; jalankan npm run build & uji DOCX sebelum deploy.')
+          LAMPIRAN_PATCH_PY
+          python3 /tmp/zain_menu10/apply_patch.py
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Instal dependensi
+        run: npm ci --no-audit --no-fund
+      - name: Cek build website
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+        run: npm run build
+      - name: Commit source code (tanpa mengubah workflow)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- \
+            src/gabungFile/utils/lampiranSequence.ts \
+            src/gabungFile/utils/docxModifier.ts \
+            src/gabungFile/App.tsx \
+            src/gabungFile/components/StructureInspector.tsx
+          if git diff --cached --quiet; then
+            echo "Perbaikan Menu 10 sudah ada; tidak perlu commit ulang."
+          else
+            git commit -m "Menu10: pilihan lampiran untuk HP dan nomor otomatis berurutan"
+            git push origin HEAD:main
+          fi
+      - name: Publikasikan GitHub Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run pages.yml --ref main
+          echo "Perbaikan frontend Menu 10 sedang dipublikasikan lewat GitHub Pages."

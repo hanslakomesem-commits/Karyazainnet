@@ -1,0 +1,394 @@
+name: ZAIN.NET - Menu 1 Link 7 Paket ZIP Lima File
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zainnet-link7-zip5
+  cancel-in-progress: false
+
+jobs:
+  fix-zip-five:
+    name: Patch ZIP, Build, Commit Source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Perbaiki Link 7 dan buat paket ZIP 5 berkas
+        shell: bash
+        run: |
+          cat > /tmp/zainnet_zip5_patch.py <<'PY_ZAINNET_ZIP5'
+          from pathlib import Path
+
+          ROOT=Path('.')
+          MARKER='ZAINNET_LINK7_ZIP5_20261111'
+
+          def replace_once(path: str, old: str, new: str):
+              p=ROOT/path
+              s=p.read_text(encoding='utf-8')
+              count=s.count(old)
+              if count != 1:
+                  raise RuntimeError(f'{path}: bagian yang dicari muncul {count}x, dibutuhkan tepat 1x: {old[:100]!r}. Kode tidak diubah.')
+              p.write_text(s.replace(old,new,1),encoding='utf-8')
+              print(f'OK modified {path}: {old[:50]}')
+
+          def write_new(path: str, contents: str):
+              p=ROOT/path
+              if p.exists():
+                  if p.read_text(encoding='utf-8') == contents:
+                      print(f'Unchanged {path}')
+                      return
+                  raise RuntimeError(f'{path} sudah ada dan berbeda, hentikan agar tidak menimpa kode lain.')
+              p.parent.mkdir(parents=True,exist_ok=True)
+              p.write_text(contents,encoding='utf-8')
+              print(f'OK created {path}')
+
+          appfile=ROOT/'src/journalConverter/App.tsx'
+          if MARKER in appfile.read_text(encoding='utf-8'):
+              print('Perbaikan ZIP 5 berkas sudah terpasang, tidak mengubah ulang.')
+              raise SystemExit(0)
+
+          # 1. Keep the original uploaded thesis File in memory; never pretend an extracted
+          #    text blob is a DOCX, nor rename PDF bytes to DOCX.
+          replace_once('src/journalConverter/types/journal.ts',
+              '  fileName?: string;\n  fileSize?: number;',
+              '  fileName?: string;\n  fileSize?: number;\n  /** Original thesis bytes, kept in browser memory for five-file ZIP. */\n  originalFile?: File;')
+          replace_once('src/journalConverter/components/SkripsiUploader.tsx',
+              '      fileName: selectedFile?.name,\n      fileSize: selectedFile?.size,',
+              '      fileName: selectedFile?.name,\n      fileSize: selectedFile?.size,\n      originalFile: selectedFile || undefined,')
+
+          # 2. A readable PDF article: same article sections, though pagination is not
+          #    guaranteed identical to Word (real DOCX-to-PDF needs a rendering engine).
+          pdfcode=r'''/** ZAINNET_LINK7_ZIP5_20261111 — Article PDF, not a renamed DOCX. */
+          import { jsPDF } from 'jspdf';
+          import type { JournalArticle } from '../types/journal';
+
+          const clean = (value: unknown): string => String(value ?? '')
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/&nbsp;/gi, ' ')
+            .replace(/&amp;/gi, '&')
+            .replace(/&lt;/gi, '<')
+            .replace(/&gt;/gi, '>')
+            .replace(/\*\*/g, '')
+            .replace(/\r/g, '')
+            .replace(/[\t ]+/g, ' ')
+            .trim();
+
+          /** Creates a real, searchable PDF from the completed article text.
+           *  Layout follows 3 cm margins / Times 12 / 1.5 line spacing approximately.
+           *  Its pagination/footnote position can differ from the DOCX export.
+           */
+          export function buildArticlePdf(article: JournalArticle): Blob {
+            const doc = new jsPDF({ format: 'a4', unit: 'mm', orientation: 'portrait', compress: true });
+            const margin = 30;
+            const maxWidth = 210 - margin * 2;
+            const pageBottom = 297 - margin;
+            const lineHeight = 6.35;
+            let y = margin;
+
+            const pageIfNecessary = (needed = lineHeight) => {
+              if (y + needed > pageBottom) {
+                doc.addPage();
+                y = margin;
+              }
+            };
+            const setStyle = (bold = false, size = 12) => {
+              doc.setFont('times', bold ? 'bold' : 'normal');
+              doc.setFontSize(size);
+              doc.setTextColor(25, 25, 25);
+            };
+            const writeText = (raw: unknown, bold = false, centered = false) => {
+              const text = clean(raw);
+              if (!text) return;
+              setStyle(bold);
+              const paragraphs = text.split(/\n\s*\n|\n/).map(t => t.trim()).filter(Boolean);
+              for (const paragraph of paragraphs) {
+                const wrapped = doc.splitTextToSize(paragraph, maxWidth) as string[];
+                for (const line of wrapped) {
+                  pageIfNecessary();
+                  if (centered) doc.text(line, 105, y, { align: 'center' });
+                  else doc.text(line, margin, y);
+                  y += lineHeight;
+                }
+                y += 2;
+              }
+              y += 2;
+            };
+            const heading = (text: string) => {
+              pageIfNecessary(18);
+              writeText(text.toUpperCase(), true);
+            };
+
+            writeText(article.metadata?.judul || 'ARTIKEL ILMIAH', true, true);
+            writeText(article.metadata?.nama || 'Penulis', true, true);
+            writeText([article.metadata?.instansi, article.metadata?.prodi, article.metadata?.email]
+              .filter(Boolean).join(' • '), false, true);
+            heading('ABSTRAK');
+            writeText(article.abstract?.abstrakIndo);
+            writeText(`Kata kunci: ${(article.abstract?.keywordsIndo || []).join(', ')}`);
+            if (article.abstract?.abstrakEnglish) {
+              heading('ABSTRACT');
+              writeText(article.abstract.abstrakEnglish);
+              writeText(`Keywords: ${(article.abstract?.keywordsEnglish || []).join(', ')}`);
+            }
+            const sections: Array<[string, unknown]> = [
+              ['PENDAHULUAN', article.pendahuluan],
+              ['METODE PENELITIAN', article.metode],
+              ['HASIL PENELITIAN', article.hasil],
+              ['PEMBAHASAN', article.pembahasan],
+              ['KESIMPULAN', article.kesimpulan],
+            ];
+            for (const [title, body] of sections) {
+              heading(title);
+              writeText(body);
+            }
+            if ((article.footnotes || []).length) {
+              heading('CATATAN KAKI');
+              for (const note of article.footnotes) writeText(`${note.number}. ${note.text}`);
+            }
+            heading('DAFTAR PUSTAKA');
+            for (const ref of article.daftarPustaka || []) writeText(ref);
+
+            const totalPages = doc.getNumberOfPages();
+            for (let i = 1; i <= totalPages; i++) {
+              doc.setPage(i);
+              setStyle(false, 9);
+              doc.text(String(i), 105, 285, { align: 'center' });
+            }
+            const blob = doc.output('blob');
+            if (!blob || blob.size < 500) throw new Error('PDF artikel gagal dibuat.');
+            return blob;
+          }
+          '''
+          write_new('src/journalConverter/utils/articlePdfExport.ts',pdfcode)
+
+          # 3. Validated five-file ZIP, no silent source-file fabrications.
+          oldbundle=(ROOT/'src/journalConverter/utils/bundleExport.ts').read_text(encoding='utf-8')
+          addition=r'''
+
+          // ZAINNET_LINK7_ZIP5_20261111
+          import { buildArticlePdf } from './articlePdfExport';
+
+          export interface ThesisSourceFiles {
+            word: File;
+            pdf: File;
+          }
+
+          async function verifyMagic(file: File, type: 'docx' | 'pdf'): Promise<void> {
+            const extensionOk = file.name.toLowerCase().endsWith('.' + type);
+            const bytes = new Uint8Array(await file.slice(0, 5).arrayBuffer());
+            const valid = type === 'pdf'
+              ? bytes[0] === 37 && bytes[1] === 80 && bytes[2] === 68 && bytes[3] === 70 && bytes[4] === 45
+              : bytes[0] === 80 && bytes[1] === 75 && bytes[2] === 3 && bytes[3] === 4;
+            if (!extensionOk || !valid || file.size < 100) {
+              throw new Error(`File skripsi ${type.toUpperCase()} tidak valid. Unggah berkas asli berformat .${type}, bukan mengganti nama ekstensi.`);
+            }
+          }
+
+          /** Output: folder named after the student with 4 documents, plus Cover CD at ZIP root. */
+          export async function buildFiveFileBundle(
+            article: JournalArticle,
+            thesis: ThesisSourceFiles,
+            onProgress?: (status: string) => void,
+          ): Promise<{ blob: Blob; filename: string }> {
+            if (!thesis.word || !thesis.pdf) {
+              throw new Error('Paket ZIP membutuhkan dua file skripsi asli: .docx dan .pdf. Lengkapi keduanya terlebih dahulu.');
+            }
+            onProgress?.('Memvalidasi skripsi Word dan PDF asli...');
+            await Promise.all([verifyMagic(thesis.word, 'docx'), verifyMagic(thesis.pdf, 'pdf')]);
+            const student = String(article.metadata?.nama || '').replace(/[\\/:*?"<>|\x00-\x1F]/g, '')
+              .replace(/\s+/g, ' ').trim().slice(0, 80);
+            if (!student || student.toLowerCase() === 'mahasiswa peneliti') {
+              throw new Error('Nama mahasiswa harus diisi dengan nama sebenarnya untuk penamaan folder ZIP.');
+            }
+            const fileName = student.replace(/\s+/g, '_');
+
+            onProgress?.('Membuat artikel DOCX, artikel PDF, dan Cover CD...');
+            const [articleWord, articlePdf, coverWord] = await Promise.all([
+              buildJournalDocx(article),
+              Promise.resolve().then(() => buildArticlePdf(article)),
+              buildCoverCdDocx(article),
+            ]);
+            if (articleWord.size < 100 || articlePdf.size < 500 || coverWord.size < 100) {
+              throw new Error('Salah satu file artikel atau Cover CD belum terbentuk sempurna.');
+            }
+            const zip = new JSZip();
+            const folder = zip.folder(student);
+            if (!folder) throw new Error('Gagal membuat folder mahasiswa pada ZIP.');
+            folder.file(`Skripsi_${fileName}.docx`, thesis.word);
+            folder.file(`Skripsi_${fileName}.pdf`, thesis.pdf);
+            folder.file(`Artikel_${fileName}.docx`, articleWord);
+            folder.file(`Artikel_${fileName}.pdf`, articlePdf);
+            zip.file(`Cover_CD_${fileName}.docx`, coverWord);
+            const entries = Object.values(zip.files).filter(f => !f.dir);
+            if (entries.length !== 5) throw new Error(`Paket harus berisi tepat 5 file, ditemukan ${entries.length}.`);
+
+            const blob = await zip.generateAsync(
+              { type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 5 }, streamFiles: true },
+              progress => onProgress?.(`Mengemas ZIP: ${Math.round(progress.percent)}%`),
+            );
+            if (blob.size < 1000) throw new Error('ZIP tidak valid atau kosong.');
+            return { blob, filename: `ZAINNET_Paket_Lengkap_${fileName}.zip` };
+          }
+          '''
+          # Preserve old exports used by other callers, and add new named export.
+          if 'import { buildArticlePdf }' not in oldbundle:
+              with (ROOT/'src/journalConverter/utils/bundleExport.ts').open('a',encoding='utf-8') as f:
+                  f.write(addition)
+              print('OK extended bundleExport.ts')
+          else:
+              raise RuntimeError('bundleExport.ts sudah memiliki import buildArticlePdf dari perubahan lain; periksa sebelum merge')
+
+          # 4. Wire uploaded source into generator state and expose a one-click ZIP button.
+          path='src/journalConverter/App.tsx'
+          replace_once(path,
+              "import { triggerBundleDownload, downloadCoverCdOnly } from './utils/bundleExport';",
+              "import { triggerBundleDownload, downloadCoverCdOnly, buildFiveFileBundle } from './utils/bundleExport';")
+          replace_once(path,
+              '  const [isDownloadingCoverCd, setIsDownloadingCoverCd] = useState(false);',
+              '''  const [isDownloadingCoverCd, setIsDownloadingCoverCd] = useState(false);
+            // ZAINNET_LINK7_ZIP5_20261111: File objects remain in browser memory, not backend storage.
+            const [sourceThesis, setSourceThesis] = useState<{ word: File | null; pdf: File | null }>({ word: null, pdf: null });
+            const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+            const [zipMessage, setZipMessage] = useState('Untuk ZIP lengkap, unggah skripsi Word (.docx) dan PDF (.pdf) asli.');''')
+          replace_once(path,
+              '  const handleGenerateJournal = async (input: SkripsiInput) => {\n    setIsLoading(true);',
+              '''  const handleGenerateJournal = async (input: SkripsiInput) => {
+              const original = input.originalFile;
+              setSourceThesis({
+                word: original?.name.toLowerCase().endsWith('.docx') ? original : null,
+                pdf: original?.name.toLowerCase().endsWith('.pdf') ? original : null,
+              });
+              setZipMessage('Untuk ZIP lengkap, lengkapi skripsi Word (.docx) dan PDF (.pdf) asli.');
+              setIsLoading(true);''')
+          replace_once(path,
+              '  // Handle Cover CD Export (.docx)',
+              '''  const handleThesisFilePick = (kind: 'word' | 'pdf', file?: File) => {
+              if (!file) return;
+              const expected = kind === 'word' ? '.docx' : '.pdf';
+              if (!file.name.toLowerCase().endsWith(expected)) {
+                setZipMessage(`Berkas skripsi ${kind === 'word' ? 'Word' : 'PDF'} harus ${expected}.`);
+                return;
+              }
+              setSourceThesis(prev => ({ ...prev, [kind]: file }));
+              setZipMessage(`${file.name} diterima. Pastikan kedua format berasal dari skripsi mahasiswa yang sama.`);
+            };
+
+            const handleDownloadZip = async () => {
+              if (!article || isDownloadingZip) return;
+              if (!sourceThesis.word || !sourceThesis.pdf) {
+                setZipMessage('ZIP 5 file belum tersedia: lengkapi kedua skripsi asli .docx dan .pdf di kolom di atas.');
+                return;
+              }
+              setIsDownloadingZip(true);
+              try {
+                const { blob, filename } = await buildFiveFileBundle(
+                  article, { word: sourceThesis.word, pdf: sourceThesis.pdf }, setZipMessage,
+                );
+                triggerBundleDownload(blob, filename);
+                setZipMessage(`ZIP siap dan unduhan sudah diminta: ${filename}. Periksa folder Download. Bila tidak muncul, tekan tombol ZIP lagi.`);
+              } catch (err: any) {
+                console.error('[ZAIN.NET Link 7] Gagal membuat ZIP 5 file:', err);
+                setZipMessage(`ZIP gagal: ${err?.message || 'Terjadi kesalahan.'}. Artikel tetap terbuka, coba lagi.`);
+              } finally {
+                setIsDownloadingZip(false);
+              }
+            };
+
+            // Handle Cover CD Export (.docx)''')
+          replace_once(path,
+              '      {/* 2-file download confirmation stays visible until the user confirms. */}',
+              '      {/* 2-file download confirmation stays visible until the user confirms. ZIP is optional. */}')
+          replace_once(path,
+              '          <p className="text-sm mt-1" aria-live="polite">{wordPairMessage}</p>\n          <div className="flex flex-wrap gap-2 mt-3">',
+              '''          <p className="text-sm mt-1" aria-live="polite">{wordPairMessage}</p>
+                    <div className="mt-3 rounded-lg border border-cyan-500/50 bg-slate-900 p-3">
+                      <p className="text-sm font-bold text-cyan-200">Paket Lengkap ZIP — 5 file dalam 1 ZIP</p>
+                      <p className="text-xs text-slate-200 mt-1">Di dalam folder nama mahasiswa: Skripsi Word + PDF, Artikel Word + PDF. Di luar folder: Cover CD Word.</p>
+                      <div className="grid gap-2 mt-3 sm:grid-cols-2">
+                        <label className="text-xs flex flex-col gap-1">
+                          Skripsi Word asli (.docx) {sourceThesis.word ? `✓ ${sourceThesis.word.name}` : '— belum ada'}
+                          <input className="w-full text-xs file:mr-2 file:rounded file:border-0 file:p-2 file:bg-blue-600 file:text-white"
+                            type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            onChange={e => handleThesisFilePick('word', e.target.files?.[0])} />
+                        </label>
+                        <label className="text-xs flex flex-col gap-1">
+                          Skripsi PDF asli (.pdf) {sourceThesis.pdf ? `✓ ${sourceThesis.pdf.name}` : '— belum ada'}
+                          <input className="w-full text-xs file:mr-2 file:rounded file:border-0 file:p-2 file:bg-blue-600 file:text-white"
+                            type="file" accept=".pdf,application/pdf"
+                            onChange={e => handleThesisFilePick('pdf', e.target.files?.[0])} />
+                        </label>
+                      </div>
+                      <div className="flex flex-wrap gap-3 items-center mt-3">
+                        <button type="button" onClick={handleDownloadZip}
+                          disabled={isDownloadingZip || !sourceThesis.word || !sourceThesis.pdf}
+                          className="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-4 py-2 font-bold disabled:opacity-50">
+                          {isDownloadingZip ? 'Menyiapkan Paket ZIP...' : 'Download Paket Lengkap (ZIP 5 File)'}
+                        </button>
+                        <span aria-live="polite" className="text-xs text-amber-100">{zipMessage}</span>
+                      </div>
+                      <p className="text-xs text-slate-300 mt-2">PDF artikel dibuat dari isi artikel. Pagination dan letak catatan kaki pada PDF dapat berbeda dari DOCX; cek sebelum dicetak. Skripsi asli dipertahankan apa adanya.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mt-3">''')
+          replace_once(path,
+              '            onDownloadCoverCd={handleDownloadCoverCd}\n            isDownloading={isDownloadingDocx}',
+              '            onDownloadCoverCd={handleDownloadCoverCd}\n            onDownloadBundle={handleDownloadZip}\n            isDownloading={isDownloadingDocx}')
+          replace_once(path,
+              '            isDownloadingBundle={false}',
+              '            isDownloadingBundle={isDownloadingZip}')
+
+          # 5. Clarify the ZIP option on the article preview.
+          replace_once('src/journalConverter/components/JournalPreview.tsx',
+              'title="Unduh Paket Lengkap: Naskah Artikel + Cover CD (.zip)"',
+              'title="ZIP 5 File: Skripsi Word + PDF, Artikel Word + PDF, dan Cover CD Word"')
+          replace_once('src/journalConverter/components/JournalPreview.tsx',
+              "'Paket Lengkap (.zip)'",
+              "'Paket Lengkap 5 File (.zip)'")
+
+          print('SUCCESS: Link 7 ZIP lima berkas, tanpa mengubah alur AI, kuota, atau dua download Word.')
+
+          PY_ZAINNET_ZIP5
+          python3 /tmp/zainnet_zip5_patch.py
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build website (gagal jika ada masalah integrasi)
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: |
+          npm run build
+          test -s dist/index.html
+          test -s dist/assets/$(find dist/assets -maxdepth 1 -name '*.js' -printf '%f\n' | head -1)
+
+      - name: Simpan hanya file terkait Link 7
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/journalConverter/types/journal.ts \
+                  src/journalConverter/components/SkripsiUploader.tsx \
+                  src/journalConverter/App.tsx \
+                  src/journalConverter/utils/articlePdfExport.ts \
+                  src/journalConverter/utils/bundleExport.ts \
+                  src/journalConverter/components/JournalPreview.tsx
+          if git diff --cached --quiet; then
+            echo 'ZIP 5 berkas sudah terpasang, tidak ada perubahan baru.'
+          else
+            git commit -m 'Menu1 Link7: ZIP 5 file skripsi dan artikel plus Cover CD'
+            git push origin HEAD:main
+          fi
+          echo 'GitHub Pages akan deploy otomatis dari push ke main.'

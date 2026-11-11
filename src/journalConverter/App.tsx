@@ -199,7 +199,9 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
       word: original?.name.toLowerCase().endsWith('.docx') ? original : null,
       pdf: original?.name.toLowerCase().endsWith('.pdf') ? original : null,
     });
-    setZipMessage('Untuk ZIP lengkap, lengkapi skripsi Word (.docx) dan PDF (.pdf) asli.');
+    setZipMessage(original?.name.toLowerCase().endsWith('.docx')
+      ? 'File skripsi Word asli sudah tersimpan. PDF skripsi dan artikel dibuat otomatis ketika Anda mengunduh ZIP.'
+      : 'Untuk paket ZIP, pilih skripsi Word .docx asli sekali saja. PDF akan dibuat otomatis.');
     setIsLoading(true);
     setErrorMsg(null);
 
@@ -335,27 +337,27 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
     }
   };
 
-  const handleThesisFilePick = (kind: 'word' | 'pdf', file?: File) => {
+  // ZAINNET_LINK7_AUTO_PDF_FROM_WORD_20261111
+  const handleThesisWordPick = (file?: File) => {
     if (!file) return;
-    const expected = kind === 'word' ? '.docx' : '.pdf';
-    if (!file.name.toLowerCase().endsWith(expected)) {
-      setZipMessage(`Berkas skripsi ${kind === 'word' ? 'Word' : 'PDF'} harus ${expected}.`);
+    if (!file.name.toLowerCase().endsWith('.docx')) {
+      setZipMessage('Berkas harus berformat Word .docx asli. Jangan hanya mengganti ekstensi.');
       return;
     }
-    setSourceThesis(prev => ({ ...prev, [kind]: file }));
-    setZipMessage(`${file.name} diterima. Pastikan kedua format berasal dari skripsi mahasiswa yang sama.`);
+    setSourceThesis(prev => ({ ...prev, word: file }));
+    setZipMessage(`${file.name} diterima. PDF skripsi dan artikel akan dibuat otomatis dari Word.`);
   };
 
   const handleDownloadZip = async () => {
     if (!article || isDownloadingZip) return;
-    if (!sourceThesis.word || !sourceThesis.pdf) {
-      setZipMessage('ZIP 5 file belum tersedia: lengkapi kedua skripsi asli .docx dan .pdf di kolom di atas.');
+    if (!sourceThesis.word) {
+      setZipMessage('ZIP belum tersedia: unggah skripsi Word .docx asli sekali saja. PDF dibuat otomatis.');
       return;
     }
     setIsDownloadingZip(true);
     try {
       const { blob, filename } = await buildFiveFileBundle(
-        article, { word: sourceThesis.word, pdf: sourceThesis.pdf }, setZipMessage,
+        article, { word: sourceThesis.word }, setZipMessage,
       );
       triggerBundleDownload(blob, filename);
       setZipMessage(`ZIP siap dan unduhan sudah diminta: ${filename}. Periksa folder Download. Bila tidak muncul, tekan tombol ZIP lagi.`);
@@ -445,34 +447,33 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
       {/* 2-file download confirmation stays visible until the user confirms. ZIP is optional. */}
       {article && (
         <div role="status" className="sticky top-0 z-40 mx-auto w-full max-w-5xl bg-blue-950 text-white p-4 shadow-xl border-b-4 border-cyan-400">
-          <p className="font-bold text-base">Artikel selesai — 2 File Word (tanpa ZIP)</p>
+          <p className="font-bold text-base">Artikel selesai — Word terpisah atau ZIP lengkap 5 file</p>
           <p className="text-sm mt-1" aria-live="polite">{wordPairMessage}</p>
           <div className="mt-3 rounded-lg border border-cyan-500/50 bg-slate-900 p-3">
             <p className="text-sm font-bold text-cyan-200">Paket Lengkap ZIP — 5 file dalam 1 ZIP</p>
             <p className="text-xs text-slate-200 mt-1">Di dalam folder nama mahasiswa: Skripsi Word + PDF, Artikel Word + PDF. Di luar folder: Cover CD Word.</p>
-            <div className="grid gap-2 mt-3 sm:grid-cols-2">
-              <label className="text-xs flex flex-col gap-1">
-                Skripsi Word asli (.docx) {sourceThesis.word ? `✓ ${sourceThesis.word.name}` : '— belum ada'}
-                <input className="w-full text-xs file:mr-2 file:rounded file:border-0 file:p-2 file:bg-blue-600 file:text-white"
-                  type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  onChange={e => handleThesisFilePick('word', e.target.files?.[0])} />
-              </label>
-              <label className="text-xs flex flex-col gap-1">
-                Skripsi PDF asli (.pdf) {sourceThesis.pdf ? `✓ ${sourceThesis.pdf.name}` : '— belum ada'}
-                <input className="w-full text-xs file:mr-2 file:rounded file:border-0 file:p-2 file:bg-blue-600 file:text-white"
-                  type="file" accept=".pdf,application/pdf"
-                  onChange={e => handleThesisFilePick('pdf', e.target.files?.[0])} />
-              </label>
+            <div className="mt-3 rounded-md bg-slate-800/70 p-3 text-xs">
+              {sourceThesis.word ? (
+                <p className="text-emerald-200 font-semibold">✓ Skripsi Word telah diterima: {sourceThesis.word.name}</p>
+              ) : (
+                <label className="flex flex-col gap-2">
+                  <span className="text-amber-200">Skripsi Word belum tersedia. Unggah .docx untuk membuat ZIP.</span>
+                  <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    className="text-white file:mr-2 file:rounded file:border-0 file:p-2 file:bg-blue-600 file:text-white"
+                    onChange={e => handleThesisWordPick(e.target.files?.[0])} />
+                </label>
+              )}
+              <p className="mt-2 text-slate-200">PDF skripsi otomatis dibuat dari Word asli. PDF artikel otomatis dibuat dari Artikel Word menggunakan LibreOffice di Render. Tidak perlu mengunggah PDF kedua.</p>
             </div>
             <div className="flex flex-wrap gap-3 items-center mt-3">
               <button type="button" onClick={handleDownloadZip}
-                disabled={isDownloadingZip || !sourceThesis.word || !sourceThesis.pdf}
+                disabled={isDownloadingZip || !sourceThesis.word}
                 className="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-4 py-2 font-bold disabled:opacity-50">
                 {isDownloadingZip ? 'Menyiapkan Paket ZIP...' : 'Download Paket Lengkap (ZIP 5 File)'}
               </button>
               <span aria-live="polite" className="text-xs text-amber-100">{zipMessage}</span>
             </div>
-            <p className="text-xs text-slate-300 mt-2">PDF artikel dibuat dari isi artikel. Pagination dan letak catatan kaki pada PDF dapat berbeda dari DOCX; cek sebelum dicetak. Skripsi asli dipertahankan apa adanya.</p>
+            <p className="text-xs text-slate-300 mt-2">Kedua PDF dikonversi dari file Word yang sebenarnya melalui LibreOffice di server. Periksa halaman, font, dan catatan kaki sebelum dicetak.</p>
           </div>
           <div className="flex flex-wrap gap-2 mt-3">
             <button type="button" onClick={retryTwoWordDownloads}

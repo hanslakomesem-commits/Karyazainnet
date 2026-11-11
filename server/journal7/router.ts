@@ -2,6 +2,10 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { execFileSync } from 'child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import os from 'node:os';
+import fsPromises from 'node:fs/promises';
 import multer from 'multer';
 import mammoth from 'mammoth';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -298,6 +302,72 @@ async function generateContentWithFallback(params: {
     `Layanan AI sedang mengalami kendala sementara (${finalErrMsg.slice(0, 150)}...). Silakan klik tombol Generate kembali.`
   );
 }
+
+// ZAINNET_LINK7_AUTO_PDF_FROM_WORD_20261111
+// Convert an uploaded original DOCX into a real PDF using LibreOffice.
+// Files live in an isolated temp directory and are always deleted afterward.
+const zipPdfExecFile = promisify(execFile);
+const zipPdfUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
+let activeZipPdfConversion = 0;
+const zipPdfUsage = new Map<string, { count: number; expires: number }>();
+
+router.post('/docx-to-pdf', (req, res) => {
+  zipPdfUpload.single('file')(req, res, async (uploadErr: any) => {
+    if (uploadErr) return res.status(413).json({ error: 'File Word terlalu besar (maksimal 25 MB) atau unggahan tidak valid.' });
+    const file = req.file;
+    if (!file || !/\.docx$/i.test(file.originalname) || file.buffer.length < 200 ||
+        file.buffer[0] !== 0x50 || file.buffer[1] !== 0x4b ||
+        file.buffer[2] !== 0x03 || file.buffer[3] !== 0x04) {
+      return res.status(400).json({ error: 'Unggah file Word .docx asli, bukan file yang diubah ekstensinya.' });
+    }
+    const ip = String(req.ip || 'unknown');
+    const now = Date.now();
+    // Opportunistic expiry cleanup avoids an unbounded map on public endpoints.
+    if (zipPdfUsage.size > 2000) {
+      for (const [key, item] of zipPdfUsage) if (item.expires <= now) zipPdfUsage.delete(key);
+    }
+    const record = zipPdfUsage.get(ip);
+    const usage = record && record.expires > now ? record : { count: 0, expires: now + 15 * 60_000 };
+    if (usage.count >= 20) {
+      return res.status(429).json({ error: 'Batas konversi tercapai. Coba lagi nanti.' });
+    }
+    if (activeZipPdfConversion >= 1) {
+      return res.status(429).json({ error: 'Konverter PDF sedang digunakan. Ulangi beberapa saat lagi.' });
+    }
+    usage.count++;
+    zipPdfUsage.set(ip, usage);
+    activeZipPdfConversion++;
+    let dir: string | null = null;
+    try {
+      dir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'zainnet-word-to-pdf-'));
+      const inputPath = path.join(dir, 'document.docx');
+      const outputPath = path.join(dir, 'document.pdf');
+      const profile = path.join(dir, 'lo-user-profile');
+      await fsPromises.writeFile(inputPath, file.buffer, { flag: 'wx' });
+      await zipPdfExecFile(process.env.LIBREOFFICE_BIN || 'libreoffice', [
+        '-env:UserInstallation=file://' + profile,
+        '--headless', '--nologo', '--nodefault', '--nofirststartwizard',
+        '--convert-to', 'pdf:writer_pdf_Export', '--outdir', dir, inputPath,
+      ], { timeout: 115_000, maxBuffer: 512 * 1024, killSignal: 'SIGKILL' });
+      const pdf = await fsPromises.readFile(outputPath);
+      if (pdf.length < 500 || pdf.subarray(0, 5).toString('ascii') !== '%PDF-') {
+        throw new Error('LibreOffice tidak menghasilkan PDF valid.');
+      }
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Cache-Control', 'no-store, private');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      return res.send(pdf);
+    } catch (err: any) {
+      console.error('[ZAIN.NET Link7 DOCX→PDF]', err?.message || err);
+      if (!res.headersSent) {
+        return res.status(503).json({ error: 'Konversi Word ke PDF gagal di Render: ' + String(err?.message || 'periksa LibreOffice').slice(0, 180) });
+      }
+    } finally {
+      activeZipPdfConversion = Math.max(0, activeZipPdfConversion - 1);
+      if (dir) await fsPromises.rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+});
 
 // Health check endpoint
 router.get(['/health', '/api/health'], (req, res) => {

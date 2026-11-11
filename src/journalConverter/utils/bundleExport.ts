@@ -35,67 +35,106 @@ export async function downloadCoverCdOnly(article: JournalArticle): Promise<void
 }
 
 
-// ZAINNET_LINK7_ZIP5_20261111
-import { buildArticlePdf } from './articlePdfExport';
-
+// ZAINNET_LINK7_AUTO_PDF_FROM_WORD_20261111
+/** Four files inside the student folder, one CD cover outside it. */
 export interface ThesisSourceFiles {
   word: File;
-  pdf: File;
 }
 
-async function verifyMagic(file: File, type: 'docx' | 'pdf'): Promise<void> {
-  const extensionOk = file.name.toLowerCase().endsWith('.' + type);
-  const bytes = new Uint8Array(await file.slice(0, 5).arrayBuffer());
-  const valid = type === 'pdf'
-    ? bytes[0] === 37 && bytes[1] === 80 && bytes[2] === 68 && bytes[3] === 70 && bytes[4] === 45
-    : bytes[0] === 80 && bytes[1] === 75 && bytes[2] === 3 && bytes[3] === 4;
-  if (!extensionOk || !valid || file.size < 100) {
-    throw new Error(`File skripsi ${type.toUpperCase()} tidak valid. Unggah berkas asli berformat .${type}, bukan mengganti nama ekstensi.`);
+async function verifyWordFile(file: File): Promise<void> {
+  const bytes = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+  if (!file.name.toLowerCase().endsWith('.docx') || file.size < 200 ||
+      bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b ||
+      bytes[2] !== 0x03 || bytes[3] !== 0x04) {
+    throw new Error('Skripsi harus merupakan Word .docx asli. File .doc atau PDF yang diganti nama tidak dapat diproses.');
   }
 }
 
-/** Output: folder named after the student with 4 documents, plus Cover CD at ZIP root. */
+async function convertWordToPdf(source: Blob, filename: string): Promise<Blob> {
+  // On GitHub Pages, deploymentBridge forwards this relative /api URL to the Render backend.
+  const data = new FormData();
+  data.append('file', source, filename);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 180_000);
+  try {
+    const response = await fetch('/api/journal7/docx-to-pdf', {
+      method: 'POST', body: data, signal: controller.signal,
+      credentials: 'omit',
+    });
+    if (!response.ok) {
+      let details = `HTTP ${response.status}`;
+      try {
+        const result = await response.json();
+        details = String(result?.error || details);
+      } catch { /* Preserve the HTTP error. */ }
+      if (response.status === 404) {
+        throw new Error('Mesin konversi Word ke PDF belum dipublikasikan di Render. Deploy backend Render terbaru terlebih dahulu.');
+      }
+      throw new Error('Konversi Word ke PDF gagal: ' + details);
+    }
+    const pdf = await response.blob();
+    const sig = new Uint8Array(await pdf.slice(0, 5).arrayBuffer());
+    if (pdf.size < 500 || sig.length !== 5 ||
+        sig[0] !== 37 || sig[1] !== 80 || sig[2] !== 68 || sig[3] !== 70 || sig[4] !== 45) {
+      throw new Error('Server tidak mengembalikan berkas PDF yang valid. ZIP tidak dibuat.');
+    }
+    return pdf;
+  } catch (e: any) {
+    if (e?.name === 'AbortError') {
+      throw new Error('Konversi PDF melebihi 3 menit. Cek status Render dan coba lagi.');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function buildFiveFileBundle(
   article: JournalArticle,
   thesis: ThesisSourceFiles,
   onProgress?: (status: string) => void,
 ): Promise<{ blob: Blob; filename: string }> {
-  if (!thesis.word || !thesis.pdf) {
-    throw new Error('Paket ZIP membutuhkan dua file skripsi asli: .docx dan .pdf. Lengkapi keduanya terlebih dahulu.');
+  if (!thesis.word) {
+    throw new Error('Skripsi Word .docx belum tersedia. Unggah Word satu kali terlebih dahulu.');
   }
-  onProgress?.('Memvalidasi skripsi Word dan PDF asli...');
-  await Promise.all([verifyMagic(thesis.word, 'docx'), verifyMagic(thesis.pdf, 'pdf')]);
+  await verifyWordFile(thesis.word);
   const student = String(article.metadata?.nama || '').replace(/[\\/:*?"<>|\x00-\x1F]/g, '')
     .replace(/\s+/g, ' ').trim().slice(0, 80);
   if (!student || student.toLowerCase() === 'mahasiswa peneliti') {
-    throw new Error('Nama mahasiswa harus diisi dengan nama sebenarnya untuk penamaan folder ZIP.');
+    throw new Error('Isi nama mahasiswa asli sebelum membuat ZIP.');
   }
   const fileName = student.replace(/\s+/g, '_');
 
-  onProgress?.('Membuat artikel DOCX, artikel PDF, dan Cover CD...');
-  const [articleWord, articlePdf, coverWord] = await Promise.all([
-    buildJournalDocx(article),
-    Promise.resolve().then(() => buildArticlePdf(article)),
-    buildCoverCdDocx(article),
+  onProgress?.('Menyiapkan Artikel Word dan Cover CD Word...');
+  const [articleWord, coverWord] = await Promise.all([
+    buildJournalDocx(article), buildCoverCdDocx(article),
   ]);
-  if (articleWord.size < 100 || articlePdf.size < 500 || coverWord.size < 100) {
-    throw new Error('Salah satu file artikel atau Cover CD belum terbentuk sempurna.');
+  if (articleWord.size < 200 || coverWord.size < 200) {
+    throw new Error('File Artikel Word atau Cover CD tidak berhasil dibuat.');
   }
+
+  // Sequential conversions keep LibreOffice memory use within Render Free limits.
+  onProgress?.('Mengonversi skripsi Word menjadi PDF asli (LibreOffice)...');
+  const thesisPdf = await convertWordToPdf(thesis.word, 'Skripsi.docx');
+  onProgress?.('Mengonversi artikel Word menjadi PDF asli (LibreOffice)...');
+  const articlePdf = await convertWordToPdf(articleWord, 'Artikel.docx');
+  onProgress?.('Mengemas 5 file ke ZIP...');
+
   const zip = new JSZip();
   const folder = zip.folder(student);
-  if (!folder) throw new Error('Gagal membuat folder mahasiswa pada ZIP.');
+  if (!folder) throw new Error('Gagal membuat folder nama mahasiswa.');
   folder.file(`Skripsi_${fileName}.docx`, thesis.word);
-  folder.file(`Skripsi_${fileName}.pdf`, thesis.pdf);
+  folder.file(`Skripsi_${fileName}.pdf`, thesisPdf);
   folder.file(`Artikel_${fileName}.docx`, articleWord);
   folder.file(`Artikel_${fileName}.pdf`, articlePdf);
   zip.file(`Cover_CD_${fileName}.docx`, coverWord);
-  const entries = Object.values(zip.files).filter(f => !f.dir);
-  if (entries.length !== 5) throw new Error(`Paket harus berisi tepat 5 file, ditemukan ${entries.length}.`);
+  const entries = Object.values(zip.files).filter(entry => !entry.dir);
+  if (entries.length !== 5) throw new Error('ZIP harus berisi tepat 5 file.');
 
   const blob = await zip.generateAsync(
     { type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 5 }, streamFiles: true },
-    progress => onProgress?.(`Mengemas ZIP: ${Math.round(progress.percent)}%`),
+    state => onProgress?.(`Mengemas ZIP: ${Math.round(state.percent)}%`),
   );
-  if (blob.size < 1000) throw new Error('ZIP tidak valid atau kosong.');
+  if (blob.size < 1000) throw new Error('ZIP gagal terbentuk atau kosong.');
   return { blob, filename: `ZAINNET_Paket_Lengkap_${fileName}.zip` };
 }

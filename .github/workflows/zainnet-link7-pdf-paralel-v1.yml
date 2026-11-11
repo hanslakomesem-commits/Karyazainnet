@@ -1,0 +1,277 @@
+name: ZAIN.NET - Link 7 PDF Paralel AI Word PDF
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/zainnet-link7-pdf-paralel-v1.yml
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: zainnet-link7-pdf-paralel
+  cancel-in-progress: false
+
+jobs:
+  update-link7:
+    name: Pasang konversi paralel dan build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source terbaru
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Terapkan patch aman Link 7
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/zainnet_link7_parallel.py <<'ZAINNET_PATCH_SOURCE'
+          from pathlib import Path
+          ROOT=Path.cwd()
+          APP=ROOT/'src/journalConverter/App.tsx'
+          BUNDLE=ROOT/'src/journalConverter/utils/bundleExport.ts'
+          PARENT=ROOT/'src/components/ToolViewerModal.tsx'
+          MARK='ZAINNET_LINK7_PARALLEL_PDF_20261112'
+          
+          def replace(path,old,new,label):
+           s=path.read_text(encoding='utf-8')
+           if new in s:
+            print('Sudah terpasang:',label);return
+           n=s.count(old)
+           if n!=1: raise RuntimeError(f'{label}: pencocokan sumber {n} (wajib 1). Tidak aman untuk menimpa perubahan baru.')
+           path.write_text(s.replace(old,new,1),encoding='utf-8')
+           print('Diperbarui:',label)
+          
+          # PDF conversion can be reused; keep the existing server-side LibreOffice converter.
+          replace(BUNDLE,
+           'async function convertWordToPdf(source: Blob, filename: string, onAutoFix?: (count: number) => void): Promise<Blob> {',
+           'export async function convertWordToPdf(source: Blob, filename: string, onAutoFix?: (count: number) => void): Promise<Blob> {',
+           'Expose one PDF conversion function without duplicate implementation')
+          replace(BUNDLE,
+           '''  articleWordOverride?: Blob,
+          ): Promise<{ blob: Blob; filename: string; layoutWarnings: string[]; autoFixedCount: number }> {''',
+           '''  articleWordOverride?: Blob,
+            prepared?: { thesisPdf?: Blob; articlePdf?: Blob; coverWord?: Blob },
+          ): Promise<{ blob: Blob; filename: string; layoutWarnings: string[]; autoFixedCount: number }> {''',
+           'Allow reused PDFs and cover in ZIP')
+          replace(BUNDLE,
+           '''  const [articleWord, coverWord] = await Promise.all([
+              articleWordOverride ? Promise.resolve(articleWordOverride) : buildJournalDocx(article), buildCoverCdDocx(article),
+            ]);''',
+           '''  const [articleWord, coverWord] = await Promise.all([
+              articleWordOverride ? Promise.resolve(articleWordOverride) : buildJournalDocx(article),
+              prepared?.coverWord ? Promise.resolve(prepared.coverWord) : buildCoverCdDocx(article),
+            ]);''',
+           'Reuse previously built Cover CD')
+          replace(BUNDLE,
+           '''  // Sequential conversions keep LibreOffice memory use within Render Free limits.
+            onProgress?.('Mengonversi skripsi Word menjadi PDF asli (LibreOffice)...');
+            let autoFixedCount = 0;
+            const thesisPdf = await convertWordToPdf(thesis.word, 'Skripsi.docx', count => {
+              autoFixedCount += count;
+              onProgress?.(`${count} kotak teks judul yang bertumpuk telah diperbaiki otomatis pada salinan PDF.`);
+            });
+            onProgress?.('Mengonversi artikel Word menjadi PDF asli (LibreOffice)...');
+            const articlePdf = await convertWordToPdf(articleWord, 'Artikel.docx');''',
+           '''  // PDF skripsi bisa disiapkan sejak tahap AI dimulai; artikel PDF dibuat setelah Word siap.
+            // Reuse completed conversions instead of performing the same Render job twice.
+            let autoFixedCount = 0;
+            onProgress?.(prepared?.thesisPdf ? 'Menggunakan PDF skripsi yang sudah disiapkan...' : 'Mengonversi skripsi Word ke PDF...');
+            const thesisPdf = prepared?.thesisPdf || await convertWordToPdf(thesis.word, 'Skripsi.docx', count => {
+              autoFixedCount += count;
+              onProgress?.(`${count} kotak teks judul yang bertumpuk telah diperbaiki otomatis pada salinan PDF.`);
+            });
+            onProgress?.(prepared?.articlePdf ? 'Menggunakan PDF artikel siap pakai...' : 'Mengonversi artikel Word ke PDF...');
+            const articlePdf = prepared?.articlePdf || await convertWordToPdf(articleWord, 'Artikel.docx');''',
+           'Avoid repeat PDF conversion inside ZIP')
+          
+          replace(APP,
+           "import { triggerBundleDownload, downloadCoverCdOnly, buildFiveFileBundle } from './utils/bundleExport';",
+           "import { triggerBundleDownload, downloadCoverCdOnly, buildFiveFileBundle, convertWordToPdf } from './utils/bundleExport';",
+           'Share existing PDF converter')
+          replace(APP,
+           '''  const [wordPairMessage, setWordPairMessage] = useState('');''',
+           '''  const [wordPairMessage, setWordPairMessage] = useState('');
+            // ZAINNET_LINK7_PARALLEL_PDF_20261112: early thesis conversion and per-article cache.
+            const thesisPdfJob = useRef<{ file: File; promise: Promise<Blob | null> } | null>(null);
+            const articleReadyAssets = useRef<{ article: JournalArticle; templateId: string; word: Blob; pdf: Blob; cover: Blob } | null>(null);
+            const startThesisPdfInParallel = (file: File) => {
+              if (thesisPdfJob.current?.file === file) return;
+              // Convert while AI runs. Capture rejection to prevent an unhandled promise;
+              // failure does not prevent the article from being generated or Word download.
+              const promise = convertWordToPdf(file, 'Skripsi.docx').catch((err: unknown) => {
+                console.warn('[Link7] PDF skripsi latar belakang gagal; bisa dicoba lagi saat ZIP:', err);
+                return null;
+              });
+              thesisPdfJob.current = { file, promise };
+            };''',
+           'Add background job and reusable result cache')
+          replace(APP,
+           '''  // Prepare BOTH files before starting either browser download. A single error
+            // never closes the article preview; it can be retried without regenerating AI.
+            const requestTwoWordDownloads = async (readyArticle: JournalArticle) => {
+              setWordPairPhase('preparing');
+              setWordPairMessage('Menyiapkan Artikel Word dan Cover CD Word...');
+              try {
+                const [articleBlob, coverBlob] = await Promise.all([
+                  getArticleWord(readyArticle), buildCoverCdDocx(readyArticle),
+                ]);
+                if (articleBlob.size < 100 || coverBlob.size < 100) {
+                  throw new Error('Salah satu dokumen Word yang dihasilkan kosong.');
+                }
+                const title = makeSafeWordFileName(readyArticle.metadata?.judul || 'Artikel');
+                const name = makeSafeWordFileName(readyArticle.metadata?.nama || 'Mahasiswa');
+                triggerBundleDownload(articleBlob, `Artikel_Jurnal_${title}.docx`);
+                triggerBundleDownload(coverBlob, `Cover_CD_${name}.docx`);
+                setWordPairPhase('requested');
+                setWordPairMessage('Dua unduhan Word sudah diminta ke browser. Periksa folder Download dan izinkan beberapa unduhan bila diminta. Jika ada yang belum tersimpan, klik Unduh Ulang.');
+              } catch (err: any) {
+                console.error('[ZAIN.NET Link7] Gagal menyiapkan dua DOCX:', err);
+                setWordPairPhase('error');
+                setWordPairMessage(`Dua Word belum siap: ${err?.message || 'Terjadi kesalahan.'} Halaman tetap terbuka, silakan coba Unduh Ulang.`);
+              }
+            };''',
+           '''  // After the AI is ready, build Word ONCE then convert that exact Word to PDF.
+            // Cover CD is prepared concurrently and retained for the optional 5-file ZIP.
+            const requestTwoWordDownloads = async (readyArticle: JournalArticle) => {
+              setWordPairPhase('preparing');
+              setWordPairMessage('Menyiapkan artikel Word dan PDF dari naskah yang sama...');
+              try {
+                const id = articleMode === 'template' ? selectedJournalId : '';
+                let assets = articleReadyAssets.current;
+                if (!assets || assets.article !== readyArticle || assets.templateId !== id) {
+                  const [articleBlob, coverBlob] = await Promise.all([
+                    getArticleWord(readyArticle), buildCoverCdDocx(readyArticle),
+                  ]);
+                  if (articleBlob.size < 200 || coverBlob.size < 200) {
+                    throw new Error('Word artikel atau Cover CD tidak valid.');
+                  }
+                  setWordPairMessage('Word artikel selesai. PDF sedang dikonversi dengan LibreOffice...');
+                  const articlePdf = await convertWordToPdf(articleBlob, 'Artikel.docx');
+                  assets = { article: readyArticle, templateId: id, word: articleBlob, pdf: articlePdf, cover: coverBlob };
+                  articleReadyAssets.current = assets;
+                }
+                const title = makeSafeWordFileName(readyArticle.metadata?.judul || 'Artikel');
+                triggerBundleDownload(assets.word, `Artikel_Jurnal_${title}.docx`);
+                triggerBundleDownload(assets.pdf, `Artikel_Jurnal_${title}.pdf`);
+                setWordPairPhase('requested');
+                setWordPairMessage('Artikel Word dan PDF sudah diminta ke browser bersamaan. Izinkan beberapa unduhan dan periksa folder Download. Cover CD Word tersedia pada tombol terpisah atau ZIP lengkap.');
+              } catch (err: any) {
+                console.error('[ZAIN.NET Link7] Persiapan Word/PDF:', err);
+                setWordPairPhase('error');
+                setWordPairMessage(`Artikel PDF belum siap: ${err?.message || 'Konversi gagal'}. Artikel tetap tersedia; coba Unduh Ulang. Periksa server LibreOffice bila konversi gagal.`);
+              }
+            };''',
+           'Replace two Word downloads with one Word + one PDF without regenerating AI')
+          replace(APP,
+           '''    setSourceThesis({
+                word: original?.name.toLowerCase().endsWith('.docx') ? original : null,
+                pdf: original?.name.toLowerCase().endsWith('.pdf') ? original : null,
+              });''',
+           '''    setSourceThesis({
+                word: original?.name.toLowerCase().endsWith('.docx') ? original : null,
+                pdf: original?.name.toLowerCase().endsWith('.pdf') ? original : null,
+              });
+              articleReadyAssets.current = null;
+              if (original?.name.toLowerCase().endsWith('.docx')) {
+                startThesisPdfInParallel(original);
+              }''',
+           'Start thesis PDF before AI requests')
+          replace(APP,
+           "      ? 'File skripsi Word asli sudah tersimpan. PDF skripsi dan artikel dibuat otomatis ketika Anda mengunduh ZIP.'",
+           "      ? 'File skripsi Word tersedia. PDF skripsi sedang disiapkan selagi AI membuat artikel.'",
+           'Explain early conversion status')
+          replace(APP,
+           '''    setSourceThesis(prev => ({ ...prev, word: file }));
+              setZipMessage(`${file.name} diterima. PDF skripsi dan artikel akan dibuat otomatis dari Word.`);''',
+           '''    setSourceThesis(prev => ({ ...prev, word: file }));
+              startThesisPdfInParallel(file);
+              setZipMessage(`${file.name} diterima. Konversi PDF skripsi dimulai di latar belakang.`);''',
+           'Start background conversion on manually chosen DOCX')
+          replace(APP,
+           '''      const wordOverride = articleMode === 'template' ? await getArticleWord(article) : undefined;
+                const { blob, filename, layoutWarnings, autoFixedCount } = await buildFiveFileBundle(
+                  article, { word: sourceThesis.word }, setZipMessage, wordOverride,
+                );''',
+           '''      // Wait only for work already running; never launch the same conversion again.
+                const thesisPdf = thesisPdfJob.current?.file === sourceThesis.word
+                  ? await thesisPdfJob.current.promise : null;
+                const selectedId = articleMode === 'template' ? selectedJournalId : '';
+                const assets = articleReadyAssets.current?.article === article && articleReadyAssets.current.templateId === selectedId
+                  ? articleReadyAssets.current : null;
+                const wordOverride = assets?.word || (articleMode === 'template' ? await getArticleWord(article) : undefined);
+                const { blob, filename, layoutWarnings, autoFixedCount } = await buildFiveFileBundle(
+                  article, { word: sourceThesis.word }, setZipMessage, wordOverride,
+                  { thesisPdf: thesisPdf || undefined, articlePdf: assets?.pdf, coverWord: assets?.cover },
+                );''',
+           'ZIP reuses background thesis PDF and prepared article PDF')
+          replace(APP,
+           '''          <p className="font-bold text-base">Artikel selesai — {articleMode === 'template' ? `Template ${findJournalMaster(selectedJournalId)?.name || ''}` : 'Mode biasa'} — Word terpisah atau ZIP lengkap 5 file</p>''',
+           '''          <p className="font-bold text-base">Artikel selesai — {articleMode === 'template' ? `Template ${findJournalMaster(selectedJournalId)?.name || ''}` : 'Mode biasa'} — Artikel Word + PDF atau ZIP lengkap 5 file</p>''',
+           'Update download heading')
+          replace(APP,
+           '''            <p className="text-xs text-slate-200 mt-1">Di dalam folder nama mahasiswa: Skripsi Word + PDF, Artikel Word + PDF. Di luar folder: Cover CD Word.</p>''',
+           '''            <p className="text-xs text-slate-200 mt-1">PDF skripsi disiapkan saat AI bekerja. Word dan PDF artikel dibuat dari satu naskah. ZIP tetap berisi skripsi Word + PDF, artikel Word + PDF, dan Cover CD Word.</p>''',
+           'Explain concurrent workflow')
+          replace(APP,
+           '''              <p className="text-xs text-slate-200 mt-1">Di dalam folder nama mahasiswa: Skripsi Word + PDF, Artikel Word + PDF. Di luar folder: Cover CD Word.</p>''',
+           '''              <p className="text-xs text-slate-200 mt-1">PDF skripsi disiapkan sejak proses AI dimulai. Paket tetap memuat skripsi Word + PDF, artikel Word + PDF, dan Cover CD Word.</p>''',
+           'Keep bundled-file descriptions consistent') if False else None
+          
+          # Other message copy is updated by a targeted safe replace if present.
+          s=APP.read_text(encoding='utf-8')
+          s=s.replace('Menyiapkan 2 file Word.', 'Menyiapkan Word dan PDF artikel.')
+          s=s.replace('Dua Word', 'Word dan PDF')
+          s=s.replace('dua Word', 'Word dan PDF')
+          APP.write_text(s,encoding='utf-8')
+          replace(PARENT,
+           "    setStatus('Artikel selesai. Menyiapkan 2 file Word. Modul tetap terbuka sampai keduanya dikonfirmasi terunduh.');",
+           "    setStatus('Artikel selesai. Menyiapkan Word dan PDF artikel. Modul tetap terbuka sampai keduanya dikonfirmasi terunduh.');",
+           'Update parent status for two article formats')
+          replace(PARENT,
+           "    setStatus('Dua file Word dikonfirmasi terunduh. Kembali ke menu utama...');",
+           "    setStatus('Word dan PDF artikel dikonfirmasi terunduh. Kembali ke menu utama...');",
+           'Update confirmation label')
+          replace(APP,
+           "{wordPairPhase === 'preparing' ? 'Menyiapkan 2 Word...' : 'Unduh Ulang 2 File Word'}",
+           "{wordPairPhase === 'preparing' ? 'Menyiapkan Word + PDF...' : 'Unduh Ulang Artikel Word + PDF'}",
+           'Correct retry labels for new two-file article output')
+          replace(APP,
+           "{isDownloadingZip || !sourceThesis.word}",
+           "{isDownloadingZip || wordPairPhase === 'preparing' || !sourceThesis.word}",
+           'Disable ZIP until Word and PDF preparation finishes')
+          print('Patch paralel Link 7 selesai.')
+          ZAINNET_PATCH_SOURCE
+          python3 /tmp/zainnet_link7_parallel.py
+      - name: Instal dependensi sesuai lockfile
+        run: npm ci --no-audit --no-fund
+      - name: Validasi TypeScript dan build aplikasi
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+        run: npm run build
+      - name: Commit perubahan hanya jika build berhasil
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/journalConverter/App.tsx src/journalConverter/utils/bundleExport.ts src/components/ToolViewerModal.tsx
+          if git diff --cached --quiet; then
+            echo "Perubahan sudah tersedia, tidak perlu commit ulang."
+          else
+            git commit -m "perf(link7): prepare thesis PDF alongside AI and reuse article Word PDF"
+            git push origin HEAD:main
+          fi
+      - name: Trigger deploy GitHub Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run pages.yml --ref main

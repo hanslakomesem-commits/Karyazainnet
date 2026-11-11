@@ -1,0 +1,56 @@
+name: ZAIN.NET - Perbaiki Dependensi dan Jalankan Menu 10
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/perbaiki-lockfile-menu10.yml
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  perbaiki:
+    name: Sinkronkan lockfile dan jalankan patch Menu 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ambil source code terbaru
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Siapkan Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Perbarui package-lock.json
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Verifikasi instalasi dependensi
+        run: npm ci --no-audit --no-fund
+
+      - name: Simpan lockfile yang sudah diperbaiki
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo "package-lock.json sudah sinkron."
+          else
+            git commit -m "fix: sinkronkan package-lock.json untuk Menu 10"
+            git push origin HEAD:main
+          fi
+
+      - name: Jalankan kembali workflow Menu 10
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run zainnet-fix-menu10-mobile-lampiran.yml --ref main
+          echo "Workflow Menu 10 sudah dipicu; cek hasilnya di Actions."

@@ -1,0 +1,371 @@
+name: ZAIN.NET - Link 7 Auto PDF dari Word dan ZIP 5 File
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-link7-auto-pdf-zip.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: zainnet-link7-auto-pdf-patch
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    name: Ubah Link7, uji build, dan publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ambil source terbaru
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Pasang patch otomatis PDF skripsi dan artikel
+        shell: bash
+        run: |
+          python3 - <<'PY_PATCH'
+          from pathlib import Path
+
+          MARKER = 'ZAINNET_LINK7_AUTO_PDF_FROM_WORD_20261111'
+
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f'{label}: expected exactly one match, found {count}. Source may have changed; no patch applied.')
+              return text.replace(old, new, 1)
+
+
+          app_path = Path('src/journalConverter/App.tsx')
+          bundle_path = Path('src/journalConverter/utils/bundleExport.ts')
+          router_path = Path('server/journal7/router.ts')
+          for target in (app_path, bundle_path, router_path):
+              if not target.is_file():
+                  raise RuntimeError(f'Missing repository file: {target}')
+
+          app = app_path.read_text(encoding='utf-8')
+          bundle = bundle_path.read_text(encoding='utf-8')
+          router = router_path.read_text(encoding='utf-8')
+          if MARKER in app and MARKER in bundle and MARKER in router:
+              print('Patch already applied. No changes needed.')
+              raise SystemExit(0)
+          if any(MARKER in t for t in (app, bundle, router)):
+              raise RuntimeError('Partial patch detected. Stop to avoid corrupting source files.')
+
+          # Keep original DOCX in browser memory. Do not ask for a second file.
+          app = replace_once(
+              app,
+              "    setZipMessage('Untuk ZIP lengkap, lengkapi skripsi Word (.docx) dan PDF (.pdf) asli.');",
+              "    setZipMessage(original?.name.toLowerCase().endsWith('.docx')\n      ? 'File skripsi Word asli sudah tersimpan. PDF skripsi dan artikel dibuat otomatis ketika Anda mengunduh ZIP.'\n      : 'Untuk paket ZIP, pilih skripsi Word .docx asli sekali saja. PDF akan dibuat otomatis.');",
+              'App: initial ZIP status',
+          )
+
+          app = replace_once(
+              app,
+              "  const handleThesisFilePick = (kind: 'word' | 'pdf', file?: File) => {\n"
+              "    if (!file) return;\n"
+              "    const expected = kind === 'word' ? '.docx' : '.pdf';\n"
+              "    if (!file.name.toLowerCase().endsWith(expected)) {\n"
+              "      setZipMessage(`Berkas skripsi ${kind === 'word' ? 'Word' : 'PDF'} harus ${expected}.`);\n"
+              "      return;\n"
+              "    }\n"
+              "    setSourceThesis(prev => ({ ...prev, [kind]: file }));\n"
+              "    setZipMessage(`${file.name} diterima. Pastikan kedua format berasal dari skripsi mahasiswa yang sama.`);\n"
+              "  };",
+              "  // " + MARKER + "\n"
+              "  const handleThesisWordPick = (file?: File) => {\n"
+              "    if (!file) return;\n"
+              "    if (!file.name.toLowerCase().endsWith('.docx')) {\n"
+              "      setZipMessage('Berkas harus berformat Word .docx asli. Jangan hanya mengganti ekstensi.');\n"
+              "      return;\n"
+              "    }\n"
+              "    setSourceThesis(prev => ({ ...prev, word: file }));\n"
+              "    setZipMessage(`${file.name} diterima. PDF skripsi dan artikel akan dibuat otomatis dari Word.`);\n"
+              "  };",
+              'App: upload handler',
+          )
+          app = replace_once(
+              app,
+              "    if (!sourceThesis.word || !sourceThesis.pdf) {\n"
+              "      setZipMessage('ZIP 5 file belum tersedia: lengkapi kedua skripsi asli .docx dan .pdf di kolom di atas.');\n"
+              "      return;\n"
+              "    }",
+              "    if (!sourceThesis.word) {\n"
+              "      setZipMessage('ZIP belum tersedia: unggah skripsi Word .docx asli sekali saja. PDF dibuat otomatis.');\n"
+              "      return;\n"
+              "    }",
+              'App: ZIP guard',
+          )
+          app = replace_once(
+              app,
+              "        article, { word: sourceThesis.word, pdf: sourceThesis.pdf }, setZipMessage,",
+              "        article, { word: sourceThesis.word }, setZipMessage,",
+              'App: five-file bundle call',
+          )
+          app = replace_once(
+              app,
+              '          <p className="font-bold text-base">Artikel selesai — 2 File Word (tanpa ZIP)</p>',
+              '          <p className="font-bold text-base">Artikel selesai — Word terpisah atau ZIP lengkap 5 file</p>',
+              'App: heading',
+          )
+          start_marker = '            <div className="grid gap-2 mt-3 sm:grid-cols-2">'
+          end_marker = '            <div className="flex flex-wrap gap-3 items-center mt-3">'
+          if app.count(start_marker) != 1 or app.count(end_marker) != 1:
+              raise RuntimeError('App: ZIP panel upload markup changed; abort.')
+          start = app.index(start_marker)
+          end = app.index(end_marker, start)
+          app = app[:start] + '''            <div className="mt-3 rounded-md bg-slate-800/70 p-3 text-xs">
+                        {sourceThesis.word ? (
+                          <p className="text-emerald-200 font-semibold">✓ Skripsi Word telah diterima: {sourceThesis.word.name}</p>
+                        ) : (
+                          <label className="flex flex-col gap-2">
+                            <span className="text-amber-200">Skripsi Word belum tersedia. Unggah .docx untuk membuat ZIP.</span>
+                            <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                              className="text-white file:mr-2 file:rounded file:border-0 file:p-2 file:bg-blue-600 file:text-white"
+                              onChange={e => handleThesisWordPick(e.target.files?.[0])} />
+                          </label>
+                        )}
+                        <p className="mt-2 text-slate-200">PDF skripsi otomatis dibuat dari Word asli. PDF artikel otomatis dibuat dari Artikel Word menggunakan LibreOffice di Render. Tidak perlu mengunggah PDF kedua.</p>
+                      </div>
+          ''' + app[end:]
+          app = replace_once(app, 'disabled={isDownloadingZip || !sourceThesis.word || !sourceThesis.pdf}', 'disabled={isDownloadingZip || !sourceThesis.word}', 'App: ZIP button enabled by original Word only')
+          app = replace_once(
+              app,
+              '            <p className="text-xs text-slate-300 mt-2">PDF artikel dibuat dari isi artikel. Pagination dan letak catatan kaki pada PDF dapat berbeda dari DOCX; cek sebelum dicetak. Skripsi asli dipertahankan apa adanya.</p>',
+              '            <p className="text-xs text-slate-300 mt-2">Kedua PDF dikonversi dari file Word yang sebenarnya melalui LibreOffice di server. Periksa halaman, font, dan catatan kaki sebelum dicetak.</p>',
+              'App: ZIP PDF description',
+          )
+
+          bundle_start_marker = '// ZAINNET_LINK7_ZIP5_20261111'
+          if bundle.count(bundle_start_marker) != 1:
+              raise RuntimeError('Bundle legacy ZIP marker not unique; abort.')
+          bundle = bundle[:bundle.index(bundle_start_marker)] + '''// ZAINNET_LINK7_AUTO_PDF_FROM_WORD_20261111
+          /** Four files inside the student folder, one CD cover outside it. */
+          export interface ThesisSourceFiles {
+            word: File;
+          }
+
+          async function verifyWordFile(file: File): Promise<void> {
+            const bytes = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+            if (!file.name.toLowerCase().endsWith('.docx') || file.size < 200 ||
+                bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b ||
+                bytes[2] !== 0x03 || bytes[3] !== 0x04) {
+              throw new Error('Skripsi harus merupakan Word .docx asli. File .doc atau PDF yang diganti nama tidak dapat diproses.');
+            }
+          }
+
+          async function convertWordToPdf(source: Blob, filename: string): Promise<Blob> {
+            // On GitHub Pages, deploymentBridge forwards this relative /api URL to the Render backend.
+            const data = new FormData();
+            data.append('file', source, filename);
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 180_000);
+            try {
+              const response = await fetch('/api/journal7/docx-to-pdf', {
+                method: 'POST', body: data, signal: controller.signal,
+                credentials: 'omit',
+              });
+              if (!response.ok) {
+                let details = `HTTP ${response.status}`;
+                try {
+                  const result = await response.json();
+                  details = String(result?.error || details);
+                } catch { /* Preserve the HTTP error. */ }
+                if (response.status === 404) {
+                  throw new Error('Mesin konversi Word ke PDF belum dipublikasikan di Render. Deploy backend Render terbaru terlebih dahulu.');
+                }
+                throw new Error('Konversi Word ke PDF gagal: ' + details);
+              }
+              const pdf = await response.blob();
+              const sig = new Uint8Array(await pdf.slice(0, 5).arrayBuffer());
+              if (pdf.size < 500 || sig.length !== 5 ||
+                  sig[0] !== 37 || sig[1] !== 80 || sig[2] !== 68 || sig[3] !== 70 || sig[4] !== 45) {
+                throw new Error('Server tidak mengembalikan berkas PDF yang valid. ZIP tidak dibuat.');
+              }
+              return pdf;
+            } catch (e: any) {
+              if (e?.name === 'AbortError') {
+                throw new Error('Konversi PDF melebihi 3 menit. Cek status Render dan coba lagi.');
+              }
+              throw e;
+            } finally {
+              clearTimeout(timer);
+            }
+          }
+
+          export async function buildFiveFileBundle(
+            article: JournalArticle,
+            thesis: ThesisSourceFiles,
+            onProgress?: (status: string) => void,
+          ): Promise<{ blob: Blob; filename: string }> {
+            if (!thesis.word) {
+              throw new Error('Skripsi Word .docx belum tersedia. Unggah Word satu kali terlebih dahulu.');
+            }
+            await verifyWordFile(thesis.word);
+            const student = String(article.metadata?.nama || '').replace(/[\\\\/:*?"<>|\\x00-\\x1F]/g, '')
+              .replace(/\\s+/g, ' ').trim().slice(0, 80);
+            if (!student || student.toLowerCase() === 'mahasiswa peneliti') {
+              throw new Error('Isi nama mahasiswa asli sebelum membuat ZIP.');
+            }
+            const fileName = student.replace(/\\s+/g, '_');
+
+            onProgress?.('Menyiapkan Artikel Word dan Cover CD Word...');
+            const [articleWord, coverWord] = await Promise.all([
+              buildJournalDocx(article), buildCoverCdDocx(article),
+            ]);
+            if (articleWord.size < 200 || coverWord.size < 200) {
+              throw new Error('File Artikel Word atau Cover CD tidak berhasil dibuat.');
+            }
+
+            // Sequential conversions keep LibreOffice memory use within Render Free limits.
+            onProgress?.('Mengonversi skripsi Word menjadi PDF asli (LibreOffice)...');
+            const thesisPdf = await convertWordToPdf(thesis.word, 'Skripsi.docx');
+            onProgress?.('Mengonversi artikel Word menjadi PDF asli (LibreOffice)...');
+            const articlePdf = await convertWordToPdf(articleWord, 'Artikel.docx');
+            onProgress?.('Mengemas 5 file ke ZIP...');
+
+            const zip = new JSZip();
+            const folder = zip.folder(student);
+            if (!folder) throw new Error('Gagal membuat folder nama mahasiswa.');
+            folder.file(`Skripsi_${fileName}.docx`, thesis.word);
+            folder.file(`Skripsi_${fileName}.pdf`, thesisPdf);
+            folder.file(`Artikel_${fileName}.docx`, articleWord);
+            folder.file(`Artikel_${fileName}.pdf`, articlePdf);
+            zip.file(`Cover_CD_${fileName}.docx`, coverWord);
+            const entries = Object.values(zip.files).filter(entry => !entry.dir);
+            if (entries.length !== 5) throw new Error('ZIP harus berisi tepat 5 file.');
+
+            const blob = await zip.generateAsync(
+              { type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 5 }, streamFiles: true },
+              state => onProgress?.(`Mengemas ZIP: ${Math.round(state.percent)}%`),
+            );
+            if (blob.size < 1000) throw new Error('ZIP gagal terbentuk atau kosong.');
+            return { blob, filename: `ZAINNET_Paket_Lengkap_${fileName}.zip` };
+          }
+          '''
+
+          # Use existing LibreOffice Docker dependency. Add a bounded server-side conversion endpoint.
+          router = replace_once(router,
+              "import { execFileSync } from 'child_process';",
+              "import { execFileSync } from 'child_process';\n"
+              "import { execFile } from 'node:child_process';\n"
+              "import { promisify } from 'node:util';\n"
+              "import os from 'node:os';\n"
+              "import fsPromises from 'node:fs/promises';",
+              'Router: converter imports')
+
+          endpoint = '''// ZAINNET_LINK7_AUTO_PDF_FROM_WORD_20261111
+          // Convert an uploaded original DOCX into a real PDF using LibreOffice.
+          // Files live in an isolated temp directory and are always deleted afterward.
+          const zipPdfExecFile = promisify(execFile);
+          const zipPdfUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
+          let activeZipPdfConversion = 0;
+          const zipPdfUsage = new Map<string, { count: number; expires: number }>();
+
+          router.post('/docx-to-pdf', (req, res) => {
+            zipPdfUpload.single('file')(req, res, async (uploadErr: any) => {
+              if (uploadErr) return res.status(413).json({ error: 'File Word terlalu besar (maksimal 25 MB) atau unggahan tidak valid.' });
+              const file = req.file;
+              if (!file || !/\\.docx$/i.test(file.originalname) || file.buffer.length < 200 ||
+                  file.buffer[0] !== 0x50 || file.buffer[1] !== 0x4b ||
+                  file.buffer[2] !== 0x03 || file.buffer[3] !== 0x04) {
+                return res.status(400).json({ error: 'Unggah file Word .docx asli, bukan file yang diubah ekstensinya.' });
+              }
+              const ip = String(req.ip || 'unknown');
+              const now = Date.now();
+              // Opportunistic expiry cleanup avoids an unbounded map on public endpoints.
+              if (zipPdfUsage.size > 2000) {
+                for (const [key, item] of zipPdfUsage) if (item.expires <= now) zipPdfUsage.delete(key);
+              }
+              const record = zipPdfUsage.get(ip);
+              const usage = record && record.expires > now ? record : { count: 0, expires: now + 15 * 60_000 };
+              if (usage.count >= 20) {
+                return res.status(429).json({ error: 'Batas konversi tercapai. Coba lagi nanti.' });
+              }
+              if (activeZipPdfConversion >= 1) {
+                return res.status(429).json({ error: 'Konverter PDF sedang digunakan. Ulangi beberapa saat lagi.' });
+              }
+              usage.count++;
+              zipPdfUsage.set(ip, usage);
+              activeZipPdfConversion++;
+              let dir: string | null = null;
+              try {
+                dir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'zainnet-word-to-pdf-'));
+                const inputPath = path.join(dir, 'document.docx');
+                const outputPath = path.join(dir, 'document.pdf');
+                const profile = path.join(dir, 'lo-user-profile');
+                await fsPromises.writeFile(inputPath, file.buffer, { flag: 'wx' });
+                await zipPdfExecFile(process.env.LIBREOFFICE_BIN || 'libreoffice', [
+                  '-env:UserInstallation=file://' + profile,
+                  '--headless', '--nologo', '--nodefault', '--nofirststartwizard',
+                  '--convert-to', 'pdf:writer_pdf_Export', '--outdir', dir, inputPath,
+                ], { timeout: 115_000, maxBuffer: 512 * 1024, killSignal: 'SIGKILL' });
+                const pdf = await fsPromises.readFile(outputPath);
+                if (pdf.length < 500 || pdf.subarray(0, 5).toString('ascii') !== '%PDF-') {
+                  throw new Error('LibreOffice tidak menghasilkan PDF valid.');
+                }
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setHeader('Cache-Control', 'no-store, private');
+                res.setHeader('X-Content-Type-Options', 'nosniff');
+                return res.send(pdf);
+              } catch (err: any) {
+                console.error('[ZAIN.NET Link7 DOCX→PDF]', err?.message || err);
+                if (!res.headersSent) {
+                  return res.status(503).json({ error: 'Konversi Word ke PDF gagal di Render: ' + String(err?.message || 'periksa LibreOffice').slice(0, 180) });
+                }
+              } finally {
+                activeZipPdfConversion = Math.max(0, activeZipPdfConversion - 1);
+                if (dir) await fsPromises.rm(dir, { recursive: true, force: true }).catch(() => {});
+              }
+            });
+          });
+
+          '''
+          router = replace_once(router,
+              '// Health check endpoint\n',
+              endpoint + '// Health check endpoint\n',
+              'Router: add DOCX-to-PDF endpoint',
+          )
+
+          # Write only when all transforms succeeded.
+          app_path.write_text(app, encoding='utf-8')
+          bundle_path.write_text(bundle, encoding='utf-8')
+          router_path.write_text(router, encoding='utf-8')
+          print('Patch applied: source DOCX -> thesis PDF, article DOCX -> article PDF, 5-file ZIP, Render LibreOffice endpoint.')
+          PY_PATCH
+      - name: Install dependensi
+        run: npm install --no-audit --no-fund
+      - name: Periksa build aplikasi
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: npm run build
+      - name: Commit perbaikan Link 7
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/journalConverter/App.tsx src/journalConverter/utils/bundleExport.ts server/journal7/router.ts
+          if git diff --cached --quiet; then
+            echo 'Tidak ada perubahan. Patch sudah terpasang.'
+          else
+            git commit -m 'Link7: PDF skripsi dan artikel otomatis dari DOCX untuk ZIP 5 file'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+      - name: Picu publikasi GitHub Pages
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run pages.yml --ref main
+          echo 'Backend Render juga harus redeploy agar endpoint docx-to-pdf aktif.'

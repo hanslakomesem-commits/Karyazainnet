@@ -89,15 +89,71 @@ async function convertWordToPdf(source: Blob, filename: string): Promise<Blob> {
   }
 }
 
+
+// ZAINNET_LINK7_LAYOUT_WARN_NONBLOCK_20261111
+/**
+ * Read-only DOCX inspection. Floating/legacy Word drawings can move in LibreOffice.
+ * These are RISK markers, not definitive evidence that a rendered PDF is damaged.
+ * Never rewrite the user's DOCX or abort a valid PDF because of layout warnings.
+ */
+async function inspectDocxPictureRisks(word: Blob): Promise<string[]> {
+  const warnings: string[] = [];
+  try {
+    const archive = await JSZip.loadAsync(word);
+    const part = archive.file('word/document.xml');
+    if (!part) return warnings;
+    const xml = await part.async('string');
+    const count = (pattern: RegExp) => (xml.match(pattern) || []).length;
+    const floating = count(/<wp:anchor(?=[\s>])/g);
+    const legacy = count(/<(?:w:pict|v:group)(?=[\s>])/g);
+    const textBoxes = count(/<(?:w:txbxContent|v:textbox)(?=[\s>])/g);
+    const samePoint = new Set<string>();
+    let duplicateFloatingPositions = 0;
+    // Compare only anchors inside the same paragraph. Cross-page positions
+    // cannot be reliably compared without laying out Word in a real renderer.
+    const paragraphs = xml.match(/<w:p(?=[\s>])[\s\S]*?<\/w:p>/g) || [];
+    for (const paragraph of paragraphs) {
+      samePoint.clear();
+      const anchors = paragraph.match(/<wp:anchor(?=[\s>])[\s\S]*?<\/wp:anchor>/g) || [];
+      for (const anchor of anchors) {
+        const horizontal = anchor.match(/<wp:positionH[^>]*>[\s\S]*?<wp:posOffset>(-?\d+)<\/wp:posOffset>/)?.[1];
+        const vertical = anchor.match(/<wp:positionV[^>]*>[\s\S]*?<wp:posOffset>(-?\d+)<\/wp:posOffset>/)?.[1];
+        if (horizontal === undefined || vertical === undefined) continue;
+        const key = `${horizontal},${vertical}`;
+        if (samePoint.has(key)) duplicateFloatingPositions++;
+        samePoint.add(key);
+      }
+    }
+    if (floating > 0) {
+      warnings.push(`${floating} gambar/objek Word memakai posisi mengambang (floating). Posisi di PDF dapat bergeser.`);
+    }
+    if (duplicateFloatingPositions > 0) {
+      warnings.push(`${duplicateFloatingPositions} pasangan objek ditemukan dengan posisi awal sama dalam satu paragraf; ada indikasi risiko tumpang tindih.`);
+    }
+    if (legacy > 0 || textBoxes > 0) {
+      warnings.push(`Ditemukan objek gambar/teks lama atau text box (VML: ${legacy}, kotak teks: ${textBoxes}) yang berpotensi berubah saat konversi.`);
+    }
+    return warnings;
+  } catch (error) {
+    // Diagnostics must never interfere with PDF conversion.
+    console.warn('[ZAIN.NET Link 7] Preflight gambar tidak tersedia:', error);
+    return ['Pemeriksaan otomatis posisi gambar tidak lengkap; pastikan lampiran foto PDF diperiksa sebelum dicetak.'];
+  }
+}
+
 export async function buildFiveFileBundle(
   article: JournalArticle,
   thesis: ThesisSourceFiles,
   onProgress?: (status: string) => void,
-): Promise<{ blob: Blob; filename: string }> {
+): Promise<{ blob: Blob; filename: string; layoutWarnings: string[] }> {
   if (!thesis.word) {
     throw new Error('Skripsi Word .docx belum tersedia. Unggah Word satu kali terlebih dahulu.');
   }
   await verifyWordFile(thesis.word);
+  const layoutWarnings = await inspectDocxPictureRisks(thesis.word);
+  if (layoutWarnings.length > 0) {
+    onProgress?.('Peringatan foto/objek Word: konversi PDF tetap dilanjutkan.');
+  }
   const student = String(article.metadata?.nama || '').replace(/[\\/:*?"<>|\x00-\x1F]/g, '')
     .replace(/\s+/g, ' ').trim().slice(0, 80);
   if (!student || student.toLowerCase() === 'mahasiswa peneliti') {
@@ -136,5 +192,5 @@ export async function buildFiveFileBundle(
     state => onProgress?.(`Mengemas ZIP: ${Math.round(state.percent)}%`),
   );
   if (blob.size < 1000) throw new Error('ZIP gagal terbentuk atau kosong.');
-  return { blob, filename: `ZAINNET_Paket_Lengkap_${fileName}.zip` };
+  return { blob, filename: `ZAINNET_Paket_Lengkap_${fileName}.zip`, layoutWarnings };
 }

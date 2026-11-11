@@ -33,6 +33,8 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
   // ZAINNET_LINK7_ZIP5_20261111: File objects remain in browser memory, not backend storage.
   const [sourceThesis, setSourceThesis] = useState<{ word: File | null; pdf: File | null }>({ word: null, pdf: null });
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+  // ZAINNET_LINK7_LAYOUT_WARN_NONBLOCK_20261111
+  const [zipLayoutWarnings, setZipLayoutWarnings] = useState<string[]>([]);
   const [zipMessage, setZipMessage] = useState('Untuk ZIP lengkap, unggah skripsi Word (.docx) dan PDF (.pdf) asli.');
   // ZAINNET_LINK7_TWO_DOCX_SAFE_CLOSE_20261109
   // Browser websites cannot observe the OS download manager. Require the user
@@ -354,12 +356,14 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
       setZipMessage('ZIP belum tersedia: unggah skripsi Word .docx asli sekali saja. PDF dibuat otomatis.');
       return;
     }
+    setZipLayoutWarnings([]);
     setIsDownloadingZip(true);
     try {
-      const { blob, filename } = await buildFiveFileBundle(
+      const { blob, filename, layoutWarnings } = await buildFiveFileBundle(
         article, { word: sourceThesis.word }, setZipMessage,
       );
       triggerBundleDownload(blob, filename);
+      setZipLayoutWarnings(layoutWarnings);
       setZipMessage(`ZIP siap dan unduhan sudah diminta: ${filename}. Periksa folder Download. Bila tidak muncul, tekan tombol ZIP lagi.`);
     } catch (err: any) {
       console.error('[ZAIN.NET Link 7] Gagal membuat ZIP 5 file:', err);
@@ -473,6 +477,17 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
               </button>
               <span aria-live="polite" className="text-xs text-amber-100">{zipMessage}</span>
             </div>
+
+            {zipLayoutWarnings.length > 0 && (
+              <div role="alert" className="mt-3 rounded-lg border-2 border-amber-400 bg-amber-950/80 px-4 py-3 text-amber-100">
+                <p className="font-bold">⚠ Perhatian: Risiko posisi foto pada hasil PDF</p>
+                <p className="mt-1 text-sm font-semibold">Foto mungkin menumpuk / pindah posisi / jadi berantakan. Coba cek lagi hasil PDF Word-nya sebelum dicetak.</p>
+                <ul className="mt-2 list-disc pl-5 text-xs space-y-1">
+                  {zipLayoutWarnings.map((warning, index) => <li key={index}>{warning}</li>)}
+                </ul>
+                <p className="mt-2 text-xs">PDF tetap dibuat dan paket ZIP tetap diunduh. Word asli tetap utuh. Deteksi ini menunjukkan risiko tata letak, bukan bukti pasti bahwa setiap foto rusak.</p>
+              </div>
+            )}
             <p className="text-xs text-slate-300 mt-2">Kedua PDF dikonversi dari file Word yang sebenarnya melalui LibreOffice di server. Periksa halaman, font, dan catatan kaki sebelum dicetak.</p>
           </div>
           <div className="flex flex-wrap gap-2 mt-3">

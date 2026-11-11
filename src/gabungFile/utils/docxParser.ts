@@ -210,7 +210,10 @@ export function matchesKeywords(text: string, keywords: string[]): boolean {
 function isGenuineSignedHeading(el: DocxElement, kind: string): boolean {
   if (el.tag !== 'w:p') return false;
   if (/w:pStyle\b[^>]*w:val="(?:TOC|TableOfContents|DaftarIsi)/i.test(el.rawXml)) return false;
-  if (/<w:tab\b|w:leader=|<w:tabs\b/i.test(el.rawXml)) return false;
+  // Definisi tab stop adalah format paragraf, bukan daftar isi.
+  const xmlWithoutTabStops = el.rawXml.replace(/<w:tabs\b[^>]*>[\s\S]*?<\/w:tabs>/gi, '');
+  // Abaikan hanya tab aktual di isi paragraf dan leader daftar isi.
+  if (/<w:tab\b|w:leader=/i.test(xmlWithoutTabStops)) return false;
   const text = el.text.toUpperCase().normalize('NFKC')
     .replace(/\u00A0/g, ' ').replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
   if (!text || text.length > 100) return false;

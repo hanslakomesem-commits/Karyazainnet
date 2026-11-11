@@ -1,0 +1,352 @@
+name: ZAIN.NET - Link 7 Auto ZIP 5 File dan Progres PDF Paralel V2
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/zainnet-link7-auto-zip-paralel-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    name: Pasang Auto ZIP dan Validasi Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ambil source terbaru branch main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Siapkan Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Terapkan Patch Auto ZIP dan Progres PDF
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY_LINK7_V2'
+          from pathlib import Path
+          ROOT = Path.cwd()
+          APP = ROOT / 'src/journalConverter/App.tsx'
+          UPLOADER = ROOT / 'src/journalConverter/components/SkripsiUploader.tsx'
+          PARENT = ROOT / 'src/components/ToolViewerModal.tsx'
+          MARK = 'ZAINNET_LINK7_AUTO_ZIP_V2_20261112'
+          
+          
+          def replace_once(path, old, new, label):
+              data = path.read_text(encoding='utf-8')
+              n = data.count(old)
+              if n != 1:
+                  raise RuntimeError(f'{label}: expected exactly one match, got {n} in {path}')
+              path.write_text(data.replace(old, new, 1), encoding='utf-8')
+              print('OK:', label)
+          
+          
+          def replace_between(path, begin, end, replacement, label):
+              text = path.read_text(encoding='utf-8')
+              if text.count(begin) != 1 or text.count(end) != 1:
+                  raise RuntimeError(f'{label}: begin/end marker is ambiguous or missing ({text.count(begin)}, {text.count(end)})')
+              start = text.index(begin)
+              stop = text.index(end, start+len(begin))
+              path.write_text(text[:start] + replacement + text[stop:], encoding='utf-8')
+              print('OK:', label)
+          
+          for file in (APP, UPLOADER, PARENT):
+              if not file.exists():
+                  raise RuntimeError('File belum ada: ' + str(file))
+          if MARK in APP.read_text(encoding='utf-8'):
+              print('Patch auto ZIP v2 already exists. No changes needed.')
+              raise SystemExit(0)
+          
+          # The existing conversion code already starts a thesis PDF conversion
+          # concurrently with the AI stages. Surface its real status and reuse it.
+          replace_once(APP,
+              "  const [wordPairMessage, setWordPairMessage] = useState('');\n  // ZAINNET_LINK7_PARALLEL_PDF_20261112: early thesis conversion and per-article cache.",
+              """  const [wordPairMessage, setWordPairMessage] = useState('');
+            // ZAINNET_LINK7_AUTO_ZIP_V2_20261112: one automatic ZIP, visible concurrent PDF job.
+            const [thesisPdfStatus, setThesisPdfStatus] = useState<{
+              status: 'idle' | 'running' | 'ready' | 'error' | 'skipped'; message: string;
+            }>({ status: 'idle', message: 'Menunggu file Word skripsi.' });
+            const zipBusy = useRef(false);
+            const zipReadyAssets = useRef<{ article: JournalArticle; templateId: string; thesis: File; blob: Blob; filename: string } | null>(null);
+            // ZAINNET_LINK7_PARALLEL_PDF_20261112: early thesis conversion and per-article cache.""",
+              'Register PDF status, lock and ZIP cache')
+          
+          replace_between(APP,
+              '  const startThesisPdfInParallel = (file: File) => {',
+              '  const [errorMsg, setErrorMsg] = useState<string | null>(null);',
+              """  const startThesisPdfInParallel = (file: File) => {
+              if (thesisPdfJob.current?.file === file) return;
+              setThesisPdfStatus({
+                status: 'running',
+                message: 'Konversi skripsi Word ke PDF sedang berjalan di server LibreOffice, bersamaan dengan proses AI.'
+              });
+              const promise = convertWordToPdf(file, 'Skripsi.docx')
+                .then((pdf) => {
+                  setThesisPdfStatus({ status: 'ready', message: 'PDF skripsi selesai dan siap dimasukkan ke ZIP.' });
+                  return pdf;
+                })
+                .catch((err: unknown) => {
+                  console.warn('[Link7] PDF skripsi latar belakang gagal; akan dicoba kembali saat ZIP:', err);
+                  setThesisPdfStatus({ status: 'error', message: 'PDF skripsi gagal diproses di awal. Sistem akan mencoba kembali saat mengemas ZIP.' });
+                  return null;
+                });
+              thesisPdfJob.current = { file, promise };
+            };
+          """,
+              'Show progress for conversion concurrent with AI')
+          
+          # Replace the automatic two-file download routine with auto-preparation of one ZIP.
+          replace_between(APP,
+              '  // After the AI is ready, build Word ONCE then convert that exact Word to PDF.',
+              '  // Handle Journal AI Generation (Multi-stage process to prevent JSON truncation/timeouts)',
+              """  // Keep the article and the student files from the SAME final AI result.
+            // The browser can block an automatic download; manual retry uses the cached ZIP.
+            const prepareAndDownloadZip = async (readyArticle: JournalArticle, originalWord: File | null): Promise<boolean> => {
+              if (zipBusy.current) return false;
+              if (!originalWord) {
+                setWordPairPhase('error');
+                setWordPairMessage('ZIP otomatis membutuhkan skripsi Word .docx asli. Unggah Word pada panel paket lalu pilih Unduh Ulang ZIP; AI tidak perlu diulang.');
+                return false;
+              }
+              zipBusy.current = true;
+              setIsDownloadingZip(true);
+              setWordPairPhase('preparing');
+              setWordPairMessage('Artikel selesai. Menyiapkan 5 file dan mengunduh satu ZIP otomatis...');
+              const templateId = articleMode === 'template' ? selectedJournalId : '';
+              try {
+                const cached = zipReadyAssets.current;
+                if (cached && cached.article === readyArticle && cached.templateId === templateId && cached.thesis === originalWord) {
+                  triggerBundleDownload(cached.blob, cached.filename);
+                  setWordPairPhase('requested');
+                  setWordPairMessage('ZIP lengkap kembali diminta ke browser. Periksa folder Download.');
+                  onArticleComplete?.(cached.filename);
+                  return true;
+                }
+          
+                let assets = articleReadyAssets.current;
+                if (!assets || assets.article !== readyArticle || assets.templateId !== templateId) {
+                  setWordPairMessage('AI selesai. Membuat Word artikel dan Cover CD secara bersamaan...');
+                  const [word, cover] = await Promise.all([
+                    getArticleWord(readyArticle), buildCoverCdDocx(readyArticle),
+                  ]);
+                  if (word.size < 200 || cover.size < 200) {
+                    throw new Error('Word artikel atau Cover CD tidak berhasil dibuat.');
+                  }
+                  setWordPairMessage('Word artikel selesai. Mengonversi PDF artikel di server LibreOffice...');
+                  const pdf = await convertWordToPdf(word, 'Artikel.docx');
+                  assets = { article: readyArticle, templateId, word, pdf, cover };
+                  articleReadyAssets.current = assets;
+                }
+          
+                setWordPairMessage('Menggabungkan semua berkas: menunggu PDF skripsi yang diproses bersamaan dengan AI...');
+                const existingThesisPdf = thesisPdfJob.current?.file === originalWord
+                  ? await thesisPdfJob.current.promise : null;
+                if (!existingThesisPdf) {
+                  setWordPairMessage('Konversi PDF skripsi belum berhasil; mencoba ulang saat membuat ZIP...');
+                }
+                setZipMessage('Mengemas ZIP lengkap otomatis; tidak perlu menekan tombol Download Paket Lengkap.');
+                const { blob, filename, layoutWarnings, autoFixedCount } = await buildFiveFileBundle(
+                  readyArticle,
+                  { word: originalWord },
+                  setZipMessage,
+                  assets.word,
+                  { thesisPdf: existingThesisPdf || undefined, articlePdf: assets.pdf, coverWord: assets.cover },
+                );
+                setZipLayoutWarnings(layoutWarnings);
+                setZipAutoFixed(autoFixedCount);
+                zipReadyAssets.current = { article: readyArticle, templateId, thesis: originalWord, blob, filename };
+                triggerBundleDownload(blob, filename);
+                setWordPairPhase('requested');
+                setWordPairMessage(`ZIP 5 file sudah dibuat dan unduhannya diminta otomatis: ${filename}. Periksa folder Download. Bila Chrome memblokirnya, tekan Unduh Ulang ZIP tanpa menjalankan AI kembali.`);
+                setZipMessage('ZIP selesai dibuat. Tidak ada unduhan Word/PDF terpisah yang berjalan otomatis.');
+                // Report completion only after the entire ZIP exists and the browser download was requested.
+                onArticleComplete?.(filename);
+                return true;
+              } catch (err: any) {
+                console.error('[ZAIN.NET Link 7] Auto ZIP:', err);
+                setWordPairPhase('error');
+                setWordPairMessage(`ZIP belum berhasil: ${err?.message || 'Konversi gagal'}. Artikel AI tetap tersedia. Tekan Unduh Ulang ZIP untuk mencoba lagi.`);
+                setZipMessage(`Paket ZIP belum siap: ${err?.message || 'Periksa server LibreOffice.'}`);
+                return false;
+              } finally {
+                zipBusy.current = false;
+                setIsDownloadingZip(false);
+              }
+            };
+          
+            const retryZipDownload = async () => {
+              if (!article || zipBusy.current) return;
+              await prepareAndDownloadZip(article, sourceThesis.word);
+            };
+          
+            const confirmZipDownload = () => {
+              if (wordPairPhase !== 'requested') return;
+              // The OS download manager is not inspectable from a website.
+              onDownloadsConfirmed?.();
+            };
+          
+          """,
+              'Replace two automatic downloads with one automatic five-file ZIP')
+          
+          replace_once(APP,
+              '    articleReadyAssets.current = null;\n    if (original?.name.toLowerCase().endsWith(\'.docx\')) {',
+              '    articleReadyAssets.current = null;\n    zipReadyAssets.current = null;\n    setWordPairPhase(\'idle\');\n    if (original?.name.toLowerCase().endsWith(\'.docx\')) {',
+              'Invalidate ZIP cache for a new thesis')
+          replace_once(APP,
+              "    setZipMessage(original?.name.toLowerCase().endsWith('.docx')\n      ? 'File skripsi Word tersedia. PDF skripsi sedang disiapkan selagi AI membuat artikel.'\n      : 'Untuk paket ZIP, pilih skripsi Word .docx asli sekali saja. PDF akan dibuat otomatis.');",
+              "    if (!original?.name.toLowerCase().endsWith('.docx')) {\n      setThesisPdfStatus({ status: 'skipped', message: 'PDF otomatis memerlukan skripsi Word .docx asli. Upload Word untuk menyiapkan ZIP lengkap.' });\n    }\n    setZipMessage(original?.name.toLowerCase().endsWith('.docx')\n      ? 'PDF skripsi disiapkan bersamaan dengan AI. ZIP lima file akan diunduh otomatis.'\n      : 'Untuk ZIP, pilih skripsi Word .docx asli sekali saja.');",
+              'Show source status before AI work')
+          replace_once(APP,
+              "      // Record creation/quota ONCE, without closing the module.\n      onArticleComplete?.(`${(fullArticle.metadata as any)?.judul || 'Artikel'}.docx`);\n      // Automatically request two standalone Word files, not a ZIP.\n      await requestTwoWordDownloads(fullArticle);",
+              "      // Auto-download ONE five-file ZIP (no separate Word downloads, no extra ZIP button).\n      const thesisWord = original?.name.toLowerCase().endsWith('.docx') ? original : null;\n      await prepareAndDownloadZip(fullArticle, thesisWord);",
+              'Run automatic ZIP preparation at the end of AI work')
+          
+          # The source DOCX can also be picked manually after AI generation.
+          replace_once(APP,
+              "    setSourceThesis(prev => ({ ...prev, word: file }));\n    startThesisPdfInParallel(file);",
+              "    setSourceThesis(prev => ({ ...prev, word: file }));\n    zipReadyAssets.current = null;\n    startThesisPdfInParallel(file);",
+              'Invalidate ZIP on thesis file change')
+          
+          replace_between(APP,
+              '  const handleDownloadZip = async () => {',
+              '  // Handle Cover CD Export (.docx)',
+              """  // Optional fallback when Chrome blocks the automatic ZIP download.
+            const handleDownloadZip = async () => {
+              await retryZipDownload();
+            };
+          
+          """,
+              'Use one ZIP process for automatic and retry flow')
+          
+          # Progress panel under the AI progress in the uploader, visible during generation.
+          replace_once(UPLOADER,
+              '  generationStatus?: {\n    stage: number;\n    message: string;\n    percent: number;\n  };',
+              """  generationStatus?: {
+              stage: number;
+              message: string;
+              percent: number;
+            };
+            thesisPdfStatus?: { status: 'idle' | 'running' | 'ready' | 'error' | 'skipped'; message: string };""",
+              'Uploader receives status for concurrent PDF conversion')
+          replace_once(UPLOADER,
+              '  generationStatus,\n  selectedModel,',
+              '  generationStatus,\n  thesisPdfStatus,\n  selectedModel,',
+              'Uploader reads PDF status prop')
+          replace_once(UPLOADER,
+              """          {/* Submit Action */}
+                    <div className="mt-8 flex justify-end">""",
+              """          {/* ZAINNET_LINK7_AUTO_ZIP_V2: visible beside the AI job; no fake percentages. */}
+                    {isLoading && thesisPdfStatus && (
+                      <div role="status" aria-live="polite" className="mt-3 rounded-2xl border-2 border-cyan-200 bg-cyan-50 p-4 text-cyan-950 shadow-sm" data-testid="link7-thesis-pdf-status">
+                        <div className="flex items-center gap-2 font-bold text-sm">
+                          <span aria-hidden="true" className={thesisPdfStatus.status === 'running' ? 'animate-pulse' : ''}>📄</span>
+                          Konversi PDF Skripsi — Proses Paralel
+                        </div>
+                        <p className="text-xs mt-2 leading-relaxed">{thesisPdfStatus.message}</p>
+                        <p className="text-[11px] mt-1 text-cyan-800">
+                          {thesisPdfStatus.status === 'running' ? 'Sedang diproses selagi AI menyusun artikel…' :
+                           thesisPdfStatus.status === 'ready' ? 'Selesai ✓ PDF akan dimasukkan ke ZIP otomatis.' :
+                           thesisPdfStatus.status === 'error' ? 'Akan dicoba kembali saat ZIP dibuat.' :
+                           'Menunggu file Word skripsi.'}
+                        </p>
+                      </div>
+                    )}
+          
+                    {/* Submit Action */}
+                    <div className="mt-8 flex justify-end">""",
+              'Render status under AI progress for mobile')
+          replace_once(APP,
+              "            generationStatus={generationStatus}\n            selectedModel={selectedModel}",
+              "            generationStatus={generationStatus}\n            thesisPdfStatus={thesisPdfStatus}\n            selectedModel={selectedModel}",
+              'Connect PDF status to uploader')
+          
+          # Update the result banner, retaining optional diagnostics and file exports,
+          # but only the ZIP is triggered automatically.
+          replace_once(APP,
+              "          <p className=\"font-bold text-base\">Artikel selesai — {articleMode === 'template' ? `Template ${findJournalMaster(selectedJournalId)?.name || ''}` : 'Mode biasa'} — Artikel Word + PDF atau ZIP lengkap 5 file</p>",
+              "          <p className=\"font-bold text-base\">Artikel AI selesai — {articleMode === 'template' ? `Template ${findJournalMaster(selectedJournalId)?.name || ''}` : 'Mode biasa'} — ZIP lengkap 5 file otomatis</p>",
+              'Show automatic ZIP at top of result')
+          replace_once(APP,
+              '            <p className="text-xs text-slate-200 mt-1">PDF skripsi disiapkan saat AI bekerja. Word dan PDF artikel dibuat dari satu naskah. ZIP tetap berisi skripsi Word + PDF, artikel Word + PDF, dan Cover CD Word.</p>',
+              '            <p className="text-xs text-slate-200 mt-1">ZIP otomatis berisi Skripsi Word + PDF, Artikel Word + PDF, dan Cover CD Word. PDF skripsi diproses selagi AI menyusun artikel. Tidak perlu menekan tombol Paket Lengkap.</p>',
+              'Describe automatic ZIP instead of two-stage downloads')
+          replace_once(APP,
+              "{isDownloadingZip ? 'Menyiapkan Paket ZIP...' : 'Download Paket Lengkap (ZIP 5 File)'}",
+              "{isDownloadingZip ? 'Menyiapkan ZIP otomatis...' : 'Unduh Ulang ZIP (jika belum tersimpan)'}",
+              'Make ZIP button retry-only')
+          replace_once(APP,
+              '            <button type="button" onClick={retryTwoWordDownloads}',
+              '            <button type="button" onClick={retryZipDownload}',
+              'Use ZIP retry button') if '            <button type="button" onClick={retryTwoWordDownloads}' in APP.read_text(encoding='utf-8') else None
+          replace_once(APP,
+              "              {wordPairPhase === 'preparing' ? 'Menyiapkan Word + PDF...' : 'Unduh Ulang Artikel Word + PDF'}",
+              "              {wordPairPhase === 'preparing' ? 'Menyiapkan ZIP...' : 'Unduh Ulang ZIP Otomatis'}",
+              'Update retry button caption')
+          replace_once(APP,
+              '            <button type="button" onClick={confirmTwoWordDownloads}',
+              '            <button type="button" onClick={confirmZipDownload}',
+              'Switch user confirmation to one ZIP')
+          replace_once(APP,
+              '              Saya Sudah Menerima Kedua File — Kembali ke Beranda',
+              '              ZIP Sudah Tersimpan — Kembali ke Beranda',
+              'Confirm the only automatic download')
+          replace_once(APP,
+              '            Browser dapat memblokir unduhan otomatis ganda. ZAIN.NET tidak akan kembali ke beranda sebelum Anda mengonfirmasi kedua file sudah tersimpan.',
+              '            Browser bisa memblokir unduhan otomatis. Jika ZIP belum ada di Download, tekan Unduh Ulang ZIP. Aplikasi tetap terbuka sampai Anda mengonfirmasi file ZIP tersimpan.',
+              'Explain mobile auto-download limitations')
+          
+          # Remove redundant manual buttons from the result banner, not from optional header tools.
+          replace_between(APP,
+              '            <button type="button" onClick={handleDownloadDocx}\n',
+              '            <button type="button" onClick={confirmZipDownload}',
+              '',
+              'Show only ZIP actions in result banner')
+          
+          # Avoid misleading transaction completion wording before ZIP exists.
+          replace_once(PARENT,
+              "    setStatus('Artikel selesai. Menyiapkan Word dan PDF artikel. Modul tetap terbuka sampai keduanya dikonfirmasi terunduh.');",
+              "    setStatus('ZIP lima file sudah dibuat dan unduhan otomatis diminta. Periksa folder Download lalu konfirmasi ZIP tersimpan.');",
+              'Parent reports ZIP instead of Word/PDF')
+          replace_once(PARENT,
+              "    setStatus('Word dan PDF artikel dikonfirmasi terunduh. Kembali ke menu utama...');",
+              "    setStatus('ZIP lima file dikonfirmasi tersimpan. Kembali ke menu utama...');",
+              'Parent closes after ZIP confirmation')
+          replace_once(PARENT,
+              "          setStatus('Periksa kedua unduhan Word terlebih dahulu dan tekan tombol konfirmasi di bawah hasil artikel.');",
+              "          setStatus('Periksa ZIP di folder Download terlebih dahulu dan tekan tombol konfirmasi ZIP.');",
+              'Parent close guard explains ZIP')
+          
+          print('All Link 7 automatic ZIP changes prepared. Build and test before committing.')
+          PY_LINK7_V2
+
+      - name: Instal dependensi
+        run: npm ci --no-audit --no-fund
+
+      - name: Periksa build React dan TypeScript
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+        run: npm run build
+
+      - name: Simpan perubahan hanya setelah build berhasil
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/journalConverter/App.tsx src/journalConverter/components/SkripsiUploader.tsx src/components/ToolViewerModal.tsx
+          if git diff --cached --quiet; then
+            echo "Auto ZIP V2 sudah terpasang. Tidak ada perubahan baru."
+          else
+            git commit -m "feat(link7): auto ZIP 5 file with visible parallel PDF conversion"
+            git push origin HEAD:main
+            echo "Commit berhasil. pages.yml berjalan otomatis saat push ke main."
+          fi

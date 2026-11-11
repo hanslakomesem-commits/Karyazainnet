@@ -1,0 +1,83 @@
+name: ZAIN.NET - Perbaiki Deteksi Halaman Pengesahan
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/zainnet-fix-deteksi-pengesahan.yml
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  perbaiki-pengesahan:
+    name: Deteksi judul Word dengan tab stop
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ambil source code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Perbaiki detektor halaman pengesahan
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path('src/gabungFile/utils/docxParser.ts')
+          code = source.read_text(encoding='utf-8')
+          old = r'if (/<w:tab\b|w:leader=|<w:tabs\b/i.test(el.rawXml)) return false;'
+          new = (
+              '// Definisi tab stop adalah format paragraf, bukan daftar isi.\n'
+              "  const xmlWithoutTabStops = el.rawXml.replace(/<w:tabs\\b[^>]*>[\\s\\S]*?<\\/w:tabs>/gi, '');\n"
+              '  // Abaikan hanya tab aktual di isi paragraf dan leader daftar isi.\n'
+              r'  if (/<w:tab\b|w:leader=/i.test(xmlWithoutTabStops)) return false;'
+          )
+          if old in code:
+              if code.count(old) != 1:
+                  raise SystemExit('Terdapat lebih dari satu pola. Perbaikan dihentikan.')
+              source.write_text(code.replace(old, new, 1), encoding='utf-8')
+              print('SUKSES: deteksi Halaman Pengesahan diperbaiki.')
+          elif new in code:
+              print('SKIP: perbaikan sudah terpasang.')
+          else:
+              raise SystemExit('Pola source berubah. Perbaikan dihentikan agar aman.')
+          PY
+
+      - name: Gunakan Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Instal dependensi dari lockfile
+        run: npm ci --no-audit --no-fund
+
+      - name: Periksa build aplikasi
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+        run: npm run build
+
+      - name: Simpan source code perbaikan
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- src/gabungFile/utils/docxParser.ts
+          if git diff --cached --quiet; then
+            echo "Tidak ada perubahan baru."
+          else
+            git commit -m "fix(menu10): deteksi Halaman Pengesahan dengan tab stop Word"
+            git push origin HEAD:main
+          fi
+
+      - name: Jalankan publikasi GitHub Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run pages.yml --ref main
+          echo "Deploy diminta. Periksa hasil workflow Pages di tab Actions."

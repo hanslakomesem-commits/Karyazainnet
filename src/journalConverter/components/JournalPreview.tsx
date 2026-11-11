@@ -192,10 +192,10 @@ export const JournalPreview: React.FC<JournalPreviewProps> = ({
               onClick={onDownloadBundle}
               disabled={isDownloadingBundle}
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl shadow-sm hover:shadow-md transition-all flex items-center justify-center space-x-1.5 text-xs transform hover:-translate-y-0.5"
-              title="Unduh Paket Lengkap: Naskah Artikel + Cover CD (.zip)"
+              title="ZIP 5 File: Skripsi Word + PDF, Artikel Word + PDF, dan Cover CD Word"
             >
               <Download className="w-4 h-4" />
-              <span>{isDownloadingBundle ? 'Membuat Zip...' : 'Paket Lengkap (.zip)'}</span>
+              <span>{isDownloadingBundle ? 'Membuat Zip...' : 'Paket Lengkap 5 File (.zip)'}</span>
             </button>
           )}
         </div>

@@ -48,6 +48,8 @@ export interface SkripsiInput {
   sourceFootnotes?: Record<string, string>;
   fileName?: string;
   fileSize?: number;
+  /** Original thesis bytes, kept in browser memory for five-file ZIP. */
+  originalFile?: File;
   metadata: JournalMetadata;
   targetLengthPages?: number;
   footnoteStyle: 'chicago' | 'apa' | 'custom_footnote';

@@ -6,7 +6,7 @@ import { SectionEditorModal } from './components/SectionEditorModal';
 import { FootnoteManager } from './components/FootnoteManager';
 import { SkripsiInput, JournalArticle, FootnoteItem } from './types/journal';
 import { buildJournalDocx, exportJournalToDocx } from './utils/docxExport';
-import { triggerBundleDownload, downloadCoverCdOnly } from './utils/bundleExport';
+import { triggerBundleDownload, downloadCoverCdOnly, buildFiveFileBundle } from './utils/bundleExport';
 import { buildCoverCdDocx } from './utils/coverCdExport';
 import { isSuspiciousFilenameTitle, isValidThesisTitle, extractMetadataFromSkripsiText } from './components/SkripsiUploader';
 import { AlertCircle } from 'lucide-react';
@@ -30,6 +30,10 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
   const [isLoading, setIsLoading] = useState(false);
   const [isDownloadingDocx, setIsDownloadingDocx] = useState(false);
   const [isDownloadingCoverCd, setIsDownloadingCoverCd] = useState(false);
+  // ZAINNET_LINK7_ZIP5_20261111: File objects remain in browser memory, not backend storage.
+  const [sourceThesis, setSourceThesis] = useState<{ word: File | null; pdf: File | null }>({ word: null, pdf: null });
+  const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+  const [zipMessage, setZipMessage] = useState('Untuk ZIP lengkap, unggah skripsi Word (.docx) dan PDF (.pdf) asli.');
   // ZAINNET_LINK7_TWO_DOCX_SAFE_CLOSE_20261109
   // Browser websites cannot observe the OS download manager. Require the user
   // to confirm both Word files exist before returning to the main menu.
@@ -190,6 +194,12 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
 
   // Handle Journal AI Generation (Multi-stage process to prevent JSON truncation/timeouts)
   const handleGenerateJournal = async (input: SkripsiInput) => {
+    const original = input.originalFile;
+    setSourceThesis({
+      word: original?.name.toLowerCase().endsWith('.docx') ? original : null,
+      pdf: original?.name.toLowerCase().endsWith('.pdf') ? original : null,
+    });
+    setZipMessage('Untuk ZIP lengkap, lengkapi skripsi Word (.docx) dan PDF (.pdf) asli.');
     setIsLoading(true);
     setErrorMsg(null);
 
@@ -325,6 +335,38 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
     }
   };
 
+  const handleThesisFilePick = (kind: 'word' | 'pdf', file?: File) => {
+    if (!file) return;
+    const expected = kind === 'word' ? '.docx' : '.pdf';
+    if (!file.name.toLowerCase().endsWith(expected)) {
+      setZipMessage(`Berkas skripsi ${kind === 'word' ? 'Word' : 'PDF'} harus ${expected}.`);
+      return;
+    }
+    setSourceThesis(prev => ({ ...prev, [kind]: file }));
+    setZipMessage(`${file.name} diterima. Pastikan kedua format berasal dari skripsi mahasiswa yang sama.`);
+  };
+
+  const handleDownloadZip = async () => {
+    if (!article || isDownloadingZip) return;
+    if (!sourceThesis.word || !sourceThesis.pdf) {
+      setZipMessage('ZIP 5 file belum tersedia: lengkapi kedua skripsi asli .docx dan .pdf di kolom di atas.');
+      return;
+    }
+    setIsDownloadingZip(true);
+    try {
+      const { blob, filename } = await buildFiveFileBundle(
+        article, { word: sourceThesis.word, pdf: sourceThesis.pdf }, setZipMessage,
+      );
+      triggerBundleDownload(blob, filename);
+      setZipMessage(`ZIP siap dan unduhan sudah diminta: ${filename}. Periksa folder Download. Bila tidak muncul, tekan tombol ZIP lagi.`);
+    } catch (err: any) {
+      console.error('[ZAIN.NET Link 7] Gagal membuat ZIP 5 file:', err);
+      setZipMessage(`ZIP gagal: ${err?.message || 'Terjadi kesalahan.'}. Artikel tetap terbuka, coba lagi.`);
+    } finally {
+      setIsDownloadingZip(false);
+    }
+  };
+
   // Handle Cover CD Export (.docx)
   const handleDownloadCoverCd = async () => {
     if (!article) return;
@@ -400,11 +442,38 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
         onSelectModel={handleSelectModel}
       />
 
-      {/* 2-file download confirmation stays visible until the user confirms. */}
+      {/* 2-file download confirmation stays visible until the user confirms. ZIP is optional. */}
       {article && (
         <div role="status" className="sticky top-0 z-40 mx-auto w-full max-w-5xl bg-blue-950 text-white p-4 shadow-xl border-b-4 border-cyan-400">
           <p className="font-bold text-base">Artikel selesai — 2 File Word (tanpa ZIP)</p>
           <p className="text-sm mt-1" aria-live="polite">{wordPairMessage}</p>
+          <div className="mt-3 rounded-lg border border-cyan-500/50 bg-slate-900 p-3">
+            <p className="text-sm font-bold text-cyan-200">Paket Lengkap ZIP — 5 file dalam 1 ZIP</p>
+            <p className="text-xs text-slate-200 mt-1">Di dalam folder nama mahasiswa: Skripsi Word + PDF, Artikel Word + PDF. Di luar folder: Cover CD Word.</p>
+            <div className="grid gap-2 mt-3 sm:grid-cols-2">
+              <label className="text-xs flex flex-col gap-1">
+                Skripsi Word asli (.docx) {sourceThesis.word ? `✓ ${sourceThesis.word.name}` : '— belum ada'}
+                <input className="w-full text-xs file:mr-2 file:rounded file:border-0 file:p-2 file:bg-blue-600 file:text-white"
+                  type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={e => handleThesisFilePick('word', e.target.files?.[0])} />
+              </label>
+              <label className="text-xs flex flex-col gap-1">
+                Skripsi PDF asli (.pdf) {sourceThesis.pdf ? `✓ ${sourceThesis.pdf.name}` : '— belum ada'}
+                <input className="w-full text-xs file:mr-2 file:rounded file:border-0 file:p-2 file:bg-blue-600 file:text-white"
+                  type="file" accept=".pdf,application/pdf"
+                  onChange={e => handleThesisFilePick('pdf', e.target.files?.[0])} />
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-3 items-center mt-3">
+              <button type="button" onClick={handleDownloadZip}
+                disabled={isDownloadingZip || !sourceThesis.word || !sourceThesis.pdf}
+                className="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-4 py-2 font-bold disabled:opacity-50">
+                {isDownloadingZip ? 'Menyiapkan Paket ZIP...' : 'Download Paket Lengkap (ZIP 5 File)'}
+              </button>
+              <span aria-live="polite" className="text-xs text-amber-100">{zipMessage}</span>
+            </div>
+            <p className="text-xs text-slate-300 mt-2">PDF artikel dibuat dari isi artikel. Pagination dan letak catatan kaki pada PDF dapat berbeda dari DOCX; cek sebelum dicetak. Skripsi asli dipertahankan apa adanya.</p>
+          </div>
           <div className="flex flex-wrap gap-2 mt-3">
             <button type="button" onClick={retryTwoWordDownloads}
               disabled={wordPairPhase === 'preparing'}
@@ -504,9 +573,10 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
             onUpdateArticle={setArticle}
             onDownloadDocx={handleDownloadDocx}
             onDownloadCoverCd={handleDownloadCoverCd}
+            onDownloadBundle={handleDownloadZip}
             isDownloading={isDownloadingDocx}
             isDownloadingCoverCd={isDownloadingCoverCd}
-            isDownloadingBundle={false}
+            isDownloadingBundle={isDownloadingZip}
             onEditSection={handleOpenSectionEditor}
           />
         )}

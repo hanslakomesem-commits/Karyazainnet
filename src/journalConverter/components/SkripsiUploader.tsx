@@ -595,6 +595,7 @@ export const SkripsiUploader: React.FC<SkripsiUploaderProps> = ({
       rawText,
       fileName: selectedFile?.name,
       fileSize: selectedFile?.size,
+      originalFile: selectedFile || undefined,
       metadata: {
         ...metadata,
         nama: finalNama,

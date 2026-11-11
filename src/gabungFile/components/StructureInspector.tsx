@@ -6,6 +6,7 @@
 import React from 'react';
 import { TargetDocument, DocxAnalysis } from '../types/skripsi';
 import { CheckCircle2, AlertCircle, Clock, MapPin, Tag } from 'lucide-react';
+import { getLampiranInsertionChoices, type LampiranInsertionChoice } from '../utils/lampiranSequence'; // ZAINNET_MENU10_AUTO_SEQUENCE_V1
 
 interface StructureInspectorProps {
   analysis: DocxAnalysis | null;
@@ -13,6 +14,7 @@ interface StructureInspectorProps {
   anchorKeyword: string;
   onAnchorKeywordChange: (keyword: string) => void;
   onRecheckAnchor: () => void;
+  onChooseLampiran: (choice: LampiranInsertionChoice) => void;
   onOpenManualPick?: (target: TargetDocument) => void;
 }
 
@@ -22,9 +24,14 @@ export const StructureInspector: React.FC<StructureInspectorProps> = ({
   anchorKeyword,
   onAnchorKeywordChange,
   onRecheckAnchor,
+  onChooseLampiran,
   onOpenManualPick,
 }) => {
   if (!analysis) return null;
+  const quickPositions = getLampiranInsertionChoices(analysis.elements);
+  const chosenAuto = analysis.anchorKeywordMatch?.matchedKeyword.startsWith('Penempatan otomatis setelah Lampiran')
+    ? quickPositions.find(c => c.insertionIndex === analysis.anchorKeywordMatch?.index)
+    : undefined;
 
   const signedPages = targets.filter((t) => t.category === 'signed_page');
   const fiveAttachments = targets.filter((t) => t.category === 'attachment_5');
@@ -64,6 +71,8 @@ export const StructureInspector: React.FC<StructureInspectorProps> = ({
               value={anchorKeyword}
               onChange={(e) => onAnchorKeywordChange(e.target.value)}
               placeholder="Contoh: karyazainnet"
+              style={{ fontSize: 16 }}
+              autoComplete="off"
               className="w-full text-xs font-bold text-slate-900 bg-white border border-blue-300 rounded-lg px-3.5 py-2 focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 shadow-2xs font-mono"
             />
           </div>
@@ -75,13 +84,51 @@ export const StructureInspector: React.FC<StructureInspectorProps> = ({
           </button>
         </div>
 
+        {/* Pencarian tanpa keyboard untuk HP: pilih nomor lampiran langsung. */}
+        <div className="mt-3 p-3 rounded-lg border border-blue-200 bg-white space-y-2">
+          <label htmlFor="zainnet-menu10-auto-lampiran" className="block text-sm font-bold text-slate-800">
+            Sisip Lampiran Tanpa Mengetik (HP)
+          </label>
+          <p className="text-xs text-slate-600">
+            Pilih setelah nomor lampiran yang ada. Contoh: setelah Lampiran 3, dokumen baru otomatis mulai Lampiran 4 dan lampiran lama sesudahnya bergeser.
+          </p>
+          <select
+            id="zainnet-menu10-auto-lampiran"
+            value={chosenAuto?.insertionIndex ?? ''}
+            onChange={event => {
+              const position = quickPositions.find(c => String(c.insertionIndex) === event.target.value);
+              if (position) onChooseLampiran(position);
+            }}
+            className="w-full min-h-12 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 font-semibold text-slate-900"
+            style={{ fontSize: 16 }}
+            aria-label="Pilih penempatan setelah lampiran"
+          >
+            <option value="">-- Pilih posisi lampiran --</option>
+            {quickPositions.map(choice => (
+              <option key={`${choice.afterHeadingIndex}-${choice.insertionIndex}`} value={choice.insertionIndex}>
+                Setelah Lampiran {choice.afterNumber} ({choice.description})
+              </option>
+            ))}
+          </select>
+          {quickPositions.length > 0 ? (
+            <button type="button" onClick={() => onChooseLampiran(quickPositions[quickPositions.length - 1])}
+              className="w-full min-h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-sm px-3 py-2">
+              Otomatis Setelah Lampiran Terakhir
+            </button>
+          ) : (
+            <p className="text-amber-700 text-xs">Nomor judul Lampiran belum ditemukan. Gunakan kata kunci atau pilih posisi manual pada Pratinjau Halaman.</p>
+          )}
+        </div>
+
         {/* Anchor Status Indicator */}
         <div className="mt-3 pt-2.5 border-t border-blue-200/60 flex items-center justify-between text-xs">
           {analysis.anchorKeywordMatch ? (
             <div className="flex items-center gap-1.5 text-emerald-800 font-semibold text-[11px]">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>
-                Kata kunci ditemukan di <strong>Halaman ~{analysis.anchorKeywordMatch.page}</strong> (Paragraf #{analysis.anchorKeywordMatch.index}):
+                {analysis.anchorKeywordMatch.matchedKeyword.startsWith('Penempatan otomatis setelah Lampiran')
+                  ? 'Titik sisip otomatis dipilih pada'
+                  : 'Kata kunci ditemukan di'} <strong>Halaman ~{analysis.anchorKeywordMatch.page}</strong> (Paragraf #{analysis.anchorKeywordMatch.index}):
                 <em className="text-slate-600 font-normal ml-1">"{analysis.anchorKeywordMatch.text}"</em>
               </span>
             </div>

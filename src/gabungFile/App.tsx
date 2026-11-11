@@ -23,6 +23,7 @@ import {
   ValidationResult,
 } from './types/skripsi';
 import { parseDocx, checkAnchorKeyword } from './utils/docxParser';
+import { getLampiranInsertionChoices } from './utils/lampiranSequence'; // ZAINNET_MENU10_AUTO_SEQUENCE_V1
 import { autoMapScansToTargets, autoMatchScan } from './utils/matcher';
 import { performQuickHeaderOcr } from './utils/ocrService';
 import { applyScansToDocx } from './utils/docxModifier';
@@ -246,6 +247,20 @@ export default function App({ onExportComplete }: GabungFileProps = {}) {
       setDocxBuffer(buffer);
 
       const parsed = await parseDocx(buffer, file.name, options.anchorKeyword);
+      // Jika pengguna tidak memiliki kata kunci, lokasi bisa dipilih otomatis.
+      if (!parsed.anchorKeywordMatch) {
+        const quickPositions = getLampiranInsertionChoices(parsed.elements);
+        const selected = quickPositions[quickPositions.length - 1];
+        if (selected) {
+          const anchorElement = parsed.elements[selected.insertionIndex];
+          parsed.anchorKeywordMatch = {
+            index: selected.insertionIndex,
+            page: anchorElement?.estimatedPage || 1,
+            text: anchorElement?.text || '',
+            matchedKeyword: `Penempatan otomatis setelah Lampiran ${selected.afterNumber}`,
+          };
+        }
+      }
       setAnalysis(parsed);
 
       const { updatedTargets, updatedScans } = autoMapScansToTargets(parsed.detectedTargets, scans);
@@ -917,6 +932,19 @@ console.warn('[Menu 10] OCR foto dilewati:', item.name, err);
               handleRecheckAnchor(kw);
             }}
             onRecheckAnchor={() => handleRecheckAnchor()}
+            onChooseLampiran={(choice) => {
+              const at = analysis.elements[choice.insertionIndex];
+              setAnalysis(prev => prev ? ({
+                ...prev,
+                anchorKeywordMatch: {
+                  index: choice.insertionIndex,
+                  page: at?.estimatedPage || 1,
+                  text: at?.text || '',
+                  matchedKeyword: `Penempatan otomatis setelah Lampiran ${choice.afterNumber}`,
+                },
+              }) : prev);
+              setOptions(prev => ({ ...prev, useAnchorFor5Attachments: true }));
+            }}
             onOpenManualPick={handleOpenManualPick}
           />
         )}

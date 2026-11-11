@@ -6,6 +6,7 @@
 import JSZip from 'jszip';
 import { DocxAnalysis, ProcessingOptions, ScanFile, TargetDocument } from '../types/skripsi';
 import { findHighestExistingLampiranNumber } from './docxParser';
+import { getLampiranHeadings, replaceLampiranHeadingNumber } from './lampiranSequence'; // ZAINNET_MENU10_AUTO_SEQUENCE_V1
 import { sanitizeXmlTags } from './xmlSanitizer';
 
 export interface ModifierResult {
@@ -603,10 +604,16 @@ export async function applyScansToDocx(
 
   const anchorMatch = analysis.anchorKeywordMatch;
 
-  const highestExisting = findHighestExistingLampiranNumber(
-    elements,
-    anchorMatch ? anchorMatch.index : undefined
-  );
+  // Nomor pertama hanya mengikuti lampiran sebelum TITIK SISIP,
+  // bukan nomor tertinggi di seluruh dokumen (yang mungkin berada sesudah sisipan).
+  const existingBeforeAnchor = anchorMatch && options.useAnchorFor5Attachments
+    ? getLampiranHeadings(elements).filter(h => h.index < anchorMatch.index)
+    : [];
+  const highestExisting = existingBeforeAnchor.length > 0
+    ? existingBeforeAnchor[existingBeforeAnchor.length - 1].number
+    : anchorMatch && options.useAnchorFor5Attachments
+      ? 0
+      : findHighestExistingLampiranNumber(elements);
   let currentLampiranNum = highestExisting > 0 ? highestExisting + 1 : 4;
   logs.push(
     `ℹ Urutan lampiran: ${
@@ -687,6 +694,25 @@ export async function applyScansToDocx(
   }
 
   if (anchorMatch && options.useAnchorFor5Attachments && activeItems.length > 0) {
+    // Ubah penomoran judul asli setelah titik sisip sehingga tidak ada Lampiran 4 ganda.
+    // Hanya judul paragraf asli yang diubah; Daftar Isi, isi naskah, dan Word asli aman.
+    const headingsAfter = getLampiranHeadings(elements).filter(h => h.index >= anchorMatch.index);
+    let nextExistingNum = currentLampiranNum;
+    for (const heading of headingsAfter) {
+      const original = elements[heading.index];
+      const fixedXml = replaceLampiranHeadingNumber(original.rawXml, nextExistingNum);
+      if (fixedXml !== original.rawXml) {
+        elements[heading.index] = {
+          ...original,
+          rawXml: fixedXml,
+          text: original.text.replace(/^\s*Lampiran\s*(?:ke[\s.-]*)?(?:\d+|[IVXLCDM]+)(?=$|[\s.:)\-])/i,
+            `Lampiran ${nextExistingNum}`),
+        };
+        logs.push(`✓ Renumber Lampiran ${heading.number} → ${nextExistingNum} pada naskah setelah sisipan`);
+      }
+      nextExistingNum++;
+    }
+    logs.push(`✓ ${activeItems.length} lampiran baru dilanjutkan setelah Lampiran ${highestExisting || 3}; judul lampiran asli setelahnya diperbarui.`);
     logs.push(`✓ Titik penempatan 5 Lampiran aktif pada kata kunci anchor (In Line with Text, Margin Asli Skripsi)`);
 
     let combined5Xml = '';

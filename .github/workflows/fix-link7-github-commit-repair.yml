@@ -1,0 +1,74 @@
+name: ZAIN.NET - Pulihkan Patch Link 7 Auto PDF ZIP
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-link7-github-commit-repair.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: zainnet-link7-workflow-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Perbaiki workflow dan jalankan kembali Link 7
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ambil repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Perbaiki error rebase saat commit
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path(".github/workflows/fix-link7-auto-pdf-zip.yml")
+          if not p.is_file():
+              raise SystemExit("Workflow utama Link 7 tidak ditemukan.")
+
+          s = p.read_text(encoding="utf-8")
+          old = "            git pull --rebase origin main\n"
+          if s.count(old) == 1:
+              # Workflow checkout dari main yang baru; 'pull --rebase' yang
+              # dijalankan setelah npm install menyebabkan perubahan belum
+              # di-stage dan menghentikan commit/push.
+              s = s.replace(old, "", 1)
+              p.write_text(s, encoding="utf-8")
+              print("Perintah rebase bermasalah dihapus.")
+          elif "git pull --rebase origin main" not in s:
+              print("Workflow sudah diperbaiki. Lanjutkan dispatch.")
+          else:
+              raise SystemExit("Pola perintah rebase tidak sesuai; tidak melakukan perubahan.")
+          PY
+
+      - name: Simpan perbaikan workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/fix-link7-auto-pdf-zip.yml
+          if ! git diff --cached --quiet; then
+            git commit -m "Fix Link7 workflow: hindari rebase saat npm install"
+            git push origin HEAD:main
+          else
+            echo "Tidak ada perubahan pada workflow."
+          fi
+
+      - name: Jalankan ulang patch Link 7 otomatis
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh workflow run fix-link7-auto-pdf-zip.yml --ref main
+          echo "Patch Link 7 sudah diminta. Pantau Actions untuk hasilnya."
+          echo "Setelah patch berhasil, Render tetap perlu deploy commit terbaru."

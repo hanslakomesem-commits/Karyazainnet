@@ -1,0 +1,539 @@
+name: ZAIN.NET - Link 7 Dua Mode dan 15 Template Jurnal
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/link7-dua-mode-15-template.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: zainnet-link7-dua-mode-template
+  cancel-in-progress: false
+
+jobs:
+  integrasi:
+    name: Pasang 15 template asli, AI, format Word, ZIP dan build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Karyazainnet main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Ambil master asli dari repository Template-Artikel
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --branch main https://github.com/hanslakomesem-commits/Template-Artikel.git .zainnet-template-import
+          TEMPLATE_SHA=$(git -C .zainnet-template-import rev-parse HEAD)
+          if [ "$TEMPLATE_SHA" != "06cb93cd887be47b2488b032182e90529f06ac06" ]; then
+            echo 'Isi Template-Artikel berubah dari ZIP yang telah diaudit; hentikan agar tidak mengambil master yang berbeda.'
+            exit 1
+          fi
+          python3 - <<'PY_CHECK'
+          from pathlib import Path
+          import json, zipfile
+          base = Path('.zainnet-template-import')
+          manifest = json.loads((base/'templates.json').read_text())
+          assert len(manifest) == 15
+          for t in manifest:
+              p = base/t['docx']
+              assert zipfile.is_zipfile(p) and 'word/document.xml' in zipfile.ZipFile(p).namelist(), p
+          print('15 master Word valid dan sesuai repository sumber yang dipin.')
+          PY_CHECK
+
+      - name: Terapkan integrasi Link 7 tanpa mengubah workflow lain
+        shell: bash
+        run: |
+          python3 - <<'PY_ZAIN_TEMPLATE'
+          #!/usr/bin/env python3
+          """Install ZAIN.NET Link7 two-mode journal templates. Strict anchors, idempotent."""
+          from pathlib import Path
+          import json, shutil, sys
+
+          ROOT=Path.cwd()
+          SRC=ROOT/'.zainnet-template-import'
+          STAMP='ZAINNET_LINK7_DUA_MODE_TEMPLATE_V1'
+          if ((ROOT/'src/journalConverter/App.tsx').is_file() and
+              STAMP in (ROOT/'src/journalConverter/App.tsx').read_text(encoding='utf-8') and
+              STAMP in (ROOT/'server/journal7/router.ts').read_text(encoding='utf-8') and
+              (ROOT/'src/journalConverter/utils/journalTemplateService.ts').is_file() and
+              'articleWordOverride?: Blob' in (ROOT/'src/journalConverter/utils/bundleExport.ts').read_text(encoding='utf-8')):
+              print('Integrasi 15 template sudah terpasang pada kode. Tidak perlu mengubah ulang.')
+              sys.exit(0)
+
+          def replace_once(path, old, new):
+              p=ROOT/path
+              data=p.read_text(encoding='utf-8')
+              if data.count(old)!=1:
+                  raise RuntimeError(f'{path}: expected one anchor, found {data.count(old)} for {old[:90]!r}')
+              p.write_text(data.replace(old,new,1),encoding='utf-8')
+
+          def edit(path, fun):
+              p=ROOT/path;s=p.read_text(encoding='utf-8');p.write_text(fun(s),encoding='utf-8')
+
+          if not (SRC/'templates.json').is_file():
+              raise RuntimeError('Folder sumber .zainnet-template-import tidak tersedia. Clone Template-Artikel dahulu.')
+          manifest=json.loads((SRC/'templates.json').read_text(encoding='utf-8'))
+          rules=json.loads((SRC/'rules.json').read_text(encoding='utf-8'))
+          assert len(manifest)==len(rules)==15 and all(v['id'] in rules for v in manifest)
+          for it in manifest:
+              assert (SRC/it['docx']).is_file(),it['id']
+
+          # Copy official Word masters, not XML mockups. Do not copy the unrelated backend.
+          web=ROOT/'public'/'articleTemplates'
+          (web/'js').mkdir(parents=True,exist_ok=True)
+          shutil.copy2(SRC/'js/docx-engine.js',web/'js/docx-engine.js')
+          for it in manifest:
+              dest=web/it['docx'];dest.parent.mkdir(parents=True,exist_ok=True)
+              shutil.copy2(SRC/it['docx'],dest)
+          (web/'templates.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          (web/'rules.json').write_text(json.dumps(rules,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+
+          # Full authority for selection comes from the shipped manifest and rules.
+          items=[]
+          for it in manifest:
+              x=rules[it['id']]
+              items.append({
+                'id':it['id'],'name':it['name'],'docx':it['docx'],
+                'bodyFont':x.get('bodyFont',''), 'bodySize':x.get('bodySize'),
+                'line':x.get('line'), 'titleMax':x.get('titleMax'),
+                'abstractWords':x.get('abstractWords'),
+                'abstractLanguage':x.get('abstractLanguage','bilingual'),
+                'note':x.get('note','')[:280], 'hasMaster':True,
+              })
+          cat_file=ROOT/'src/journalConverter/data/journalTemplatesCatalog.ts'
+          cat_file.parent.mkdir(parents=True,exist_ok=True)
+          cat_file.write_text('''// Generated from the user-supplied Template-Artikel master ZIP (15 journals).
+          // The master DOCX and rules are copied, never fabricated from scratch.
+          export interface JournalMasterChoice {
+            id: string;
+            name: string;
+            docx: string;
+            bodyFont: string;
+            bodySize?: number | string | null;
+            line?: number | string | null;
+            titleMax?: number | null;
+            abstractWords?: number[] | null;
+            abstractLanguage?: string;
+            note: string;
+            hasMaster: boolean;
+          }
+          export const JOURNAL_MASTER_CATALOG: JournalMasterChoice[] = '''+json.dumps(items,ensure_ascii=False,indent=2)+''';
+
+          export function findJournalMaster(id?: string | null) {
+            return JOURNAL_MASTER_CATALOG.find(item => item.id === id);
+          }
+
+          /** Trusted journal instructions. Never concatenate user-submitted arbitrary prompts. */
+          export function journalTemplateInstruction(id?: string | null): string {
+            const t = findJournalMaster(id);
+            if (!t) return '';
+            const n = Array.isArray(t.abstractWords) && t.abstractWords.length === 2
+              ? `Panjang abstrak jurnal: ${t.abstractWords[0]}–${t.abstractWords[1]} kata.` : '';
+            const language = t.abstractLanguage === 'id-only'
+              ? 'Abstrak dan kata kunci Bahasa Indonesia saja (tanpa Inggris).'
+              : 'Abstrak mengikuti bahasa pada pedoman jurnal.';
+            const maxTitle = t.titleMax ? `Batas judul jurnal: ${t.titleMax} kata.` : '';
+            return `JURNAL TARGET: ${t.name}. ${maxTitle} ${n} ${language} ` +
+              'Pertahankan data penelitian, jenis metode, hasil, angka, kutipan dan referensi yang benar-benar ada di skripsi. ' +
+              'Jangan membuat DOI, volume, nomor, tahun publikasi, narasumber atau rujukan yang tidak ada. ' +
+              'Jika aturan jurnal bertentangan dengan target umum 18 halaman, utamakan aturan jurnal; ' +
+              'format Word akhir diterapkan oleh master jurnal DOCX yang resmi.';
+          }
+          ''',encoding='utf-8')
+
+          service_path=ROOT/'src/journalConverter/utils/journalTemplateService.ts'
+          service_path.write_text('''// '''+STAMP+'''
+          import JSZip from 'jszip';
+          import type { JournalArticle } from '../types/journal';
+          import { buildJournalDocx } from './docxExport';
+          import { findJournalMaster } from '../data/journalTemplatesCatalog';
+
+          interface TemplateBuildResult { blob: Blob; warnings: string[] }
+          interface BrowserTemplateEngine {
+            build: (articleBytes: ArrayBuffer, templateBytes: ArrayBuffer,
+              rule: Record<string, unknown>, metadata: Record<string, string>) =>
+              Promise<{ blob: Blob; details?: { warnings?: string[] } }>;
+          }
+          let enginePromise: Promise<BrowserTemplateEngine> | undefined;
+
+          function assetUrl(file: string) {
+            return `${import.meta.env.BASE_URL}articleTemplates/${file}`;
+          }
+          function loadEngine(): Promise<BrowserTemplateEngine> {
+            if (enginePromise) return enginePromise;
+            enginePromise = new Promise<BrowserTemplateEngine>((resolve, reject) => {
+              (window as any).JSZip = JSZip;
+              const already = (window as any).ZainDocxEngine as BrowserTemplateEngine | undefined;
+              if (already?.build) return resolve(already);
+              const script = document.createElement('script');
+              script.src = assetUrl('js/docx-engine.js');
+              script.async = true;
+              script.onload = () => {
+                const engine = (window as any).ZainDocxEngine as BrowserTemplateEngine | undefined;
+                engine?.build ? resolve(engine) : reject(new Error('Mesin DOCX template tidak tersedia.'));
+              };
+              script.onerror = () => reject(new Error('Mesin template gagal dimuat dari GitHub Pages.'));
+              document.head.appendChild(script);
+            }).catch(error => { enginePromise = undefined; throw error; });
+            return enginePromise;
+          }
+          async function loadFile(url: string): Promise<ArrayBuffer> {
+            const response = await fetch(url, { cache: 'force-cache' });
+            if (!response.ok) throw new Error(`Master jurnal tidak dapat diunduh (HTTP ${response.status}).`);
+            const buffer = await response.arrayBuffer();
+            if (buffer.byteLength < 1000 || new Uint8Array(buffer)[0] !== 0x50) {
+              throw new Error('Master jurnal tidak valid. Jangan unduh artikel yang tidak sesuai template.');
+            }
+            return buffer;
+          }
+          async function normalizeWithLibreOffice(draft: Blob, templateId: string): Promise<Blob> {
+            const form = new FormData();
+            form.append('file', draft, `artikel_${templateId}.docx`);
+            form.append('template_id', templateId);
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 175000);
+            try {
+              const response = await fetch('/api/journal7/normalize-template', {
+                method: 'POST', body: form, credentials: 'omit', signal: controller.signal,
+              });
+              if (!response.ok) {
+                let message = `HTTP ${response.status}`;
+                try { const obj = await response.json(); message = String(obj.error || message); } catch { /* no JSON */ }
+                throw new Error(`Server LibreOffice gagal menyimpan ulang artikel template: ${message}`);
+              }
+              const blob = await response.blob();
+              if (blob.size < 1000 || new Uint8Array(await blob.slice(0,4).arrayBuffer())[0] !== 0x50) {
+                throw new Error('File DOCX hasil server rusak. Proses download dibatalkan.');
+              }
+              return blob;
+            } catch (e: any) {
+              if (e?.name === 'AbortError') throw new Error('Normalisasi template melebihi batas waktu. Coba lagi saat Render aktif.');
+              throw e;
+            } finally { clearTimeout(timeout); }
+          }
+
+          /** Output is saved by LibreOffice, not a browser-only OOXML draft. */
+          export async function buildTemplateArticleWord(
+            article: JournalArticle, templateId: string,
+          ): Promise<TemplateBuildResult> {
+            const selected = findJournalMaster(templateId);
+            if (!selected) throw new Error('Pilih jurnal yang tersedia terlebih dahulu.');
+            const [word, master, rulesResp, engine] = await Promise.all([
+              buildJournalDocx(article), loadFile(assetUrl(selected.docx)),
+              fetch(assetUrl('rules.json')), loadEngine(),
+            ]);
+            if (!rulesResp.ok) throw new Error('Aturan jurnal gagal dimuat.');
+            const rules = await rulesResp.json() as Record<string, Record<string, unknown>>;
+            const rule = rules[templateId];
+            if (!rule) throw new Error('Aturan jurnal terpilih tidak ditemukan.');
+            const metadata = {
+              title: article.metadata.judul || '',
+              author: article.metadata.nama || '',
+              affiliation: [article.metadata.prodi, article.metadata.instansi].filter(Boolean).join(', '),
+              email: article.metadata.email || '',
+              abstractId: article.abstract.abstrakIndo || '',
+              abstractEn: article.abstract.abstrakEnglish || '',
+              keywordsId: (article.abstract.keywordsIndo || []).join(', '),
+              keywordsEn: (article.abstract.keywordsEnglish || []).join(', '),
+              // Journal editorial metadata must not be invented:
+              phone: '', doi: '', volume: '', issue: '', publicationDate: '',
+              received: '', revised: '', accepted: '', published: '',
+            };
+            const interim = await engine.build(await word.arrayBuffer(), master, rule, metadata);
+            if (!interim.blob || interim.blob.size < 1000) throw new Error('Mesin template menghasilkan file kosong.');
+            const saved = await normalizeWithLibreOffice(interim.blob, templateId);
+            const warnings = Array.isArray(interim.details?.warnings) ? interim.details.warnings : [];
+            return { blob: saved, warnings };
+          }
+          ''',encoding='utf-8')
+
+          # Preserve both normal and template paths. Do not change existing quota logic.
+          app='src/journalConverter/App.tsx'
+          replace_once(app,"import React, { useState } from 'react';", "import React, { useState, useRef } from 'react';")
+          replace_once(app,"import { AlertCircle } from 'lucide-react';", "import { AlertCircle } from 'lucide-react';\nimport { JOURNAL_MASTER_CATALOG, findJournalMaster } from './data/journalTemplatesCatalog';\nimport { buildTemplateArticleWord } from './utils/journalTemplateService';")
+          replace_once(app,"  const [article, setArticle] = useState<JournalArticle | null>(null);",
+          '''  const [article, setArticle] = useState<JournalArticle | null>(null);
+            // '''+STAMP+'''
+            const [articleMode, setArticleMode] = useState<'choose' | 'normal' | 'template'>('choose');
+            const [selectedJournalId, setSelectedJournalId] = useState('');
+            const [templateWarnings, setTemplateWarnings] = useState<string[]>([]);
+            const templateCache = useRef<{ key: string; blob: Blob } | null>(null);
+
+            const getArticleWord = async (readyArticle: JournalArticle): Promise<Blob> => {
+              if (articleMode !== 'template') return buildJournalDocx(readyArticle);
+              if (!findJournalMaster(selectedJournalId)) throw new Error('Jurnal belum dipilih.');
+              const key = selectedJournalId + ':' + JSON.stringify(readyArticle);
+              if (templateCache.current?.key === key) return templateCache.current.blob;
+              const formatted = await buildTemplateArticleWord(readyArticle, selectedJournalId);
+              templateCache.current = { key, blob: formatted.blob };
+              setTemplateWarnings(formatted.warnings);
+              return formatted.blob;
+            };''')
+          replace_once(app,"        buildJournalDocx(readyArticle), buildCoverCdDocx(readyArticle),",
+          "        getArticleWord(readyArticle), buildCoverCdDocx(readyArticle),")
+          replace_once(app,"    const original = input.originalFile;",
+          "    const original = input.originalFile;\n    const templateId = articleMode === 'template' ? selectedJournalId : undefined;\n    if (articleMode === 'template' && !findJournalMaster(templateId)) {\n      setErrorMsg('Pilih master jurnal yang tersedia terlebih dahulu.'); return;\n    }")
+          replace_once(app,"          body: JSON.stringify(input),",
+          "          body: JSON.stringify({ ...input, templateId }),")
+          replace_once(app,"            targetLengthPages: input.targetLengthPages,\n            selectedModel: input.selectedModel,\n            methodologyType: input.methodologyType,\n          }),",
+          "            targetLengthPages: input.targetLengthPages,\n            selectedModel: input.selectedModel,\n            methodologyType: input.methodologyType,\n            templateId,\n          }),")
+          # Stage 3 also has same substring, after stage 2 replacement there is another unique instance.
+          replace_once(app,"            footnoteStyle: input.footnoteStyle,\n            selectedModel: input.selectedModel,\n            methodologyType: input.methodologyType,\n          }),",
+          "            footnoteStyle: input.footnoteStyle,\n            selectedModel: input.selectedModel,\n            methodologyType: input.methodologyType,\n            templateId,\n          }),")
+          replace_once(app,"      await exportJournalToDocx(article);",
+          "      if (articleMode === 'template') {\n        setWordPairMessage('Menyiapkan Word artikel sesuai master jurnal...');\n        const formatted = await getArticleWord(article);\n        const selected = findJournalMaster(selectedJournalId);\n        triggerBundleDownload(formatted, `Artikel_${selected?.name.replace(/[^a-zA-Z0-9_-]+/g, '_') || 'Jurnal'}_${makeSafeWordFileName(article.metadata.nama)}.docx`);\n      } else {\n        await exportJournalToDocx(article);\n      }")
+          replace_once(app,"      const { blob, filename, layoutWarnings, autoFixedCount } = await buildFiveFileBundle(\n        article, { word: sourceThesis.word }, setZipMessage,\n      );",
+          "      const wordOverride = articleMode === 'template' ? await getArticleWord(article) : undefined;\n      const { blob, filename, layoutWarnings, autoFixedCount } = await buildFiveFileBundle(\n        article, { word: sourceThesis.word }, setZipMessage, wordOverride,\n      );")
+          replace_once(app,"          <p className=\"font-bold text-base\">Artikel selesai — Word terpisah atau ZIP lengkap 5 file</p>",
+          "          <p className=\"font-bold text-base\">Artikel selesai — {articleMode === 'template' ? `Template ${findJournalMaster(selectedJournalId)?.name || ''}` : 'Mode biasa'} — Word terpisah atau ZIP lengkap 5 file</p>")
+          replace_once(app,"            {zipLayoutWarnings.length > 0 && (",
+          '''            {articleMode === 'template' && templateWarnings.length > 0 && (
+                        <details className="mt-3 rounded-lg bg-amber-950 text-amber-100 p-3 text-sm">
+                          <summary>Catatan pemeriksaan master jurnal ({templateWarnings.length})</summary>
+                          <ul className="list-disc pl-5 mt-2">{templateWarnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+                          <p className="mt-2">Periksa logo, DOI, footnote, header/footer, margin, dan halaman. Format belum dijamin 100%.</p>
+                        </details>
+                      )}
+                      {zipLayoutWarnings.length > 0 && (''')
+          old="""        {activeTab === 'upload' && !article && (
+                    <SkripsiUploader"""
+          new="""        {activeTab === 'upload' && !article && articleMode === 'choose' && (
+                    <section className="max-w-5xl mx-auto mt-8 p-5 bg-white rounded-2xl shadow-md">
+                      <h2 className="text-2xl font-bold text-slate-900">Pilih cara pembuatan artikel</h2>
+                      <p className="text-slate-600 mt-2 mb-5">Tentukan jenis artikel sebelum mengunggah skripsi.</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <button type="button" onClick={() => setArticleMode('normal')}
+                          className="text-left rounded-xl p-5 border-2 border-blue-200 hover:bg-blue-50 focus-visible:outline-4 focus-visible:outline-blue-400">
+                          <span className="block text-lg font-bold">1. Buat Artikel Biasa</span>
+                          <span className="block text-sm mt-2 text-slate-600">Tetap menggunakan mesin AI Link 7 dan aturan artikel standar seperti sebelumnya.</span>
+                        </button>
+                        <button type="button" onClick={() => setArticleMode('template')}
+                          className="text-left rounded-xl p-5 border-2 border-emerald-300 hover:bg-emerald-50 focus-visible:outline-4 focus-visible:outline-emerald-400">
+                          <span className="block text-lg font-bold">2. Buat Artikel dengan Template</span>
+                          <span className="block text-sm mt-2 text-slate-600">Pilih salah satu dari 15 jurnal dengan master Word dan aturan sendiri.</span>
+                        </button>
+                      </div>
+                    </section>
+                  )}
+                  {activeTab === 'upload' && !article && articleMode === 'template' && (
+                    <section className="max-w-5xl mx-auto mt-6 p-5 bg-white rounded-2xl shadow-sm border border-emerald-200">
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <h2 className="text-xl font-bold">Pilih Template Jurnal (15 jurnal)</h2>
+                        <button type="button" onClick={() => { setArticleMode('choose'); setSelectedJournalId(''); }}
+                          className="text-sm text-blue-700 underline">Kembali ke pilihan</button>
+                      </div>
+                      <label htmlFor="zainnet-jurnal-template" className="block text-sm mt-3 mb-2 font-semibold">Master DOCX jurnal</label>
+                      <select id="zainnet-jurnal-template" value={selectedJournalId}
+                        onChange={e => { setSelectedJournalId(e.target.value); templateCache.current = null; }}
+                        className="w-full border-2 border-slate-300 rounded-lg p-3 bg-white text-slate-900">
+                        <option value="">-- Pilih jurnal --</option>
+                        {JOURNAL_MASTER_CATALOG.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                      {findJournalMaster(selectedJournalId) && (
+                        <div className="mt-3 rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-slate-700">
+                          <p><strong>Font:</strong> {findJournalMaster(selectedJournalId)?.bodyFont} {findJournalMaster(selectedJournalId)?.bodySize || ''} pt</p>
+                          <p><strong>Aturan:</strong> {findJournalMaster(selectedJournalId)?.note}</p>
+                          <a target="_blank" rel="noreferrer" className="text-blue-700 underline" download
+                            href={`${import.meta.env.BASE_URL}articleTemplates/${findJournalMaster(selectedJournalId)?.docx}`}>
+                            Lihat/unduh master DOCX asli
+                          </a>
+                        </div>
+                      )}
+                      <p className="text-xs mt-3 text-amber-800">AI menulis isi berdasarkan skripsi. Master asli dipakai untuk format Word; hasil wajib diperiksa karena tidak semua format jurnal dapat dijamin identik.</p>
+                      {!selectedJournalId && <p className="text-sm mt-2 text-rose-700">Pilih jurnal terlebih dahulu agar menu unggah skripsi terbuka.</p>}
+                    </section>
+                  )}
+                  {activeTab === 'upload' && !article && (articleMode === 'normal' || (articleMode === 'template' && !!selectedJournalId)) && (
+                    <div>
+                      {articleMode === 'normal' && (
+                        <button type="button" onClick={() => setArticleMode('choose')}
+                          className="block max-w-5xl mx-auto my-3 text-sm font-medium text-blue-700 underline">
+                          Ganti mode artikel
+                        </button>
+                      )}
+                    <SkripsiUploader"""
+          replace_once(app,old,new)
+          replace_once(app,"""            onSelectModel={handleSelectModel}
+                    />
+                  )}
+
+                  {/* Tab 2: Journal Article Preview & Editor */}""",
+          """            onSelectModel={handleSelectModel}
+                    />
+                    </div>
+                  )}
+
+                  {/* Tab 2: Journal Article Preview & Editor */}""")
+
+          # The existing ZIP five-file flow remains, but it can be fed formatted Article Word.
+          replace_once('src/journalConverter/utils/bundleExport.ts',
+          "  onProgress?: (status: string) => void,\n): Promise<{ blob: Blob; filename: string; layoutWarnings: string[]; autoFixedCount: number }> {",
+          "  onProgress?: (status: string) => void,\n  articleWordOverride?: Blob,\n): Promise<{ blob: Blob; filename: string; layoutWarnings: string[]; autoFixedCount: number }> {")
+          replace_once('src/journalConverter/utils/bundleExport.ts',
+          "    buildJournalDocx(article), buildCoverCdDocx(article),",
+          "    articleWordOverride ? Promise.resolve(articleWordOverride) : buildJournalDocx(article), buildCoverCdDocx(article),")
+
+          router='server/journal7/router.ts'
+          replace_once(router,
+          "import { journalPageCountRouter } from './pageCount.ts';",
+          "import { journalPageCountRouter } from './pageCount.ts';\nimport { findJournalMaster, journalTemplateInstruction } from '../../src/journalConverter/data/journalTemplatesCatalog.ts';")
+          # Multi-stage AI: validated template ID travels through each stage; no arbitrary user prompt.
+          replace_once(router,
+          "async function runStage1(\n  ai: any,\n  rawText: string,\n  metadata: any,\n  targetLengthPages: number = 18,\n  selectedModel?: string,\n  userMethodPreference?: string\n)",
+          "async function runStage1(\n  ai: any,\n  rawText: string,\n  metadata: any,\n  targetLengthPages: number = 18,\n  selectedModel?: string,\n  userMethodPreference?: string,\n  journalTemplateId?: string\n)")
+          replace_once(router,
+          "  const promptText = `\nAnda adalah seorang Profesor dan Editor Utama Jurnal Ilmiah Internasional & Terakreditasi SINTA 1 / Scopus Indonesia.\nTugas Anda: Ekstrak dan susun TAHAP 1",
+          "  const promptText = `\n${journalTemplateInstruction(journalTemplateId)}\nAnda adalah seorang Profesor dan Editor Utama Jurnal Ilmiah Internasional & Terakreditasi SINTA 1 / Scopus Indonesia.\nTugas Anda: Ekstrak dan susun TAHAP 1")
+          replace_once(router,
+          "async function runStage2(\n  ai: any,\n  rawText: string,\n  stage1Data: any,\n  targetLengthPages: number = 18,\n  selectedModel?: string,\n  userMethodPreference?: string\n)",
+          "async function runStage2(\n  ai: any,\n  rawText: string,\n  stage1Data: any,\n  targetLengthPages: number = 18,\n  selectedModel?: string,\n  userMethodPreference?: string,\n  journalTemplateId?: string\n)")
+          replace_once(router,"      contents: promptHasil,","      contents: promptHasil + '\\n' + journalTemplateInstruction(journalTemplateId),")
+          replace_once(router,"      contents: promptPembahasan,","      contents: promptPembahasan + '\\n' + journalTemplateInstruction(journalTemplateId),")
+          replace_once(router,
+          "  footnoteStyle?: string,\n  selectedModel?: string,\n  userMethodPreference?: string\n) {\n  const segments = segmentThesisText(rawText, userMethodPreference);",
+          "  footnoteStyle?: string,\n  selectedModel?: string,\n  userMethodPreference?: string,\n  journalTemplateId?: string\n) {\n  const segments = segmentThesisText(rawText, userMethodPreference);")
+          replace_once(router,
+          "  const promptText = `\nAnda adalah seorang Profesor dan Editor Utama Jurnal Ilmiah Internasional & Terakreditasi SINTA 1 / Scopus Indonesia.\nTugas Anda: Ekstrak dan susun TAHAP 3",
+          "  const promptText = `\n${journalTemplateInstruction(journalTemplateId)}\nAnda adalah seorang Profesor dan Editor Utama Jurnal Ilmiah Internasional & Terakreditasi SINTA 1 / Scopus Indonesia.\nTugas Anda: Ekstrak dan susun TAHAP 3")
+          replace_once(router,
+          "    const { rawText, metadata, targetLengthPages, selectedModel, methodologyType } = req.body;",
+          "    const { rawText, metadata, targetLengthPages, selectedModel, methodologyType, templateId } = req.body;")
+          replace_once(router,
+          "    const data1 = await runStage1(ai, rawText, metadata, targetLengthPages, selectedModel, methodologyType);",
+          "    const data1 = await runStage1(ai, rawText, metadata, targetLengthPages, selectedModel, methodologyType, templateId);")
+          replace_once(router,
+          "    const { rawText, stage1Data, targetLengthPages, selectedModel, methodologyType } = req.body;",
+          "    const { rawText, stage1Data, targetLengthPages, selectedModel, methodologyType, templateId } = req.body;")
+          replace_once(router,
+          "    const data2 = await runStage2(ai, rawText, stage1Data, targetLengthPages, selectedModel, methodologyType);",
+          "    const data2 = await runStage2(ai, rawText, stage1Data, targetLengthPages, selectedModel, methodologyType, templateId);")
+          replace_once(router,
+          "    const { rawText, stage1Data, stage2Data, footnoteStyle, selectedModel, methodologyType } = req.body;",
+          "    const { rawText, stage1Data, stage2Data, footnoteStyle, selectedModel, methodologyType, templateId } = req.body;")
+          replace_once(router,
+          "    const data3 = await runStage3(ai, rawText, stage1Data, stage2Data, footnoteStyle, selectedModel, methodologyType);",
+          "    const data3 = await runStage3(ai, rawText, stage1Data, stage2Data, footnoteStyle, selectedModel, methodologyType, templateId);")
+          # Also support combined generator endpoint without changing normal behavior.
+          replace_once(router,
+          "    const { rawText, metadata, footnoteStyle, targetLengthPages, selectedModel, methodologyType } = req.body;",
+          "    const { rawText, metadata, footnoteStyle, targetLengthPages, selectedModel, methodologyType, templateId } = req.body;")
+          replace_once(router,
+          "    const stage1 = await runStage1(ai, rawText, metadata, targetLengthPages, selectedModel, methodologyType);",
+          "    const stage1 = await runStage1(ai, rawText, metadata, targetLengthPages, selectedModel, methodologyType, templateId);")
+          replace_once(router,
+          "    const stage2 = await runStage2(ai, rawText, stage1, targetLengthPages, selectedModel, methodologyType);",
+          "    const stage2 = await runStage2(ai, rawText, stage1, targetLengthPages, selectedModel, methodologyType, templateId);")
+          replace_once(router,
+          "    const stage3 = await runStage3(ai, rawText, stage1, stage2, footnoteStyle, selectedModel, methodologyType);",
+          "    const stage3 = await runStage3(ai, rawText, stage1, stage2, footnoteStyle, selectedModel, methodologyType, templateId);")
+
+          # New server endpoint, reusing rate limiting, single-conversion resource guard.
+          endpoint='''
+          // '''+STAMP+'''
+          // Save browser-formatted master-journal DOCX through server LibreOffice.
+          // Only intermediate DOCX is accepted. The uploaded original thesis is not modified.
+          router.post('/normalize-template', (req, res) => {
+            zipPdfUpload.single('file')(req, res, async (uploadErr: any) => {
+              if (uploadErr) return res.status(413).json({ error: 'Dokumen template maksimal 25 MB.' });
+              const templateId = String(req.body?.template_id || '');
+              if (!findJournalMaster(templateId)) return res.status(400).json({ error: 'Master jurnal tidak dikenal.' });
+              const file = req.file;
+              if (!file || !/\\.docx$/i.test(file.originalname) || file.buffer.length < 1024 ||
+                file.buffer[0] !== 0x50 || file.buffer[1] !== 0x4b || file.buffer[2] !== 0x03 || file.buffer[3] !== 0x04) {
+                return res.status(400).json({ error: 'DOCX sementara tidak valid.' });
+              }
+              const ip = String(req.ip || 'unknown');
+              const now = Date.now();
+              const recent = zipPdfUsage.get(ip);
+              const usage = recent && recent.expires > now ? recent : { count: 0, expires: now + 15 * 60_000 };
+              if (usage.count >= 20 || activeZipPdfConversion >= 1) {
+                return res.status(429).json({ error: 'Konverter sibuk atau kuota sementara terpenuhi. Coba kembali.' });
+              }
+              usage.count++;
+              zipPdfUsage.set(ip, usage);
+              activeZipPdfConversion++;
+              let dir: string | null = null;
+              try {
+                dir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'zainnet-template-final-'));
+                const src = path.join(dir, 'article_draft.docx');
+                const out = path.join(dir, 'final');
+                await fsPromises.mkdir(out);
+                await fsPromises.writeFile(src, file.buffer, { flag: 'wx' });
+                await zipPdfExecFile(process.env.LIBREOFFICE_BIN || 'libreoffice', [
+                  '-env:UserInstallation=file://' + path.join(dir, 'profile'),
+                  '--headless', '--nologo', '--nodefault', '--nofirststartwizard',
+                  '--convert-to', 'docx:Office Open XML Text', '--outdir', out, src,
+                ], { timeout: 110_000, maxBuffer: 512 * 1024, killSignal: 'SIGKILL' });
+                const result = await fsPromises.readFile(path.join(out, 'article_draft.docx'));
+                if (result.length < 1024 || result[0] !== 0x50 || result[1] !== 0x4b) {
+                  throw new Error('LibreOffice tidak menghasilkan DOCX normal.');
+                }
+                res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+                res.setHeader('Cache-Control', 'no-store, private');
+                res.setHeader('X-Content-Type-Options', 'nosniff');
+                return res.send(result);
+              } catch (error: any) {
+                console.error('[Link7 Journal Master Normalize]', error?.message || error);
+                if (!res.headersSent) return res.status(503).json({ error: 'Normalisasi jurnal gagal: ' + String(error?.message || error).slice(0, 160) });
+              } finally {
+                activeZipPdfConversion = Math.max(0, activeZipPdfConversion - 1);
+                if (dir) await fsPromises.rm(dir, { recursive: true, force: true }).catch(() => {});
+              }
+            });
+          });
+          '''
+          replace_once(router,"// Health check endpoint\nrouter.get(['/health', '/api/health']",endpoint+"\n// Health check endpoint\nrouter.get(['/health', '/api/health']")
+
+          # This change does not alter security or quotas and never commits secrets.
+          print('Applied Link7 mode selector, 15 original masters, journal AI guidance, LibreOffice DOCX normalization, and ZIP compatibility.')
+          PY_ZAIN_TEMPLATE
+
+      - name: Instal dependensi
+        run: npm install --no-audit --no-fund
+
+      - name: Build produksi GitHub Pages
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: npm run build
+
+      - name: Commit source dan 15 master resmi (bukan workflow)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- \
+            src/journalConverter/App.tsx \
+            src/journalConverter/data/journalTemplatesCatalog.ts \
+            src/journalConverter/utils/journalTemplateService.ts \
+            src/journalConverter/utils/bundleExport.ts \
+            server/journal7/router.ts \
+            public/articleTemplates
+          if git diff --cached --quiet; then
+            echo 'Semua kode mode template sudah terpasang.'
+          else
+            git commit -m "Link7: dua mode AI, 15 jurnal master DOCX, normalisasi LO dan ZIP"
+            git push origin HEAD:main
+          fi
+
+      - name: Minta deployment GitHub Pages pada commit terbaru
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh workflow run pages.yml --ref main
+          echo 'Deploy backend Render secara manual pada commit main terbaru untuk route /api/journal7/normalize-template.'

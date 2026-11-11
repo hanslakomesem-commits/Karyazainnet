@@ -10,6 +10,7 @@ import multer from 'multer';
 import mammoth from 'mammoth';
 import { GoogleGenAI, Type } from '@google/genai';
 import { journalPageCountRouter } from './pageCount.ts';
+import { findJournalMaster, journalTemplateInstruction } from '../../src/journalConverter/data/journalTemplatesCatalog.ts';
 import { detectResearchMethodology, extractBab3FromThesis, type MethodologyDetectionResult } from '../../src/journalConverter/utils/textCleaner.ts';
 import { isSuspiciousFilenameTitle, isValidThesisTitle, extractMetadataFromSkripsiText } from '../../src/journalConverter/components/SkripsiUploader.tsx';
 
@@ -385,6 +386,60 @@ router.post('/docx-to-pdf', (req, res) => {
       if (!res.headersSent) {
         return res.status(503).json({ error: 'Konversi Word ke PDF gagal di Render: ' + String(err?.message || 'periksa LibreOffice').slice(0, 180) });
       }
+    } finally {
+      activeZipPdfConversion = Math.max(0, activeZipPdfConversion - 1);
+      if (dir) await fsPromises.rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+});
+
+
+// ZAINNET_LINK7_DUA_MODE_TEMPLATE_V1
+// Save browser-formatted master-journal DOCX through server LibreOffice.
+// Only intermediate DOCX is accepted. The uploaded original thesis is not modified.
+router.post('/normalize-template', (req, res) => {
+  zipPdfUpload.single('file')(req, res, async (uploadErr: any) => {
+    if (uploadErr) return res.status(413).json({ error: 'Dokumen template maksimal 25 MB.' });
+    const templateId = String(req.body?.template_id || '');
+    if (!findJournalMaster(templateId)) return res.status(400).json({ error: 'Master jurnal tidak dikenal.' });
+    const file = req.file;
+    if (!file || !/\.docx$/i.test(file.originalname) || file.buffer.length < 1024 ||
+      file.buffer[0] !== 0x50 || file.buffer[1] !== 0x4b || file.buffer[2] !== 0x03 || file.buffer[3] !== 0x04) {
+      return res.status(400).json({ error: 'DOCX sementara tidak valid.' });
+    }
+    const ip = String(req.ip || 'unknown');
+    const now = Date.now();
+    const recent = zipPdfUsage.get(ip);
+    const usage = recent && recent.expires > now ? recent : { count: 0, expires: now + 15 * 60_000 };
+    if (usage.count >= 20 || activeZipPdfConversion >= 1) {
+      return res.status(429).json({ error: 'Konverter sibuk atau kuota sementara terpenuhi. Coba kembali.' });
+    }
+    usage.count++;
+    zipPdfUsage.set(ip, usage);
+    activeZipPdfConversion++;
+    let dir: string | null = null;
+    try {
+      dir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'zainnet-template-final-'));
+      const src = path.join(dir, 'article_draft.docx');
+      const out = path.join(dir, 'final');
+      await fsPromises.mkdir(out);
+      await fsPromises.writeFile(src, file.buffer, { flag: 'wx' });
+      await zipPdfExecFile(process.env.LIBREOFFICE_BIN || 'libreoffice', [
+        '-env:UserInstallation=file://' + path.join(dir, 'profile'),
+        '--headless', '--nologo', '--nodefault', '--nofirststartwizard',
+        '--convert-to', 'docx:Office Open XML Text', '--outdir', out, src,
+      ], { timeout: 110_000, maxBuffer: 512 * 1024, killSignal: 'SIGKILL' });
+      const result = await fsPromises.readFile(path.join(out, 'article_draft.docx'));
+      if (result.length < 1024 || result[0] !== 0x50 || result[1] !== 0x4b) {
+        throw new Error('LibreOffice tidak menghasilkan DOCX normal.');
+      }
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Cache-Control', 'no-store, private');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      return res.send(result);
+    } catch (error: any) {
+      console.error('[Link7 Journal Master Normalize]', error?.message || error);
+      if (!res.headersSent) return res.status(503).json({ error: 'Normalisasi jurnal gagal: ' + String(error?.message || error).slice(0, 160) });
     } finally {
       activeZipPdfConversion = Math.max(0, activeZipPdfConversion - 1);
       if (dir) await fsPromises.rm(dir, { recursive: true, force: true }).catch(() => {});
@@ -789,7 +844,8 @@ async function runStage1(
   metadata: any,
   targetLengthPages: number = 18,
   selectedModel?: string,
-  userMethodPreference?: string
+  userMethodPreference?: string,
+  journalTemplateId?: string
 ) {
   const segments = segmentThesisText(rawText, userMethodPreference);
   const formattedAuthorEmail = generateStudentEmail(metadata?.nama, metadata?.email);
@@ -857,6 +913,7 @@ async function runStage1(
   }
 
   const promptText = `
+${journalTemplateInstruction(journalTemplateId)}
 Anda adalah seorang Profesor dan Editor Utama Jurnal Ilmiah Internasional & Terakreditasi SINTA 1 / Scopus Indonesia.
 Tugas Anda: Ekstrak dan susun TAHAP 1 (Metadata, Abstrak Dwibahasa, Pendahuluan, dan Metode Penelitian) dari skripsi berikut menjadi bagian awal artikel ilmiah dengan target ketat **TEPAT MEMENUHI HALAMAN 1 SAMPAI 6 DARI TOTAL 18 HALAMAN ARTIKEL JURNAL**.
 
@@ -989,7 +1046,8 @@ async function runStage2(
   stage1Data: any,
   targetLengthPages: number = 18,
   selectedModel?: string,
-  userMethodPreference?: string
+  userMethodPreference?: string,
+  journalTemplateId?: string
 ) {
   const segments = segmentThesisText(rawText, userMethodPreference);
   const targetMethod = userMethodPreference && userMethodPreference !== 'auto'
@@ -1172,11 +1230,11 @@ Tuliskan naskah Bagian D. PEMBAHASAN secara sangat panjang, komprehensif, mendal
   // Execute both in parallel to maximize output token capacity and prevent truncation
   const [resHasil, resPembahasan] = await Promise.all([
     generateContentWithFallback({
-      contents: promptHasil,
+      contents: promptHasil + '\n' + journalTemplateInstruction(journalTemplateId),
       model: selectedModel,
     }),
     generateContentWithFallback({
-      contents: promptPembahasan,
+      contents: promptPembahasan + '\n' + journalTemplateInstruction(journalTemplateId),
       model: selectedModel,
     }),
   ]);
@@ -1199,7 +1257,8 @@ async function runStage3(
   stage2Data?: any,
   footnoteStyle?: string,
   selectedModel?: string,
-  userMethodPreference?: string
+  userMethodPreference?: string,
+  journalTemplateId?: string
 ) {
   const segments = segmentThesisText(rawText, userMethodPreference);
   const targetMethod = userMethodPreference && userMethodPreference !== 'auto'
@@ -1207,6 +1266,7 @@ async function runStage3(
     : (stage1Data?.detectedMethodType || stage2Data?.detectedMethodType || segments.detectedMethodType);
 
   const promptText = `
+${journalTemplateInstruction(journalTemplateId)}
 Anda adalah seorang Profesor dan Editor Utama Jurnal Ilmiah Internasional & Terakreditasi SINTA 1 / Scopus Indonesia.
 Tugas Anda: Ekstrak dan susun TAHAP 3 (Kesimpulan & Saran, Footnotes/Catatan Kaki Standar Ilmiah, dan Daftar Pustaka) dari skripsi berikut dengan target ketat **TEPAT 2 HALAMAN ARTIKEL (HALAMAN 17 DAN 18)**.
 
@@ -1346,11 +1406,11 @@ Kembalikan HANYA format JSON valid dengan field 'kesimpulan', 'daftarPustaka', d
 // Stage 1 Endpoint
 router.post(['/generate-journal/stage1', '/api/generate-journal/stage1'], async (req, res) => {
   try {
-    const { rawText, metadata, targetLengthPages, selectedModel, methodologyType } = req.body;
+    const { rawText, metadata, targetLengthPages, selectedModel, methodologyType, templateId } = req.body;
     if (!rawText || rawText.trim().length === 0) {
       return res.status(400).json({ error: 'Teks skripsi tidak boleh kosong.' });
     }
-    const data1 = await runStage1(ai, rawText, metadata, targetLengthPages, selectedModel, methodologyType);
+    const data1 = await runStage1(ai, rawText, metadata, targetLengthPages, selectedModel, methodologyType, templateId);
     res.json(data1);
   } catch (error: any) {
     console.error('Error in Stage 1:', error);
@@ -1361,11 +1421,11 @@ router.post(['/generate-journal/stage1', '/api/generate-journal/stage1'], async 
 // Stage 2 Endpoint
 router.post(['/generate-journal/stage2', '/api/generate-journal/stage2'], async (req, res) => {
   try {
-    const { rawText, stage1Data, targetLengthPages, selectedModel, methodologyType } = req.body;
+    const { rawText, stage1Data, targetLengthPages, selectedModel, methodologyType, templateId } = req.body;
     if (!rawText || rawText.trim().length === 0) {
       return res.status(400).json({ error: 'Teks skripsi tidak boleh kosong.' });
     }
-    const data2 = await runStage2(ai, rawText, stage1Data, targetLengthPages, selectedModel, methodologyType);
+    const data2 = await runStage2(ai, rawText, stage1Data, targetLengthPages, selectedModel, methodologyType, templateId);
     res.json(data2);
   } catch (error: any) {
     console.error('Error in Stage 2:', error);
@@ -1376,11 +1436,11 @@ router.post(['/generate-journal/stage2', '/api/generate-journal/stage2'], async 
 // Stage 3 Endpoint
 router.post(['/generate-journal/stage3', '/api/generate-journal/stage3'], async (req, res) => {
   try {
-    const { rawText, stage1Data, stage2Data, footnoteStyle, selectedModel, methodologyType } = req.body;
+    const { rawText, stage1Data, stage2Data, footnoteStyle, selectedModel, methodologyType, templateId } = req.body;
     if (!rawText || rawText.trim().length === 0) {
       return res.status(400).json({ error: 'Teks skripsi tidak boleh kosong.' });
     }
-    const data3 = await runStage3(ai, rawText, stage1Data, stage2Data, footnoteStyle, selectedModel, methodologyType);
+    const data3 = await runStage3(ai, rawText, stage1Data, stage2Data, footnoteStyle, selectedModel, methodologyType, templateId);
     res.json(data3);
   } catch (error: any) {
     console.error('Error in Stage 3:', error);
@@ -1391,20 +1451,20 @@ router.post(['/generate-journal/stage3', '/api/generate-journal/stage3'], async 
 // Single combined endpoint running all 3 stages in sequence (Fallback & direct backend call)
 router.post(['/generate-journal', '/api/generate-journal'], async (req, res) => {
   try {
-    const { rawText, metadata, footnoteStyle, targetLengthPages, selectedModel, methodologyType } = req.body;
+    const { rawText, metadata, footnoteStyle, targetLengthPages, selectedModel, methodologyType, templateId } = req.body;
 
     if (!rawText || rawText.trim().length === 0) {
       return res.status(400).json({ error: 'Teks skripsi tidak boleh kosong.' });
     }
 
     // Step 1: Metadata, Abstract, Pendahuluan, Metode
-    const stage1 = await runStage1(ai, rawText, metadata, targetLengthPages, selectedModel, methodologyType);
+    const stage1 = await runStage1(ai, rawText, metadata, targetLengthPages, selectedModel, methodologyType, templateId);
 
     // Step 2: Hasil & Pembahasan
-    const stage2 = await runStage2(ai, rawText, stage1, targetLengthPages, selectedModel, methodologyType);
+    const stage2 = await runStage2(ai, rawText, stage1, targetLengthPages, selectedModel, methodologyType, templateId);
 
     // Step 3: Kesimpulan, Footnotes, Daftar Pustaka
-    const stage3 = await runStage3(ai, rawText, stage1, stage2, footnoteStyle, selectedModel, methodologyType);
+    const stage3 = await runStage3(ai, rawText, stage1, stage2, footnoteStyle, selectedModel, methodologyType, templateId);
 
     const mergedArticle = {
       id: 'art_' + Date.now(),

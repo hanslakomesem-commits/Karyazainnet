@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Header } from './components/Header';
 import { SkripsiUploader } from './components/SkripsiUploader';
 import { JournalPreview } from './components/JournalPreview';
@@ -10,6 +10,8 @@ import { triggerBundleDownload, downloadCoverCdOnly, buildFiveFileBundle } from 
 import { buildCoverCdDocx } from './utils/coverCdExport';
 import { isSuspiciousFilenameTitle, isValidThesisTitle, extractMetadataFromSkripsiText } from './components/SkripsiUploader';
 import { AlertCircle } from 'lucide-react';
+import { JOURNAL_MASTER_CATALOG, findJournalMaster } from './data/journalTemplatesCatalog';
+import { buildTemplateArticleWord } from './utils/journalTemplateService';
 
 interface JournalConverterAppProps {
   onArticleComplete?: (fileName: string) => void;
@@ -19,6 +21,22 @@ interface JournalConverterAppProps {
 export default function App({ onArticleComplete, onDownloadsConfirmed }: JournalConverterAppProps) {
   const [activeTab, setActiveTab] = useState<'upload' | 'preview' | 'footnotes'>('upload');
   const [article, setArticle] = useState<JournalArticle | null>(null);
+  // ZAINNET_LINK7_DUA_MODE_TEMPLATE_V1
+  const [articleMode, setArticleMode] = useState<'choose' | 'normal' | 'template'>('choose');
+  const [selectedJournalId, setSelectedJournalId] = useState('');
+  const [templateWarnings, setTemplateWarnings] = useState<string[]>([]);
+  const templateCache = useRef<{ key: string; blob: Blob } | null>(null);
+
+  const getArticleWord = async (readyArticle: JournalArticle): Promise<Blob> => {
+    if (articleMode !== 'template') return buildJournalDocx(readyArticle);
+    if (!findJournalMaster(selectedJournalId)) throw new Error('Jurnal belum dipilih.');
+    const key = selectedJournalId + ':' + JSON.stringify(readyArticle);
+    if (templateCache.current?.key === key) return templateCache.current.blob;
+    const formatted = await buildTemplateArticleWord(readyArticle, selectedJournalId);
+    templateCache.current = { key, blob: formatted.blob };
+    setTemplateWarnings(formatted.warnings);
+    return formatted.blob;
+  };
 
   const handleTabChange = (tab: 'upload' | 'preview' | 'footnotes') => {
     // Cegah kembali ke menu unggah skripsi jika naskah artikel sudah berhasil dibuat
@@ -165,7 +183,7 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
     setWordPairMessage('Menyiapkan Artikel Word dan Cover CD Word...');
     try {
       const [articleBlob, coverBlob] = await Promise.all([
-        buildJournalDocx(readyArticle), buildCoverCdDocx(readyArticle),
+        getArticleWord(readyArticle), buildCoverCdDocx(readyArticle),
       ]);
       if (articleBlob.size < 100 || coverBlob.size < 100) {
         throw new Error('Salah satu dokumen Word yang dihasilkan kosong.');
@@ -198,6 +216,10 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
   // Handle Journal AI Generation (Multi-stage process to prevent JSON truncation/timeouts)
   const handleGenerateJournal = async (input: SkripsiInput) => {
     const original = input.originalFile;
+    const templateId = articleMode === 'template' ? selectedJournalId : undefined;
+    if (articleMode === 'template' && !findJournalMaster(templateId)) {
+      setErrorMsg('Pilih master jurnal yang tersedia terlebih dahulu.'); return;
+    }
     setSourceThesis({
       word: original?.name.toLowerCase().endsWith('.docx') ? original : null,
       pdf: original?.name.toLowerCase().endsWith('.pdf') ? original : null,
@@ -221,7 +243,7 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(input),
+          body: JSON.stringify({ ...input, templateId }),
         },
         'Tahap 1 (Pendahuluan & Metode)'
       );
@@ -244,6 +266,7 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
             targetLengthPages: input.targetLengthPages,
             selectedModel: input.selectedModel,
             methodologyType: input.methodologyType,
+            templateId,
           }),
         },
         'Tahap 2 (Hasil & Pembahasan)'
@@ -268,6 +291,7 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
             footnoteStyle: input.footnoteStyle,
             selectedModel: input.selectedModel,
             methodologyType: input.methodologyType,
+            templateId,
           }),
         },
         'Tahap 3 (Kesimpulan & Referensi)'
@@ -330,7 +354,14 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
     if (!article) return;
     setIsDownloadingDocx(true);
     try {
-      await exportJournalToDocx(article);
+      if (articleMode === 'template') {
+        setWordPairMessage('Menyiapkan Word artikel sesuai master jurnal...');
+        const formatted = await getArticleWord(article);
+        const selected = findJournalMaster(selectedJournalId);
+        triggerBundleDownload(formatted, `Artikel_${selected?.name.replace(/[^a-zA-Z0-9_-]+/g, '_') || 'Jurnal'}_${makeSafeWordFileName(article.metadata.nama)}.docx`);
+      } else {
+        await exportJournalToDocx(article);
+      }
       // Re-download does not re-record the session or consume another quota.
     } catch (err: any) {
       console.error('Docx Export Error:', err);
@@ -361,8 +392,9 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
     setZipAutoFixed(0);
     setIsDownloadingZip(true);
     try {
+      const wordOverride = articleMode === 'template' ? await getArticleWord(article) : undefined;
       const { blob, filename, layoutWarnings, autoFixedCount } = await buildFiveFileBundle(
-        article, { word: sourceThesis.word }, setZipMessage,
+        article, { word: sourceThesis.word }, setZipMessage, wordOverride,
       );
       triggerBundleDownload(blob, filename);
       setZipLayoutWarnings(layoutWarnings);
@@ -454,7 +486,7 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
       {/* 2-file download confirmation stays visible until the user confirms. ZIP is optional. */}
       {article && (
         <div role="status" className="sticky top-0 z-40 mx-auto w-full max-w-5xl bg-blue-950 text-white p-4 shadow-xl border-b-4 border-cyan-400">
-          <p className="font-bold text-base">Artikel selesai — Word terpisah atau ZIP lengkap 5 file</p>
+          <p className="font-bold text-base">Artikel selesai — {articleMode === 'template' ? `Template ${findJournalMaster(selectedJournalId)?.name || ''}` : 'Mode biasa'} — Word terpisah atau ZIP lengkap 5 file</p>
           <p className="text-sm mt-1" aria-live="polite">{wordPairMessage}</p>
           <div className="mt-3 rounded-lg border border-cyan-500/50 bg-slate-900 p-3">
             <p className="text-sm font-bold text-cyan-200">Paket Lengkap ZIP — 5 file dalam 1 ZIP</p>
@@ -486,6 +518,13 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
               <div role="status" className="my-2 rounded-lg bg-emerald-950 border border-emerald-400 p-3 text-sm text-emerald-100">
                 ✓ Perbaikan PDF otomatis dilakukan: {zipAutoFixed} kotak teks judul yang bertumpuk telah ditata ulang pada salinan PDF. Skripsi Word asli tetap utuh.
               </div>
+            )}
+            {articleMode === 'template' && templateWarnings.length > 0 && (
+              <details className="mt-3 rounded-lg bg-amber-950 text-amber-100 p-3 text-sm">
+                <summary>Catatan pemeriksaan master jurnal ({templateWarnings.length})</summary>
+                <ul className="list-disc pl-5 mt-2">{templateWarnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+                <p className="mt-2">Periksa logo, DOI, footnote, header/footer, margin, dan halaman. Format belum dijamin 100%.</p>
+              </details>
             )}
             {zipLayoutWarnings.length > 0 && (
               <div role="alert" className="mt-3 rounded-lg border-2 border-amber-400 bg-amber-950/80 px-4 py-3 text-amber-100">
@@ -581,7 +620,60 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
         )}
 
         {/* Tab 1: Upload / Input Skripsi (Dihilangkan jika artikel sudah berhasil dibuat) */}
-        {activeTab === 'upload' && !article && (
+        {activeTab === 'upload' && !article && articleMode === 'choose' && (
+          <section className="max-w-5xl mx-auto mt-8 p-5 bg-white rounded-2xl shadow-md">
+            <h2 className="text-2xl font-bold text-slate-900">Pilih cara pembuatan artikel</h2>
+            <p className="text-slate-600 mt-2 mb-5">Tentukan jenis artikel sebelum mengunggah skripsi.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <button type="button" onClick={() => setArticleMode('normal')}
+                className="text-left rounded-xl p-5 border-2 border-blue-200 hover:bg-blue-50 focus-visible:outline-4 focus-visible:outline-blue-400">
+                <span className="block text-lg font-bold">1. Buat Artikel Biasa</span>
+                <span className="block text-sm mt-2 text-slate-600">Tetap menggunakan mesin AI Link 7 dan aturan artikel standar seperti sebelumnya.</span>
+              </button>
+              <button type="button" onClick={() => setArticleMode('template')}
+                className="text-left rounded-xl p-5 border-2 border-emerald-300 hover:bg-emerald-50 focus-visible:outline-4 focus-visible:outline-emerald-400">
+                <span className="block text-lg font-bold">2. Buat Artikel dengan Template</span>
+                <span className="block text-sm mt-2 text-slate-600">Pilih salah satu dari 15 jurnal dengan master Word dan aturan sendiri.</span>
+              </button>
+            </div>
+          </section>
+        )}
+        {activeTab === 'upload' && !article && articleMode === 'template' && (
+          <section className="max-w-5xl mx-auto mt-6 p-5 bg-white rounded-2xl shadow-sm border border-emerald-200">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <h2 className="text-xl font-bold">Pilih Template Jurnal (15 jurnal)</h2>
+              <button type="button" onClick={() => { setArticleMode('choose'); setSelectedJournalId(''); }}
+                className="text-sm text-blue-700 underline">Kembali ke pilihan</button>
+            </div>
+            <label htmlFor="zainnet-jurnal-template" className="block text-sm mt-3 mb-2 font-semibold">Master DOCX jurnal</label>
+            <select id="zainnet-jurnal-template" value={selectedJournalId}
+              onChange={e => { setSelectedJournalId(e.target.value); templateCache.current = null; }}
+              className="w-full border-2 border-slate-300 rounded-lg p-3 bg-white text-slate-900">
+              <option value="">-- Pilih jurnal --</option>
+              {JOURNAL_MASTER_CATALOG.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            {findJournalMaster(selectedJournalId) && (
+              <div className="mt-3 rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-slate-700">
+                <p><strong>Font:</strong> {findJournalMaster(selectedJournalId)?.bodyFont} {findJournalMaster(selectedJournalId)?.bodySize || ''} pt</p>
+                <p><strong>Aturan:</strong> {findJournalMaster(selectedJournalId)?.note}</p>
+                <a target="_blank" rel="noreferrer" className="text-blue-700 underline" download
+                  href={`${import.meta.env.BASE_URL}articleTemplates/${findJournalMaster(selectedJournalId)?.docx}`}>
+                  Lihat/unduh master DOCX asli
+                </a>
+              </div>
+            )}
+            <p className="text-xs mt-3 text-amber-800">AI menulis isi berdasarkan skripsi. Master asli dipakai untuk format Word; hasil wajib diperiksa karena tidak semua format jurnal dapat dijamin identik.</p>
+            {!selectedJournalId && <p className="text-sm mt-2 text-rose-700">Pilih jurnal terlebih dahulu agar menu unggah skripsi terbuka.</p>}
+          </section>
+        )}
+        {activeTab === 'upload' && !article && (articleMode === 'normal' || (articleMode === 'template' && !!selectedJournalId)) && (
+          <div>
+            {articleMode === 'normal' && (
+              <button type="button" onClick={() => setArticleMode('choose')}
+                className="block max-w-5xl mx-auto my-3 text-sm font-medium text-blue-700 underline">
+                Ganti mode artikel
+              </button>
+            )}
           <SkripsiUploader
             onSubmit={handleGenerateJournal}
             isLoading={isLoading}
@@ -589,6 +681,7 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
             selectedModel={selectedModel}
             onSelectModel={handleSelectModel}
           />
+          </div>
         )}
 
         {/* Tab 2: Journal Article Preview & Editor */}

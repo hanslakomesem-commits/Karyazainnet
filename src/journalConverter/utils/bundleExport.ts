@@ -148,6 +148,7 @@ export async function buildFiveFileBundle(
   article: JournalArticle,
   thesis: ThesisSourceFiles,
   onProgress?: (status: string) => void,
+  articleWordOverride?: Blob,
 ): Promise<{ blob: Blob; filename: string; layoutWarnings: string[]; autoFixedCount: number }> {
   if (!thesis.word) {
     throw new Error('Skripsi Word .docx belum tersedia. Unggah Word satu kali terlebih dahulu.');
@@ -166,7 +167,7 @@ export async function buildFiveFileBundle(
 
   onProgress?.('Menyiapkan Artikel Word dan Cover CD Word...');
   const [articleWord, coverWord] = await Promise.all([
-    buildJournalDocx(article), buildCoverCdDocx(article),
+    articleWordOverride ? Promise.resolve(articleWordOverride) : buildJournalDocx(article), buildCoverCdDocx(article),
   ]);
   if (articleWord.size < 200 || coverWord.size < 200) {
     throw new Error('File Artikel Word atau Cover CD tidak berhasil dibuat.');

@@ -1,0 +1,167 @@
+[
+  {
+    "id": "karsa",
+    "name": "KARSA",
+    "year": "rujukan lama",
+    "source_format": "docx",
+    "original": "templates/karsa/template.docx",
+    "docx": "templates/karsa/template.docx",
+    "auto": "template-first beta",
+    "auto_supported": true
+  },
+  {
+    "id": "sociale",
+    "name": "SOCIALE",
+    "year": "2026",
+    "source_format": "docx",
+    "original": "templates/sociale/original.docx",
+    "docx": "templates/sociale/original.docx",
+    "auto": "template-first beta",
+    "status": "asli",
+    "auto_supported": true
+  },
+  {
+    "id": "perdikan",
+    "name": "PERDIKAN",
+    "year": "2026",
+    "source_format": "docx",
+    "original": "templates/perdikan/original.docx",
+    "docx": "templates/perdikan/original.docx",
+    "auto": "template-first beta",
+    "status": "asli",
+    "auto_supported": true
+  },
+  {
+    "id": "panyonara",
+    "name": "PANYONARA",
+    "year": "2025",
+    "source_format": "docx",
+    "original": "templates/panyonara/original.docx",
+    "docx": "templates/panyonara/original.docx",
+    "auto": "template-first beta",
+    "status": "asli",
+    "auto_supported": true
+  },
+  {
+    "id": "mabny",
+    "name": "MABNY",
+    "year": "2025",
+    "source_format": "docx",
+    "original": "templates/mabny/original.docx",
+    "docx": "templates/mabny/original.docx",
+    "auto": "template-first beta",
+    "status": "asli",
+    "auto_supported": true
+  },
+  {
+    "id": "meyarsa",
+    "name": "MEYARSA",
+    "year": "2023",
+    "source_format": "docx",
+    "original": "templates/meyarsa/original.docx",
+    "docx": "templates/meyarsa/original.docx",
+    "auto": "template-first beta",
+    "status": "asli",
+    "auto_supported": true
+  },
+  {
+    "id": "kiddo",
+    "name": "KIDDO",
+    "year": "versi pada file",
+    "source_format": "docx",
+    "original": "templates/kiddo/original.docx",
+    "docx": "templates/kiddo/original.docx",
+    "auto": "template-first beta",
+    "status": "asli",
+    "auto_supported": true
+  },
+  {
+    "id": "elnubuwwah",
+    "name": "El Nubuwwah",
+    "year": "2026",
+    "source_format": "docx",
+    "original": "templates/elnubuwwah/original.docx",
+    "docx": "templates/elnubuwwah/original.docx",
+    "auto": "template-first beta",
+    "status": "asli",
+    "auto_supported": true
+  },
+  {
+    "id": "ghancaran",
+    "name": "GHANCARAN",
+    "year": "2026",
+    "source_format": "docx",
+    "original": "templates/ghancaran/original.docx",
+    "docx": "templates/ghancaran/original.docx",
+    "auto": "template-first beta",
+    "status": "asli",
+    "auto_supported": true
+  },
+  {
+    "id": "alhuquq",
+    "name": "Al-Huquq",
+    "year": "2019",
+    "source_format": "docx",
+    "original": "templates/alhuquq/original.docx",
+    "docx": "templates/alhuquq/original.docx",
+    "auto": "template-first beta",
+    "status": "asli",
+    "auto_supported": true
+  },
+  {
+    "id": "shafin",
+    "name": "SHAFIN",
+    "year": "2024",
+    "source_format": "docx",
+    "original": "templates/shafin/original.docx",
+    "docx": "templates/shafin/original.docx",
+    "auto": "template-first beta",
+    "status": "asli",
+    "auto_supported": true
+  },
+  {
+    "id": "nuansa",
+    "name": "NUANSA",
+    "year": "2021",
+    "source_format": "doc",
+    "original": "templates/nuansa/original.doc",
+    "docx": "templates/nuansa/original.docx",
+    "auto": "template-first beta",
+    "status": "konversi DOC ke DOCX; verifikasi visual diperlukan",
+    "auto_supported": true
+  },
+  {
+    "id": "enasa",
+    "name": "E-NASA",
+    "year": "tidak tercantum",
+    "source_format": "doc",
+    "original": "templates/enasa/original.doc",
+    "docx": "templates/enasa/original.docx",
+    "auto": "template-first beta",
+    "status": "konversi DOC ke DOCX; verifikasi visual diperlukan",
+    "auto_supported": true
+  },
+  {
+    "id": "iqtishadia",
+    "name": "IQTISHADIA",
+    "year": "2025",
+    "source_format": "doc",
+    "original": "templates/iqtishadia/original.doc",
+    "docx": "templates/iqtishadia/original.docx",
+    "auto": "template-first beta",
+    "status": "konversi DOC ke DOCX; verifikasi visual diperlukan",
+    "auto_supported": true
+  },
+  {
+    "id": "rabbani",
+    "name": "RABBANI: Jurnal Pendidikan Agama Islam",
+    "year": "DOCX New 2023 (contoh Vol. 1, 2020)",
+    "source_format": "docx",
+    "original": "templates/rabbani/original.docx",
+    "docx": "templates/rabbani/word2010_base.docx",
+    "auto": "template-first beta",
+    "auto_supported": true,
+    "status": "Asli 2023 tersedia; mode AUTO memakai master Word2010 hasil LO resave",
+    "compatible_base": "templates/rabbani/word2010_base.docx"
+  }
+]

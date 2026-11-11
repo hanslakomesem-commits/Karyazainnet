@@ -1,0 +1,89 @@
+name: ZAIN.NET - Fix Keaslian Lampiran 1 Otomatis
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/zainnet-fix-keaslian-lampiran1.yml
+permissions:
+  contents: write
+  actions: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - name: Pasang perbaikan deteksi Keaslian
+        shell: bash
+        run: |
+          cat > /tmp/patch_keaslian.py <<'PY'
+          from pathlib import Path
+          p = Path('src/gabungFile/utils/docxParser.ts')
+          s = p.read_text(encoding='utf-8')
+          marker = 'ZAINNET_KEASLIAN_LAMPIRAN_AUTO_V1'
+          if marker in s:
+              print('Perbaikan sudah terpasang; tidak mengubah ulang.')
+              raise SystemExit(0)
+          old = '''      const candidates = elements.slice(0, limit).filter((el) => isGenuineSignedHeading(el, spec.id));
+                if (candidates.length === 1) {
+                  foundIndex = candidates[0].index;
+                  foundPage = candidates[0].estimatedPage;
+                }'''
+          new = '''      let candidates = elements.slice(0, limit).filter((el) => isGenuineSignedHeading(el, spec.id));
+                // ZAINNET_KEASLIAN_LAMPIRAN_AUTO_V1
+                // Some theses place the originality statement as Lampiran 1, not a separate
+                // page titled PERNYATAAN KEASLIAN TULISAN. Only accept an exact heading,
+                // outside the TOC and after BAB I; never infer a location from a TOC entry.
+                if (spec.id === 'keaslian' && candidates.length === 0 && bab1ElementIndex >= 0) {
+                  const appendixCandidates = elements.slice(bab1ElementIndex + 1).filter((el) => {
+                    if (el.tag !== 'w:p') return false;
+                    if (/<w:tab(?=[\s/>])|w:leader=/i.test(el.rawXml)) return false;
+                    const normalized = el.text.toUpperCase().normalize('NFKC')
+                      .replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+                    return /^LAMPIRAN\s+1\s+(?:SURAT\s+)?(?:PERNYATAAN\s+)?KEASLIAN(?:\s+TULISAN)?$/.test(normalized);
+                  });
+                  if (appendixCandidates.length === 1) {
+                    candidates = appendixCandidates;
+                  }
+                }
+                if (candidates.length === 1) {
+                  foundIndex = candidates[0].index;
+                  foundPage = candidates[0].estimatedPage;
+                }'''
+          if s.count(old) != 1:
+              raise SystemExit(f'GAGAL AMAN: struktur parser berbeda (ditemukan {s.count(old)}), tidak melakukan perubahan.')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          print('Perbaikan deteksi Keaslian pada Lampiran 1 dipasang.')
+          PY
+          python3 /tmp/patch_keaslian.py
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Instal dependensi
+        run: npm ci --no-audit --no-fund
+      - name: Cek build
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+        run: npm run build
+      - name: Commit perbaikan
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/gabungFile/utils/docxParser.ts
+          if git diff --cached --quiet; then
+            echo "Tidak ada perubahan baru."
+          else
+            git commit -m "fix(menu10): recognize Lampiran 1 surat keaslian tulisan"
+            git push origin HEAD:main
+          fi
+      - name: Deploy GitHub Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main

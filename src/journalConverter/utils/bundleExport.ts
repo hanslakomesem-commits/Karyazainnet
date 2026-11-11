@@ -50,7 +50,7 @@ async function verifyWordFile(file: File): Promise<void> {
   }
 }
 
-async function convertWordToPdf(source: Blob, filename: string): Promise<Blob> {
+async function convertWordToPdf(source: Blob, filename: string, onAutoFix?: (count: number) => void): Promise<Blob> {
   // On GitHub Pages, deploymentBridge forwards this relative /api URL to the Render backend.
   const data = new FormData();
   data.append('file', source, filename);
@@ -72,6 +72,9 @@ async function convertWordToPdf(source: Blob, filename: string): Promise<Blob> {
       }
       throw new Error('Konversi Word ke PDF gagal: ' + details);
     }
+    // ZAINNET_LINK7_AUTOHEAL_UI_20261111
+    const fixed = Number(response.headers.get('X-Zainnet-AutoFixed') || '0');
+    if (Number.isFinite(fixed) && fixed > 0) onAutoFix?.(fixed);
     const pdf = await response.blob();
     const sig = new Uint8Array(await pdf.slice(0, 5).arrayBuffer());
     if (pdf.size < 500 || sig.length !== 5 ||
@@ -145,7 +148,7 @@ export async function buildFiveFileBundle(
   article: JournalArticle,
   thesis: ThesisSourceFiles,
   onProgress?: (status: string) => void,
-): Promise<{ blob: Blob; filename: string; layoutWarnings: string[] }> {
+): Promise<{ blob: Blob; filename: string; layoutWarnings: string[]; autoFixedCount: number }> {
   if (!thesis.word) {
     throw new Error('Skripsi Word .docx belum tersedia. Unggah Word satu kali terlebih dahulu.');
   }
@@ -171,7 +174,11 @@ export async function buildFiveFileBundle(
 
   // Sequential conversions keep LibreOffice memory use within Render Free limits.
   onProgress?.('Mengonversi skripsi Word menjadi PDF asli (LibreOffice)...');
-  const thesisPdf = await convertWordToPdf(thesis.word, 'Skripsi.docx');
+  let autoFixedCount = 0;
+  const thesisPdf = await convertWordToPdf(thesis.word, 'Skripsi.docx', count => {
+    autoFixedCount += count;
+    onProgress?.(`${count} kotak teks judul yang bertumpuk telah diperbaiki otomatis pada salinan PDF.`);
+  });
   onProgress?.('Mengonversi artikel Word menjadi PDF asli (LibreOffice)...');
   const articlePdf = await convertWordToPdf(articleWord, 'Artikel.docx');
   onProgress?.('Mengemas 5 file ke ZIP...');
@@ -192,5 +199,5 @@ export async function buildFiveFileBundle(
     state => onProgress?.(`Mengemas ZIP: ${Math.round(state.percent)}%`),
   );
   if (blob.size < 1000) throw new Error('ZIP gagal terbentuk atau kosong.');
-  return { blob, filename: `ZAINNET_Paket_Lengkap_${fileName}.zip`, layoutWarnings };
+  return { blob, filename: `ZAINNET_Paket_Lengkap_${fileName}.zip`, layoutWarnings, autoFixedCount };
 }

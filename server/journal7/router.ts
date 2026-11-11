@@ -341,18 +341,41 @@ router.post('/docx-to-pdf', (req, res) => {
     try {
       dir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'zainnet-word-to-pdf-'));
       const inputPath = path.join(dir, 'document.docx');
-      const outputPath = path.join(dir, 'document.pdf');
+      let outputPath = path.join(dir, 'document.pdf');
       const profile = path.join(dir, 'lo-user-profile');
       await fsPromises.writeFile(inputPath, file.buffer, { flag: 'wx' });
+      // ZAINNET_LINK7_AUTOHEAL_DOCX_PDF_20261111
+      // Never touch the uploaded Word. Only convert the temporary repaired copy.
+      let conversionInput = inputPath;
+      let autoFixedCount = 0;
+      try {
+        const repairScript = path.join(process.cwd(), 'server', 'journal7', 'auto_repair.py');
+        const repairOutput = path.join(dir, 'document-autofix.docx');
+        const repairRun = await zipPdfExecFile('python3', [repairScript, inputPath, repairOutput], {
+          timeout: 20_000, maxBuffer: 64 * 1024, killSignal: 'SIGKILL',
+        });
+        const repairResult = JSON.parse(repairRun.stdout.trim() || '{}');
+        if (Number(repairResult.repaired) > 0) {
+          await fsPromises.access(repairOutput);
+          conversionInput = repairOutput;
+          outputPath = path.join(dir, 'document-autofix.pdf');
+          autoFixedCount = Number(repairResult.repaired);
+          console.info(`[ZAIN.NET Link7 AutoHeal] corrected ${autoFixedCount} textboxes in temporary PDF source`);
+        }
+      } catch (repairError: any) {
+        // The existing original-DOCX conversion remains available if repair fails.
+        console.warn('[ZAIN.NET Link7 AutoHeal] repair skipped:', repairError?.message || repairError);
+      }
       await zipPdfExecFile(process.env.LIBREOFFICE_BIN || 'libreoffice', [
         '-env:UserInstallation=file://' + profile,
         '--headless', '--nologo', '--nodefault', '--nofirststartwizard',
-        '--convert-to', 'pdf:writer_pdf_Export', '--outdir', dir, inputPath,
+        '--convert-to', 'pdf:writer_pdf_Export', '--outdir', dir, conversionInput,
       ], { timeout: 115_000, maxBuffer: 512 * 1024, killSignal: 'SIGKILL' });
       const pdf = await fsPromises.readFile(outputPath);
       if (pdf.length < 500 || pdf.subarray(0, 5).toString('ascii') !== '%PDF-') {
         throw new Error('LibreOffice tidak menghasilkan PDF valid.');
       }
+      res.setHeader('X-Zainnet-AutoFixed', String(autoFixedCount));
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Cache-Control', 'no-store, private');
       res.setHeader('X-Content-Type-Options', 'nosniff');

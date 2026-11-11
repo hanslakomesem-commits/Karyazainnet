@@ -35,6 +35,7 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
   // ZAINNET_LINK7_LAYOUT_WARN_NONBLOCK_20261111
   const [zipLayoutWarnings, setZipLayoutWarnings] = useState<string[]>([]);
+  const [zipAutoFixed, setZipAutoFixed] = useState(0);
   const [zipMessage, setZipMessage] = useState('Untuk ZIP lengkap, unggah skripsi Word (.docx) dan PDF (.pdf) asli.');
   // ZAINNET_LINK7_TWO_DOCX_SAFE_CLOSE_20261109
   // Browser websites cannot observe the OS download manager. Require the user
@@ -357,13 +358,15 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
       return;
     }
     setZipLayoutWarnings([]);
+    setZipAutoFixed(0);
     setIsDownloadingZip(true);
     try {
-      const { blob, filename, layoutWarnings } = await buildFiveFileBundle(
+      const { blob, filename, layoutWarnings, autoFixedCount } = await buildFiveFileBundle(
         article, { word: sourceThesis.word }, setZipMessage,
       );
       triggerBundleDownload(blob, filename);
       setZipLayoutWarnings(layoutWarnings);
+      setZipAutoFixed(autoFixedCount);
       setZipMessage(`ZIP siap dan unduhan sudah diminta: ${filename}. Periksa folder Download. Bila tidak muncul, tekan tombol ZIP lagi.`);
     } catch (err: any) {
       console.error('[ZAIN.NET Link 7] Gagal membuat ZIP 5 file:', err);
@@ -478,6 +481,12 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
               <span aria-live="polite" className="text-xs text-amber-100">{zipMessage}</span>
             </div>
 
+            {/* ZAINNET_LINK7_AUTOHEAL_SUCCESS_20261111 */}
+            {zipAutoFixed > 0 && (
+              <div role="status" className="my-2 rounded-lg bg-emerald-950 border border-emerald-400 p-3 text-sm text-emerald-100">
+                ✓ Perbaikan PDF otomatis dilakukan: {zipAutoFixed} kotak teks judul yang bertumpuk telah ditata ulang pada salinan PDF. Skripsi Word asli tetap utuh.
+              </div>
+            )}
             {zipLayoutWarnings.length > 0 && (
               <div role="alert" className="mt-3 rounded-lg border-2 border-amber-400 bg-amber-950/80 px-4 py-3 text-amber-100">
                 <p className="font-bold">⚠ Perhatian: Risiko posisi foto pada hasil PDF</p>

@@ -58,7 +58,7 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
   const handleLink7GenerationReady = (fileName: string) => {
     if (!tool || done.current) return;
     done.current = true;
-    setStatus('Artikel selesai. Menyiapkan Word dan PDF artikel. Modul tetap terbuka sampai keduanya dikonfirmasi terunduh.');
+    setStatus('ZIP lima file sudah dibuat dan unduhan otomatis diminta. Periksa folder Download lalu konfirmasi ZIP tersimpan.');
     recordSessionCompleted(tool, effectiveUserId, { fileName, reason: 'Artikel Link 7 selesai dibuat' }, [], 0);
     Promise.resolve(finishRef.current?.(tool, 'Artikel Link 7 selesai dibuat')).catch((err) => {
       setStatus('Artikel selesai, tetapi pencatatan kuota tertunda: ' + (err?.message || 'Periksa akun.'));
@@ -66,7 +66,7 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
   };
   const handleLink7DownloadsConfirmed = () => {
     if (!done.current) return;
-    setStatus('Word dan PDF artikel dikonfirmasi terunduh. Kembali ke menu utama...');
+    setStatus('ZIP lima file dikonfirmasi tersimpan. Kembali ke menu utama...');
     setCompleted(true);
     setTimeout(() => onClose(), 1200);
   };
@@ -129,7 +129,7 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
       <button title="Layar penuh" onClick={() => containerRef.current?.requestFullscreen?.()}><Maximize2 size={20}/></button>
       <button aria-label="Kembali ke menu" onClick={() => {
         if (isLink7 && done.current) {
-          setStatus('Periksa kedua unduhan Word terlebih dahulu dan tekan tombol konfirmasi di bawah hasil artikel.');
+          setStatus('Periksa ZIP di folder Download terlebih dahulu dan tekan tombol konfirmasi ZIP.');
           return;
         }
         onClose();

@@ -60,17 +60,31 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
   // to confirm both Word files exist before returning to the main menu.
   const [wordPairPhase, setWordPairPhase] = useState<'idle' | 'preparing' | 'requested' | 'error'>('idle');
   const [wordPairMessage, setWordPairMessage] = useState('');
+  // ZAINNET_LINK7_AUTO_ZIP_V2_20261112: one automatic ZIP, visible concurrent PDF job.
+  const [thesisPdfStatus, setThesisPdfStatus] = useState<{
+    status: 'idle' | 'running' | 'ready' | 'error' | 'skipped'; message: string;
+  }>({ status: 'idle', message: 'Menunggu file Word skripsi.' });
+  const zipBusy = useRef(false);
+  const zipReadyAssets = useRef<{ article: JournalArticle; templateId: string; thesis: File; blob: Blob; filename: string } | null>(null);
   // ZAINNET_LINK7_PARALLEL_PDF_20261112: early thesis conversion and per-article cache.
   const thesisPdfJob = useRef<{ file: File; promise: Promise<Blob | null> } | null>(null);
   const articleReadyAssets = useRef<{ article: JournalArticle; templateId: string; word: Blob; pdf: Blob; cover: Blob } | null>(null);
   const startThesisPdfInParallel = (file: File) => {
     if (thesisPdfJob.current?.file === file) return;
-    // Convert while AI runs. Capture rejection to prevent an unhandled promise;
-    // failure does not prevent the article from being generated or Word download.
-    const promise = convertWordToPdf(file, 'Skripsi.docx').catch((err: unknown) => {
-      console.warn('[Link7] PDF skripsi latar belakang gagal; bisa dicoba lagi saat ZIP:', err);
-      return null;
+    setThesisPdfStatus({
+      status: 'running',
+      message: 'Konversi skripsi Word ke PDF sedang berjalan di server LibreOffice, bersamaan dengan proses AI.'
     });
+    const promise = convertWordToPdf(file, 'Skripsi.docx')
+      .then((pdf) => {
+        setThesisPdfStatus({ status: 'ready', message: 'PDF skripsi selesai dan siap dimasukkan ke ZIP.' });
+        return pdf;
+      })
+      .catch((err: unknown) => {
+        console.warn('[Link7] PDF skripsi latar belakang gagal; akan dicoba kembali saat ZIP:', err);
+        setThesisPdfStatus({ status: 'error', message: 'PDF skripsi gagal diproses di awal. Sistem akan mencoba kembali saat mengemas ZIP.' });
+        return null;
+      });
     thesisPdfJob.current = { file, promise };
   };
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -177,47 +191,89 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
     String(value || 'Mahasiswa').trim().slice(0, 45)
       .replace(/[\\/?%*:|"<>]/g, '').replace(/\s+/g, '_') || 'Mahasiswa';
 
-  // After the AI is ready, build Word ONCE then convert that exact Word to PDF.
-  // Cover CD is prepared concurrently and retained for the optional 5-file ZIP.
-  const requestTwoWordDownloads = async (readyArticle: JournalArticle) => {
+  // Keep the article and the student files from the SAME final AI result.
+  // The browser can block an automatic download; manual retry uses the cached ZIP.
+  const prepareAndDownloadZip = async (readyArticle: JournalArticle, originalWord: File | null): Promise<boolean> => {
+    if (zipBusy.current) return false;
+    if (!originalWord) {
+      setWordPairPhase('error');
+      setWordPairMessage('ZIP otomatis membutuhkan skripsi Word .docx asli. Unggah Word pada panel paket lalu pilih Unduh Ulang ZIP; AI tidak perlu diulang.');
+      return false;
+    }
+    zipBusy.current = true;
+    setIsDownloadingZip(true);
     setWordPairPhase('preparing');
-    setWordPairMessage('Menyiapkan artikel Word dan PDF dari naskah yang sama...');
+    setWordPairMessage('Artikel selesai. Menyiapkan 5 file dan mengunduh satu ZIP otomatis...');
+    const templateId = articleMode === 'template' ? selectedJournalId : '';
     try {
-      const id = articleMode === 'template' ? selectedJournalId : '';
+      const cached = zipReadyAssets.current;
+      if (cached && cached.article === readyArticle && cached.templateId === templateId && cached.thesis === originalWord) {
+        triggerBundleDownload(cached.blob, cached.filename);
+        setWordPairPhase('requested');
+        setWordPairMessage('ZIP lengkap kembali diminta ke browser. Periksa folder Download.');
+        onArticleComplete?.(cached.filename);
+        return true;
+      }
+
       let assets = articleReadyAssets.current;
-      if (!assets || assets.article !== readyArticle || assets.templateId !== id) {
-        const [articleBlob, coverBlob] = await Promise.all([
+      if (!assets || assets.article !== readyArticle || assets.templateId !== templateId) {
+        setWordPairMessage('AI selesai. Membuat Word artikel dan Cover CD secara bersamaan...');
+        const [word, cover] = await Promise.all([
           getArticleWord(readyArticle), buildCoverCdDocx(readyArticle),
         ]);
-        if (articleBlob.size < 200 || coverBlob.size < 200) {
-          throw new Error('Word artikel atau Cover CD tidak valid.');
+        if (word.size < 200 || cover.size < 200) {
+          throw new Error('Word artikel atau Cover CD tidak berhasil dibuat.');
         }
-        setWordPairMessage('Word artikel selesai. PDF sedang dikonversi dengan LibreOffice...');
-        const articlePdf = await convertWordToPdf(articleBlob, 'Artikel.docx');
-        assets = { article: readyArticle, templateId: id, word: articleBlob, pdf: articlePdf, cover: coverBlob };
+        setWordPairMessage('Word artikel selesai. Mengonversi PDF artikel di server LibreOffice...');
+        const pdf = await convertWordToPdf(word, 'Artikel.docx');
+        assets = { article: readyArticle, templateId, word, pdf, cover };
         articleReadyAssets.current = assets;
       }
-      const title = makeSafeWordFileName(readyArticle.metadata?.judul || 'Artikel');
-      triggerBundleDownload(assets.word, `Artikel_Jurnal_${title}.docx`);
-      triggerBundleDownload(assets.pdf, `Artikel_Jurnal_${title}.pdf`);
+
+      setWordPairMessage('Menggabungkan semua berkas: menunggu PDF skripsi yang diproses bersamaan dengan AI...');
+      const existingThesisPdf = thesisPdfJob.current?.file === originalWord
+        ? await thesisPdfJob.current.promise : null;
+      if (!existingThesisPdf) {
+        setWordPairMessage('Konversi PDF skripsi belum berhasil; mencoba ulang saat membuat ZIP...');
+      }
+      setZipMessage('Mengemas ZIP lengkap otomatis; tidak perlu menekan tombol Download Paket Lengkap.');
+      const { blob, filename, layoutWarnings, autoFixedCount } = await buildFiveFileBundle(
+        readyArticle,
+        { word: originalWord },
+        setZipMessage,
+        assets.word,
+        { thesisPdf: existingThesisPdf || undefined, articlePdf: assets.pdf, coverWord: assets.cover },
+      );
+      setZipLayoutWarnings(layoutWarnings);
+      setZipAutoFixed(autoFixedCount);
+      zipReadyAssets.current = { article: readyArticle, templateId, thesis: originalWord, blob, filename };
+      triggerBundleDownload(blob, filename);
       setWordPairPhase('requested');
-      setWordPairMessage('Artikel Word dan PDF sudah diminta ke browser bersamaan. Izinkan beberapa unduhan dan periksa folder Download. Cover CD Word tersedia pada tombol terpisah atau ZIP lengkap.');
+      setWordPairMessage(`ZIP 5 file sudah dibuat dan unduhannya diminta otomatis: ${filename}. Periksa folder Download. Bila Chrome memblokirnya, tekan Unduh Ulang ZIP tanpa menjalankan AI kembali.`);
+      setZipMessage('ZIP selesai dibuat. Tidak ada unduhan Word/PDF terpisah yang berjalan otomatis.');
+      // Report completion only after the entire ZIP exists and the browser download was requested.
+      onArticleComplete?.(filename);
+      return true;
     } catch (err: any) {
-      console.error('[ZAIN.NET Link7] Persiapan Word/PDF:', err);
+      console.error('[ZAIN.NET Link 7] Auto ZIP:', err);
       setWordPairPhase('error');
-      setWordPairMessage(`Artikel PDF belum siap: ${err?.message || 'Konversi gagal'}. Artikel tetap tersedia; coba Unduh Ulang. Periksa server LibreOffice bila konversi gagal.`);
+      setWordPairMessage(`ZIP belum berhasil: ${err?.message || 'Konversi gagal'}. Artikel AI tetap tersedia. Tekan Unduh Ulang ZIP untuk mencoba lagi.`);
+      setZipMessage(`Paket ZIP belum siap: ${err?.message || 'Periksa server LibreOffice.'}`);
+      return false;
+    } finally {
+      zipBusy.current = false;
+      setIsDownloadingZip(false);
     }
   };
 
-  const retryTwoWordDownloads = async () => {
-    if (!article || wordPairPhase === 'preparing') return;
-    // Always use current article so manual edits are included in both documents.
-    await requestTwoWordDownloads(article);
+  const retryZipDownload = async () => {
+    if (!article || zipBusy.current) return;
+    await prepareAndDownloadZip(article, sourceThesis.word);
   };
 
-  const confirmTwoWordDownloads = () => {
+  const confirmZipDownload = () => {
     if (wordPairPhase !== 'requested') return;
-    // The user confirms both files exist; the parent will now close the module.
+    // The OS download manager is not inspectable from a website.
     onDownloadsConfirmed?.();
   };
 
@@ -233,12 +289,17 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
       pdf: original?.name.toLowerCase().endsWith('.pdf') ? original : null,
     });
     articleReadyAssets.current = null;
+    zipReadyAssets.current = null;
+    setWordPairPhase('idle');
     if (original?.name.toLowerCase().endsWith('.docx')) {
       startThesisPdfInParallel(original);
     }
+    if (!original?.name.toLowerCase().endsWith('.docx')) {
+      setThesisPdfStatus({ status: 'skipped', message: 'PDF otomatis memerlukan skripsi Word .docx asli. Upload Word untuk menyiapkan ZIP lengkap.' });
+    }
     setZipMessage(original?.name.toLowerCase().endsWith('.docx')
-      ? 'File skripsi Word tersedia. PDF skripsi sedang disiapkan selagi AI membuat artikel.'
-      : 'Untuk paket ZIP, pilih skripsi Word .docx asli sekali saja. PDF akan dibuat otomatis.');
+      ? 'PDF skripsi disiapkan bersamaan dengan AI. ZIP lima file akan diunduh otomatis.'
+      : 'Untuk ZIP, pilih skripsi Word .docx asli sekali saja.');
     setIsLoading(true);
     setErrorMsg(null);
 
@@ -348,10 +409,9 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
       setArticle(fullArticle);
       setActiveTab('preview');
       setGenerationStatus({ stage: 0, message: '', percent: 100 });
-      // Record creation/quota ONCE, without closing the module.
-      onArticleComplete?.(`${(fullArticle.metadata as any)?.judul || 'Artikel'}.docx`);
-      // Automatically request two standalone Word files, not a ZIP.
-      await requestTwoWordDownloads(fullArticle);
+      // Auto-download ONE five-file ZIP (no separate Word downloads, no extra ZIP button).
+      const thesisWord = original?.name.toLowerCase().endsWith('.docx') ? original : null;
+      await prepareAndDownloadZip(fullArticle, thesisWord);
     } catch (err: any) {
       console.error('Generation Error:', err);
       setErrorMsg(err.message || 'Terjadi kesalahan saat memproses skripsi.');
@@ -391,41 +451,14 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
       return;
     }
     setSourceThesis(prev => ({ ...prev, word: file }));
+    zipReadyAssets.current = null;
     startThesisPdfInParallel(file);
     setZipMessage(`${file.name} diterima. Konversi PDF skripsi dimulai di latar belakang.`);
   };
 
+  // Optional fallback when Chrome blocks the automatic ZIP download.
   const handleDownloadZip = async () => {
-    if (!article || isDownloadingZip) return;
-    if (!sourceThesis.word) {
-      setZipMessage('ZIP belum tersedia: unggah skripsi Word .docx asli sekali saja. PDF dibuat otomatis.');
-      return;
-    }
-    setZipLayoutWarnings([]);
-    setZipAutoFixed(0);
-    setIsDownloadingZip(true);
-    try {
-      // Wait only for work already running; never launch the same conversion again.
-      const thesisPdf = thesisPdfJob.current?.file === sourceThesis.word
-        ? await thesisPdfJob.current.promise : null;
-      const selectedId = articleMode === 'template' ? selectedJournalId : '';
-      const assets = articleReadyAssets.current?.article === article && articleReadyAssets.current.templateId === selectedId
-        ? articleReadyAssets.current : null;
-      const wordOverride = assets?.word || (articleMode === 'template' ? await getArticleWord(article) : undefined);
-      const { blob, filename, layoutWarnings, autoFixedCount } = await buildFiveFileBundle(
-        article, { word: sourceThesis.word }, setZipMessage, wordOverride,
-        { thesisPdf: thesisPdf || undefined, articlePdf: assets?.pdf, coverWord: assets?.cover },
-      );
-      triggerBundleDownload(blob, filename);
-      setZipLayoutWarnings(layoutWarnings);
-      setZipAutoFixed(autoFixedCount);
-      setZipMessage(`ZIP siap dan unduhan sudah diminta: ${filename}. Periksa folder Download. Bila tidak muncul, tekan tombol ZIP lagi.`);
-    } catch (err: any) {
-      console.error('[ZAIN.NET Link 7] Gagal membuat ZIP 5 file:', err);
-      setZipMessage(`ZIP gagal: ${err?.message || 'Terjadi kesalahan.'}. Artikel tetap terbuka, coba lagi.`);
-    } finally {
-      setIsDownloadingZip(false);
-    }
+    await retryZipDownload();
   };
 
   // Handle Cover CD Export (.docx)
@@ -506,11 +539,11 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
       {/* 2-file download confirmation stays visible until the user confirms. ZIP is optional. */}
       {article && (
         <div role="status" className="sticky top-0 z-40 mx-auto w-full max-w-5xl bg-blue-950 text-white p-4 shadow-xl border-b-4 border-cyan-400">
-          <p className="font-bold text-base">Artikel selesai — {articleMode === 'template' ? `Template ${findJournalMaster(selectedJournalId)?.name || ''}` : 'Mode biasa'} — Artikel Word + PDF atau ZIP lengkap 5 file</p>
+          <p className="font-bold text-base">Artikel AI selesai — {articleMode === 'template' ? `Template ${findJournalMaster(selectedJournalId)?.name || ''}` : 'Mode biasa'} — ZIP lengkap 5 file otomatis</p>
           <p className="text-sm mt-1" aria-live="polite">{wordPairMessage}</p>
           <div className="mt-3 rounded-lg border border-cyan-500/50 bg-slate-900 p-3">
             <p className="text-sm font-bold text-cyan-200">Paket Lengkap ZIP — 5 file dalam 1 ZIP</p>
-            <p className="text-xs text-slate-200 mt-1">PDF skripsi disiapkan saat AI bekerja. Word dan PDF artikel dibuat dari satu naskah. ZIP tetap berisi skripsi Word + PDF, artikel Word + PDF, dan Cover CD Word.</p>
+            <p className="text-xs text-slate-200 mt-1">ZIP otomatis berisi Skripsi Word + PDF, Artikel Word + PDF, dan Cover CD Word. PDF skripsi diproses selagi AI menyusun artikel. Tidak perlu menekan tombol Paket Lengkap.</p>
             <div className="mt-3 rounded-md bg-slate-800/70 p-3 text-xs">
               {sourceThesis.word ? (
                 <p className="text-emerald-200 font-semibold">✓ Skripsi Word telah diterima: {sourceThesis.word.name}</p>
@@ -528,7 +561,7 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
               <button type="button" onClick={handleDownloadZip}
                 disabled={isDownloadingZip || wordPairPhase === 'preparing' || !sourceThesis.word}
                 className="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-4 py-2 font-bold disabled:opacity-50">
-                {isDownloadingZip ? 'Menyiapkan Paket ZIP...' : 'Download Paket Lengkap (ZIP 5 File)'}
+                {isDownloadingZip ? 'Menyiapkan ZIP otomatis...' : 'Unduh Ulang ZIP (jika belum tersimpan)'}
               </button>
               <span aria-live="polite" className="text-xs text-amber-100">{zipMessage}</span>
             </div>
@@ -559,29 +592,19 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
             <p className="text-xs text-slate-300 mt-2">Kedua PDF dikonversi dari file Word yang sebenarnya melalui LibreOffice di server. Periksa halaman, font, dan catatan kaki sebelum dicetak.</p>
           </div>
           <div className="flex flex-wrap gap-2 mt-3">
-            <button type="button" onClick={retryTwoWordDownloads}
+            <button type="button" onClick={retryZipDownload}
               disabled={wordPairPhase === 'preparing'}
               className="rounded-lg bg-blue-600 px-4 py-2 font-semibold disabled:opacity-50">
-              {wordPairPhase === 'preparing' ? 'Menyiapkan Word + PDF...' : 'Unduh Ulang Artikel Word + PDF'}
+              {wordPairPhase === 'preparing' ? 'Menyiapkan ZIP...' : 'Unduh Ulang ZIP Otomatis'}
             </button>
-            <button type="button" onClick={handleDownloadDocx}
-              disabled={isDownloadingDocx || wordPairPhase === 'preparing'}
-              className="rounded-lg bg-slate-700 px-4 py-2 font-semibold disabled:opacity-50">
-              Unduh Artikel.docx
-            </button>
-            <button type="button" onClick={handleDownloadCoverCd}
-              disabled={isDownloadingCoverCd || wordPairPhase === 'preparing'}
-              className="rounded-lg bg-slate-700 px-4 py-2 font-semibold disabled:opacity-50">
-              Unduh Cover_CD.docx
-            </button>
-            <button type="button" onClick={confirmTwoWordDownloads}
+            <button type="button" onClick={confirmZipDownload}
               disabled={wordPairPhase !== 'requested'}
               className="rounded-lg bg-emerald-600 px-4 py-2 font-bold disabled:opacity-50">
-              Saya Sudah Menerima Kedua File — Kembali ke Beranda
+              ZIP Sudah Tersimpan — Kembali ke Beranda
             </button>
           </div>
           <p className="text-xs text-blue-100 mt-2">
-            Browser dapat memblokir unduhan otomatis ganda. ZAIN.NET tidak akan kembali ke beranda sebelum Anda mengonfirmasi kedua file sudah tersimpan.
+            Browser bisa memblokir unduhan otomatis. Jika ZIP belum ada di Download, tekan Unduh Ulang ZIP. Aplikasi tetap terbuka sampai Anda mengonfirmasi file ZIP tersimpan.
           </p>
         </div>
       )}
@@ -698,6 +721,7 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
             onSubmit={handleGenerateJournal}
             isLoading={isLoading}
             generationStatus={generationStatus}
+            thesisPdfStatus={thesisPdfStatus}
             selectedModel={selectedModel}
             onSelectModel={handleSelectModel}
           />

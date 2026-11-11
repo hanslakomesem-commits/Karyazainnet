@@ -14,6 +14,7 @@ interface SkripsiUploaderProps {
     message: string;
     percent: number;
   };
+  thesisPdfStatus?: { status: 'idle' | 'running' | 'ready' | 'error' | 'skipped'; message: string };
   selectedModel?: string;
   onSelectModel?: (modelId: string) => void;
 }
@@ -336,6 +337,7 @@ export const SkripsiUploader: React.FC<SkripsiUploaderProps> = ({
   onSubmit,
   isLoading,
   generationStatus,
+  thesisPdfStatus,
   selectedModel,
   onSelectModel,
 }) => {
@@ -1139,6 +1141,23 @@ export const SkripsiUploader: React.FC<SkripsiUploaderProps> = ({
                   <span>Kesimpulan & Footnote</span>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ZAINNET_LINK7_AUTO_ZIP_V2: visible beside the AI job; no fake percentages. */}
+          {isLoading && thesisPdfStatus && (
+            <div role="status" aria-live="polite" className="mt-3 rounded-2xl border-2 border-cyan-200 bg-cyan-50 p-4 text-cyan-950 shadow-sm" data-testid="link7-thesis-pdf-status">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <span aria-hidden="true" className={thesisPdfStatus.status === 'running' ? 'animate-pulse' : ''}>📄</span>
+                Konversi PDF Skripsi — Proses Paralel
+              </div>
+              <p className="text-xs mt-2 leading-relaxed">{thesisPdfStatus.message}</p>
+              <p className="text-[11px] mt-1 text-cyan-800">
+                {thesisPdfStatus.status === 'running' ? 'Sedang diproses selagi AI menyusun artikel…' :
+                 thesisPdfStatus.status === 'ready' ? 'Selesai ✓ PDF akan dimasukkan ke ZIP otomatis.' :
+                 thesisPdfStatus.status === 'error' ? 'Akan dicoba kembali saat ZIP dibuat.' :
+                 'Menunggu file Word skripsi.'}
+              </p>
             </div>
           )}
 

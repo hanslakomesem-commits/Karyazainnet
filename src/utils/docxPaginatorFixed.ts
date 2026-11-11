@@ -2277,7 +2277,8 @@ export async function correctThesisDocx(
     };
   });
 
-  normalizeLeadingCoverSpacers(body);
+  // Preserve cover paragraphs, including intentional blank lines.
+  // normalizeLeadingCoverSpacers(body); // ZAINNET_MENU3_TOC_PAGEREF_PRESERVE_V1
   ps = bodyParagraphs(body);
 
   // Optional TOC Workflow
@@ -2384,7 +2385,8 @@ export async function correctThesisDocx(
       if (targetElement) {
         const targetIdx = ps.indexOf(targetElement);
         if (targetIdx > 0) {
-          cleanRedundantBreaksAtBoundary(ps, targetIdx);
+          // Existing page breaks may be intentional; do not remove them.
+          // cleanRedundantBreaksAtBoundary(ps, targetIdx);
           ps = bodyParagraphs(body);
           const currIdx = ps.indexOf(targetElement);
           if (currIdx > 0) {
@@ -2468,8 +2470,8 @@ export async function correctThesisDocx(
     }
 
     // Ensure every section preserves the student's page geometry
-    if (bodySect && sect !== bodySect) {
-      copyGeometry(bodySect, sect);
+    if (bodySect && sect !== bodySect && !hasGeometry(sect)) {
+      copyGeometry(bodySect, sect); // Fill only missing page geometry.
     }
 
     // Major section boundaries (Cover 2 / Front Matter, BAB I..V, and DAFTAR PUSTAKA / Back Matter)

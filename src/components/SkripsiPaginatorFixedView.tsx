@@ -40,9 +40,11 @@ import {
 
 interface SkripsiPaginatorFixedViewProps {
   onCorrectionComplete?: (fileName: string) => void;
+  initialTocMode?: TocProcessMode;
+  initialProfile?: DocumentNumberingProfile; // ZAINNET_LINK3_WIZARD_V1
 }
 
-export const SkripsiPaginatorFixedView: React.FC<SkripsiPaginatorFixedViewProps> = ({ onCorrectionComplete }) => {
+export const SkripsiPaginatorFixedView: React.FC<SkripsiPaginatorFixedViewProps> = ({ onCorrectionComplete, initialTocMode = 'auto_detect', initialProfile = 'skripsi' }) => {
   const [file, setFile] = useState<File | Blob | null>(null);
   const [fileName, setFileName] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -54,8 +56,8 @@ export const SkripsiPaginatorFixedView: React.FC<SkripsiPaginatorFixedViewProps>
   const [activeTab, setActiveTab] = useState<'sections' | 'toc_json' | 'visual' | 'guide'>('sections');
   const [selectedSectionIdx, setSelectedSectionIdx] = useState<number>(0);
   const [editToc, setEditToc] = useState<boolean>(true);
-  const [tocMode, setTocMode] = useState<TocProcessMode>('auto_generate');
-  const [numberingProfile, setNumberingProfile] = useState<DocumentNumberingProfile>('skripsi');
+  const [tocMode, setTocMode] = useState<TocProcessMode>(initialTocMode); // ZAINNET_MENU3_TOC_PAGEREF_PRESERVE_V1
+  const [numberingProfile, setNumberingProfile] = useState<DocumentNumberingProfile>(initialProfile);
   const [tocResult, setTocResult] = useState<TocWorkflowResult | null>(null);
   const [copiedJson, setCopiedJson] = useState<boolean>(false);
 
@@ -289,6 +291,7 @@ export const SkripsiPaginatorFixedView: React.FC<SkripsiPaginatorFixedViewProps>
       const cleanName = fileName.replace(/\.docx$/i, '');
       const outName = `${cleanName}_koreksi_penomoran.docx`;
       triggerDownload(correctedBlob, fileName);
+      // A browser download request is not proof the file was actually saved.
       if (onCorrectionComplete) {
         onCorrectionComplete(outName);
       }
@@ -310,7 +313,8 @@ export const SkripsiPaginatorFixedView: React.FC<SkripsiPaginatorFixedViewProps>
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // Mobile browsers may not have consumed the download URL immediately.
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
   const resetAll = () => {
@@ -1174,6 +1178,14 @@ export const SkripsiPaginatorFixedView: React.FC<SkripsiPaginatorFixedViewProps>
                     <div className="text-xs font-bold text-slate-800">
                       Pilih Mode Pemrosesan Daftar Isi:
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setTocMode('auto_detect')}
+                      className={`w-full text-left p-3 rounded-xl border cursor-pointer ${tocMode === 'auto_detect' ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-500' : 'border-slate-200 bg-slate-50'}`}
+                    >
+                      <span className="text-xs font-bold text-slate-900">Disarankan: Salin Daftar Isi Manual dan Hubungkan Nomor Otomatis</span>
+                      <p className="text-[11px] text-slate-600 mt-1">Judul dan urutan tetap sama. Nomor yang cocok memakai field Word PAGEREF. Setelah unduh, buka di Word lalu perbarui field (Ctrl+A, F9).</p>
+                    </button>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                       <button
                         type="button"

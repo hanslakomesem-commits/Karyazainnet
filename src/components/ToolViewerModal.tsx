@@ -5,6 +5,7 @@ import { recordSessionInProgress, recordSessionCompleted, getSessionForTool } fr
 import { isIframeTool } from '../data/toolsData';
 import { SkripsiPaginatorView } from './SkripsiPaginatorView';
 import { SkripsiPaginatorFixedView } from './SkripsiPaginatorFixedView';
+import { SkripsiPaginatorLink3View } from './SkripsiPaginatorLink3View'; // ZAINNET_LINK3_WIZARD_V1
 import { PhotoGridView } from '../photoGrid/PhotoGridView';
 import { Label103View } from '../label103/Label103View';
 import GabungFileApp from '../gabungFile/App';
@@ -140,14 +141,17 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
         tool.url === 'internal://skripsi-paginator' ||
         tool.url === 'internal://skripsi-paginator-fixed' ? (
           <div key={iframeKey} className="w-full h-full overflow-y-auto bg-slate-50">
-            <SkripsiPaginatorFixedView
+            {tool.id === 'num-3' ? <SkripsiPaginatorLink3View onCorrectionComplete={(outFileName) => {
+                handleAutoFinishDownload(outFileName, 'Koreksi nomor halaman dan Daftar Isi dinamis Link 3 selesai');
+              }}/> : <SkripsiPaginatorFixedView
+              initialTocMode={tool.id === 'num-3' ? 'auto_detect' : 'manual_sync'}
               onCorrectionComplete={(outFileName) => {
                 handleAutoFinishDownload(
                   outFileName,
                   'Koreksi & validasi penomoran halaman Word (.docx) + TOC selesai'
                 );
               }}
-            />
+            />}
           </div>
         ) : tool.id === 'foto-1' || tool.url === 'internal://docx-photo-grid' ? (
           <div key={iframeKey} className="w-full h-full overflow-y-auto bg-neutral-100">

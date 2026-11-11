@@ -762,7 +762,7 @@ function buildOpenXmlTocSdt(
   doc: Document,
   entries: BodyHeadingItem[],
   frontEntries: Array<{ title: string; page: string; bookmarkName: string }>,
-  options: { includeTitleHeading: boolean; isArabic?: boolean; numberingProfile?: DocumentNumberingProfile }
+  options: { includeTitleHeading: boolean; isArabic?: boolean; numberingProfile?: DocumentNumberingProfile; manualRows?: Array<{label: string; page: string; level: 1 | 2 | 3; bookmarkName: string}> } // ZAINNET_MENU3_TOC_PAGEREF_PRESERVE_V1
 ): Element {
   const useArabicStyle = !!options.isArabic || options.numberingProfile === 'arab';
   const fontName = useArabicStyle ? 'Traditional Arabic' : 'Times New Roman';
@@ -835,6 +835,11 @@ function buildOpenXmlTocSdt(
     bookmarkName: string,
     includeBeginField = false
   ) => {
+    // Baris yang belum terhubung dipertahankan statis, bukan ditebak.
+    if (!bookmarkName) {
+      sdtContent.appendChild(createManualTocParagraph(doc, label, pageStr, level, useArabicStyle || hasArabicScript(label)));
+      return;
+    }
     const isRowArabic = useArabicStyle || hasArabicScript(label);
     const rowFont = isRowArabic ? 'Traditional Arabic' : fontName;
     const rowSz = isRowArabic ? '36' : fontSizeVal;
@@ -983,13 +988,21 @@ function buildOpenXmlTocSdt(
   };
 
   let firstRow = true;
-  for (const f of frontEntries) {
-    addTocRow(f.title, f.page, 1, f.bookmarkName, firstRow);
-    firstRow = false;
-  }
-  for (const item of entries) {
-    addTocRow(item.fullText, item.estimatedPage, item.level, item.bookmarkName, firstRow);
-    firstRow = false;
+  if (options.manualRows) {
+    // Don't replace the user's correct titles/order with newly inferred headings.
+    for (const row of options.manualRows) {
+      addTocRow(row.label, row.page, row.level, row.bookmarkName, false);
+      firstRow = false;
+    }
+  } else {
+    for (const f of frontEntries) {
+      addTocRow(f.title, f.page, 1, f.bookmarkName, firstRow);
+      firstRow = false;
+    }
+    for (const item of entries) {
+      addTocRow(item.fullText, item.estimatedPage, item.level, item.bookmarkName, firstRow);
+      firstRow = false;
+    }
   }
 
   // Fallback if document had no headings at all
@@ -1003,14 +1016,17 @@ function buildOpenXmlTocSdt(
     );
   }
 
-  // End field character for outer TOC field
-  const endP = doc.createElementNS(W_NS, 'w:p');
-  const rEnd = doc.createElementNS(W_NS, 'w:r');
-  const fldEnd = doc.createElementNS(W_NS, 'w:fldChar');
-  setVal(fldEnd, 'fldCharType', 'end');
-  rEnd.appendChild(fldEnd);
-  endP.appendChild(rEnd);
-  sdtContent.appendChild(endP);
+  // Manual-preserve uses individual PAGEREF fields only: Word's TOC rebuild
+  // would overwrite the original titles, so never wrap these rows in a TOC field.
+  if (!options.manualRows) {
+    const endP = doc.createElementNS(W_NS, 'w:p');
+    const rEnd = doc.createElementNS(W_NS, 'w:r');
+    const fldEnd = doc.createElementNS(W_NS, 'w:fldChar');
+    setVal(fldEnd, 'fldCharType', 'end');
+    rEnd.appendChild(fldEnd);
+    endP.appendChild(rEnd);
+    sdtContent.appendChild(endP);
+  }
 
   sdt.appendChild(sdtContent);
   return sdt;
@@ -1071,6 +1087,7 @@ export function processDocumentTocWorkflow(
 
   const shouldGenerateAutomaticToc =
     tocMode === 'auto_generate' ||
+    tocMode === 'auto_detect' ||
     !hasTocDetected ||
     tocKind === 'keyword_only';
 
@@ -2087,11 +2104,57 @@ export function processDocumentTocWorkflow(
     });
   }
 
-  // Build <w:sdt> TOC (omit internal "DAFTAR ISI" / "فهرس المحتويات" heading if the document already has the keyword paragraph)
+  // Preserve the manual TOC source, including original wording, line order,
+  // and old page numbers as cached display values; match to real body bookmarks.
+  const manualPreservedRows: Array<{label: string; page: string; level: 1 | 2 | 3; bookmarkName: string}> | undefined =
+    tocMode === 'auto_detect' && manualRange ? (() => {
+      const rows: Array<{label: string; page: string; level: 1 | 2 | 3; bookmarkName: string}> = [];
+      const used = new Set<string>();
+      let missing = 0;
+      for (const original of paragraphs.slice(manualRange.startIdx, manualRange.endIdx + 1)) {
+        const raw = getParaText(original).trim();
+        if (!raw) continue;
+        const { cleanEntry, trailingPage } = stripLeadingLeaderAndPage(raw);
+        if (!cleanEntry) continue;
+        const norm = normalize(cleanEntry);
+        const arab = normalizeArabicKey(cleanEntry);
+        // Exclude only actual column headers, never remove real manual entries.
+        if (/^(?:JUDUL\s+)?HALAMAN$/.test(norm) || /^(?:الموضوع\s+)?(?:الصفحه|رقم\s+الصفحه|الموضوع)$/.test(arab)) continue;
+        const allMatches = [
+          ...frontEntries.map(f => ({ fullText: f.title, titleText: f.title, level: 1 as const, bookmarkName: f.bookmarkName, estimatedPage: f.page })),
+          ...bodyHeadings.map(h => ({ fullText: h.fullText, titleText: h.titleText, level: h.level, bookmarkName: h.bookmarkName, estimatedPage: h.estimatedPage }))
+        ];
+        const comparable = (candidate: {fullText: string; titleText: string}) => {
+          const n1 = normalize(candidate.fullText), n2 = normalize(candidate.titleText);
+          return n1 === norm || n2 === norm ||
+            (hasArabicScript(cleanEntry) && (normalizeArabicKey(candidate.fullText) === arab || normalizeArabicKey(candidate.titleText) === arab));
+        };
+        // Prefer a uniquely matched real heading; never link an ambiguous item.
+        const available = allMatches.filter(h => comparable(h) && !used.has(h.bookmarkName));
+        const matched = available.length === 1 ? available[0] : undefined;
+        if (matched) used.add(matched.bookmarkName);
+        else missing++;
+        rows.push({
+          label: cleanEntry,
+          page: matched?.estimatedPage || trailingPage || '',
+          level: matched?.level || (/^(?:BAB\s+[IVX0-9]+|HALAMAN\s+|DAFTAR\s+)/i.test(cleanEntry) ? 1 : 2),
+          bookmarkName: matched?.bookmarkName || ''
+        });
+      }
+      if (rows.length === 0) {
+        throw new Error('Daftar Isi manual terbaca kosong. Isi asli tidak dihapus.');
+      }
+      revisionLogs.push(`Daftar Isi manual: ${rows.length} baris asli dipertahankan, ${rows.length - missing} terhubung ke nomor halaman Word (PAGEREF).`);
+      if (missing) revisionLogs.push(`PERINGATAN: ${missing} baris belum punya judul Word yang cocok dan masih menggunakan nomor lama. Periksa sebelum cetak.`);
+      return rows;
+    })() : undefined;
+
+  // Build a Word content-control table with individually updatable page references.
   const tocSdt = buildOpenXmlTocSdt(docXml, bodyHeadings, frontEntries, {
     includeTitleHeading: !hasKeywordParagraph,
     isArabic: isArabicDoc,
-    numberingProfile
+    numberingProfile,
+    manualRows: manualPreservedRows
   });
   const generatedTocXml = xmlSerializer.serializeToString(tocSdt);
 

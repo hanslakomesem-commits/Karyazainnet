@@ -1,0 +1,187 @@
+name: ZAIN.NET - Link 7 Foto PDF Peringatan Tanpa Menghentikan ZIP
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/link7-layout-foto-warning.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: zainnet-link7-layout-warning
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    name: Pasang peringatan tata letak PDF dan build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - name: Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Tambah deteksi gambar berisiko dan peringatan yang tidak memblokir PDF
+        shell: bash
+        run: |
+          python3 - <<'PY_PATCH'
+          from pathlib import Path
+
+          bundle = Path('src/journalConverter/utils/bundleExport.ts')
+          app = Path('src/journalConverter/App.tsx')
+          b = bundle.read_text(encoding='utf-8')
+          a = app.read_text(encoding='utf-8')
+          marker = 'ZAINNET_LINK7_LAYOUT_WARN_NONBLOCK_20261111'
+
+
+          def replace_exact(value, old, new, description):
+              count = value.count(old)
+              if count != 1:
+                  raise SystemExit(f'{description}: expected 1 match, found {count}; no unsafe changes')
+              return value.replace(old, new, 1)
+
+          if marker not in b:
+              helper = r'''
+          // ZAINNET_LINK7_LAYOUT_WARN_NONBLOCK_20261111
+          /**
+           * Read-only DOCX inspection. Floating/legacy Word drawings can move in LibreOffice.
+           * These are RISK markers, not definitive evidence that a rendered PDF is damaged.
+           * Never rewrite the user's DOCX or abort a valid PDF because of layout warnings.
+           */
+          async function inspectDocxPictureRisks(word: Blob): Promise<string[]> {
+            const warnings: string[] = [];
+            try {
+              const archive = await JSZip.loadAsync(word);
+              const part = archive.file('word/document.xml');
+              if (!part) return warnings;
+              const xml = await part.async('string');
+              const count = (pattern: RegExp) => (xml.match(pattern) || []).length;
+              const floating = count(/<wp:anchor(?=[\s>])/g);
+              const legacy = count(/<(?:w:pict|v:group)(?=[\s>])/g);
+              const textBoxes = count(/<(?:w:txbxContent|v:textbox)(?=[\s>])/g);
+              const samePoint = new Set<string>();
+              let duplicateFloatingPositions = 0;
+              // Compare only anchors inside the same paragraph. Cross-page positions
+              // cannot be reliably compared without laying out Word in a real renderer.
+              const paragraphs = xml.match(/<w:p(?=[\s>])[\s\S]*?<\/w:p>/g) || [];
+              for (const paragraph of paragraphs) {
+                samePoint.clear();
+                const anchors = paragraph.match(/<wp:anchor(?=[\s>])[\s\S]*?<\/wp:anchor>/g) || [];
+                for (const anchor of anchors) {
+                  const horizontal = anchor.match(/<wp:positionH[^>]*>[\s\S]*?<wp:posOffset>(-?\d+)<\/wp:posOffset>/)?.[1];
+                  const vertical = anchor.match(/<wp:positionV[^>]*>[\s\S]*?<wp:posOffset>(-?\d+)<\/wp:posOffset>/)?.[1];
+                  if (horizontal === undefined || vertical === undefined) continue;
+                  const key = `${horizontal},${vertical}`;
+                  if (samePoint.has(key)) duplicateFloatingPositions++;
+                  samePoint.add(key);
+                }
+              }
+              if (floating > 0) {
+                warnings.push(`${floating} gambar/objek Word memakai posisi mengambang (floating). Posisi di PDF dapat bergeser.`);
+              }
+              if (duplicateFloatingPositions > 0) {
+                warnings.push(`${duplicateFloatingPositions} pasangan objek ditemukan dengan posisi awal sama dalam satu paragraf; ada indikasi risiko tumpang tindih.`);
+              }
+              if (legacy > 0 || textBoxes > 0) {
+                warnings.push(`Ditemukan objek gambar/teks lama atau text box (VML: ${legacy}, kotak teks: ${textBoxes}) yang berpotensi berubah saat konversi.`);
+              }
+              return warnings;
+            } catch (error) {
+              // Diagnostics must never interfere with PDF conversion.
+              console.warn('[ZAIN.NET Link 7] Preflight gambar tidak tersedia:', error);
+              return ['Pemeriksaan otomatis posisi gambar tidak lengkap; pastikan lampiran foto PDF diperiksa sebelum dicetak.'];
+            }
+          }
+
+          '''
+              b = replace_exact(b, 'export async function buildFiveFileBundle(', helper + 'export async function buildFiveFileBundle(', 'Insert read-only image inspection')
+              b = replace_exact(b,
+                  '): Promise<{ blob: Blob; filename: string }> {\n  if (!thesis.word) {',
+                  '): Promise<{ blob: Blob; filename: string; layoutWarnings: string[] }> {\n  if (!thesis.word) {',
+                  'Bundle return signature')
+              b = replace_exact(b,
+                  '  await verifyWordFile(thesis.word);\n',
+                  '  await verifyWordFile(thesis.word);\n  const layoutWarnings = await inspectDocxPictureRisks(thesis.word);\n  if (layoutWarnings.length > 0) {\n    onProgress?.(\'Peringatan foto/objek Word: konversi PDF tetap dilanjutkan.\');\n  }\n',
+                  'Run image preflight')
+              b = replace_exact(b,
+                  '  return { blob, filename: `ZAINNET_Paket_Lengkap_${fileName}.zip` };',
+                  '  return { blob, filename: `ZAINNET_Paket_Lengkap_${fileName}.zip`, layoutWarnings };',
+                  'Expose warning after successful ZIP')
+              bundle.write_text(b, encoding='utf-8')
+          else:
+              print('Layout checker already exists; skipping bundle changes')
+
+          if marker not in a:
+              a = replace_exact(a,
+                  '  const [isDownloadingZip, setIsDownloadingZip] = useState(false);',
+                  '  const [isDownloadingZip, setIsDownloadingZip] = useState(false);\n  // ZAINNET_LINK7_LAYOUT_WARN_NONBLOCK_20261111\n  const [zipLayoutWarnings, setZipLayoutWarnings] = useState<string[]>([]);',
+                  'Add layout warnings state')
+              a = replace_exact(a,
+                  '    setIsDownloadingZip(true);\n    try {\n      const { blob, filename } = await buildFiveFileBundle(',
+                  '    setZipLayoutWarnings([]);\n    setIsDownloadingZip(true);\n    try {\n      const { blob, filename, layoutWarnings } = await buildFiveFileBundle(',
+                  'Receive warning data')
+              a = replace_exact(a,
+                  '      triggerBundleDownload(blob, filename);\n      setZipMessage(`ZIP siap dan unduhan sudah diminta:',
+                  '      triggerBundleDownload(blob, filename);\n      setZipLayoutWarnings(layoutWarnings);\n      setZipMessage(`ZIP siap dan unduhan sudah diminta:',
+                  'Persist warnings after ZIP is created')
+              anchor = '            <p className="text-xs text-slate-300 mt-2">Kedua PDF dikonversi dari file Word yang sebenarnya melalui LibreOffice di server. Periksa halaman, font, dan catatan kaki sebelum dicetak.</p>'
+              display = r'''
+                      {zipLayoutWarnings.length > 0 && (
+                        <div role="alert" className="mt-3 rounded-lg border-2 border-amber-400 bg-amber-950/80 px-4 py-3 text-amber-100">
+                          <p className="font-bold">⚠ Perhatian: Risiko posisi foto pada hasil PDF</p>
+                          <p className="mt-1 text-sm font-semibold">Foto mungkin menumpuk / pindah posisi / jadi berantakan. Coba cek lagi hasil PDF Word-nya sebelum dicetak.</p>
+                          <ul className="mt-2 list-disc pl-5 text-xs space-y-1">
+                            {zipLayoutWarnings.map((warning, index) => <li key={index}>{warning}</li>)}
+                          </ul>
+                          <p className="mt-2 text-xs">PDF tetap dibuat dan paket ZIP tetap diunduh. Word asli tetap utuh. Deteksi ini menunjukkan risiko tata letak, bukan bukti pasti bahwa setiap foto rusak.</p>
+                        </div>
+                      )}
+          '''
+              a = replace_exact(a, anchor, display + anchor, 'Add visible nonblocking layout alert')
+              app.write_text(a, encoding='utf-8')
+          else:
+              print('Layout warning UI already exists; skipping App changes')
+
+          # Static checks: never change file count or block downloads for picture risks.
+          assert 'entries.length !== 5' in b
+          assert 'const thesisPdf = await convertWordToPdf' in b
+          assert 'const articlePdf = await convertWordToPdf' in b
+          assert 'layoutWarnings' in b and 'setZipLayoutWarnings(layoutWarnings)' in a
+          assert 'PDF tetap dibuat dan paket ZIP tetap diunduh' in a
+          print('ZAIN.NET Link 7: risk checker + nonblocking user warning installed.')
+          PY_PATCH
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Verify Vite build
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: npm run build
+
+      - name: Commit only Link 7 source code
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- src/journalConverter/utils/bundleExport.ts src/journalConverter/App.tsx
+          if git diff --cached --quiet; then
+            echo 'Nothing to commit (patch already installed).'
+          else
+            git commit -m 'Link 7: warn about PDF image layout risk without blocking ZIP'
+            git push origin HEAD:main
+          fi
+
+      - name: Publish newest frontend to GitHub Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main

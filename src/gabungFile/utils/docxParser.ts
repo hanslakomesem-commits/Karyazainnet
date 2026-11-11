@@ -475,7 +475,23 @@ export async function parseDocx(
       const limit = spec.id === 'keaslian' || bab1ElementIndex === -1
         ? elements.length
         : bab1ElementIndex;
-      const candidates = elements.slice(0, limit).filter((el) => isGenuineSignedHeading(el, spec.id));
+      let candidates = elements.slice(0, limit).filter((el) => isGenuineSignedHeading(el, spec.id));
+      // ZAINNET_KEASLIAN_LAMPIRAN_AUTO_V1
+      // Some theses place the originality statement as Lampiran 1, not a separate
+      // page titled PERNYATAAN KEASLIAN TULISAN. Only accept an exact heading,
+      // outside the TOC and after BAB I; never infer a location from a TOC entry.
+      if (spec.id === 'keaslian' && candidates.length === 0 && bab1ElementIndex >= 0) {
+        const appendixCandidates = elements.slice(bab1ElementIndex + 1).filter((el) => {
+          if (el.tag !== 'w:p') return false;
+          if (/<w:tab(?=[\s/>])|w:leader=/i.test(el.rawXml)) return false;
+          const normalized = el.text.toUpperCase().normalize('NFKC')
+            .replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+          return /^LAMPIRAN\s+1\s+(?:SURAT\s+)?(?:PERNYATAAN\s+)?KEASLIAN(?:\s+TULISAN)?$/.test(normalized);
+        });
+        if (appendixCandidates.length === 1) {
+          candidates = appendixCandidates;
+        }
+      }
       if (candidates.length === 1) {
         foundIndex = candidates[0].index;
         foundPage = candidates[0].estimatedPage;

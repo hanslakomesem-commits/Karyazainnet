@@ -58,7 +58,7 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
   const handleLink7GenerationReady = (fileName: string) => {
     if (!tool || done.current) return;
     done.current = true;
-    setStatus('Artikel selesai. Menyiapkan 2 file Word. Modul tetap terbuka sampai keduanya dikonfirmasi terunduh.');
+    setStatus('Artikel selesai. Menyiapkan Word dan PDF artikel. Modul tetap terbuka sampai keduanya dikonfirmasi terunduh.');
     recordSessionCompleted(tool, effectiveUserId, { fileName, reason: 'Artikel Link 7 selesai dibuat' }, [], 0);
     Promise.resolve(finishRef.current?.(tool, 'Artikel Link 7 selesai dibuat')).catch((err) => {
       setStatus('Artikel selesai, tetapi pencatatan kuota tertunda: ' + (err?.message || 'Periksa akun.'));
@@ -66,7 +66,7 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
   };
   const handleLink7DownloadsConfirmed = () => {
     if (!done.current) return;
-    setStatus('Dua file Word dikonfirmasi terunduh. Kembali ke menu utama...');
+    setStatus('Word dan PDF artikel dikonfirmasi terunduh. Kembali ke menu utama...');
     setCompleted(true);
     setTimeout(() => onClose(), 1200);
   };

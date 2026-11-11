@@ -50,7 +50,7 @@ async function verifyWordFile(file: File): Promise<void> {
   }
 }
 
-async function convertWordToPdf(source: Blob, filename: string, onAutoFix?: (count: number) => void): Promise<Blob> {
+export async function convertWordToPdf(source: Blob, filename: string, onAutoFix?: (count: number) => void): Promise<Blob> {
   // On GitHub Pages, deploymentBridge forwards this relative /api URL to the Render backend.
   const data = new FormData();
   data.append('file', source, filename);
@@ -149,6 +149,7 @@ export async function buildFiveFileBundle(
   thesis: ThesisSourceFiles,
   onProgress?: (status: string) => void,
   articleWordOverride?: Blob,
+  prepared?: { thesisPdf?: Blob; articlePdf?: Blob; coverWord?: Blob },
 ): Promise<{ blob: Blob; filename: string; layoutWarnings: string[]; autoFixedCount: number }> {
   if (!thesis.word) {
     throw new Error('Skripsi Word .docx belum tersedia. Unggah Word satu kali terlebih dahulu.');
@@ -167,21 +168,23 @@ export async function buildFiveFileBundle(
 
   onProgress?.('Menyiapkan Artikel Word dan Cover CD Word...');
   const [articleWord, coverWord] = await Promise.all([
-    articleWordOverride ? Promise.resolve(articleWordOverride) : buildJournalDocx(article), buildCoverCdDocx(article),
+    articleWordOverride ? Promise.resolve(articleWordOverride) : buildJournalDocx(article),
+    prepared?.coverWord ? Promise.resolve(prepared.coverWord) : buildCoverCdDocx(article),
   ]);
   if (articleWord.size < 200 || coverWord.size < 200) {
     throw new Error('File Artikel Word atau Cover CD tidak berhasil dibuat.');
   }
 
-  // Sequential conversions keep LibreOffice memory use within Render Free limits.
-  onProgress?.('Mengonversi skripsi Word menjadi PDF asli (LibreOffice)...');
+  // PDF skripsi bisa disiapkan sejak tahap AI dimulai; artikel PDF dibuat setelah Word siap.
+  // Reuse completed conversions instead of performing the same Render job twice.
   let autoFixedCount = 0;
-  const thesisPdf = await convertWordToPdf(thesis.word, 'Skripsi.docx', count => {
+  onProgress?.(prepared?.thesisPdf ? 'Menggunakan PDF skripsi yang sudah disiapkan...' : 'Mengonversi skripsi Word ke PDF...');
+  const thesisPdf = prepared?.thesisPdf || await convertWordToPdf(thesis.word, 'Skripsi.docx', count => {
     autoFixedCount += count;
     onProgress?.(`${count} kotak teks judul yang bertumpuk telah diperbaiki otomatis pada salinan PDF.`);
   });
-  onProgress?.('Mengonversi artikel Word menjadi PDF asli (LibreOffice)...');
-  const articlePdf = await convertWordToPdf(articleWord, 'Artikel.docx');
+  onProgress?.(prepared?.articlePdf ? 'Menggunakan PDF artikel siap pakai...' : 'Mengonversi artikel Word ke PDF...');
+  const articlePdf = prepared?.articlePdf || await convertWordToPdf(articleWord, 'Artikel.docx');
   onProgress?.('Mengemas 5 file ke ZIP...');
 
   const zip = new JSZip();

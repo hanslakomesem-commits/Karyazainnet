@@ -1,0 +1,189 @@
+name: ZAIN.NET - Percepat Link 7 Tanpa Mengurangi Konten
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/link7-optimasi-kecepatan.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: zainnet-link7-speed-patch
+  cancel-in-progress: false
+
+jobs:
+  optimize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Terapkan optimasi penanganan Gemini dan request stage
+        shell: bash
+        run: |
+          python3 - <<'PY_PATCH'
+          from pathlib import Path
+
+          router = Path('server/journal7/router.ts')
+          app = Path('src/journalConverter/App.tsx')
+          if not router.exists() or not app.exists():
+              raise SystemExit('Kode Link 7 tidak ditemukan; tidak ada file yang diubah.')
+
+          s = router.read_text(encoding='utf-8')
+          old_503 = """          console.log(`[Gemini API] Model "${modelName}" is at high demand (503), switching to next available candidate model immediately.`);
+                    break;"""
+          new_503 = """          if (attempt < maxRetriesPerModel) {
+                      const delayMs = 1200 * attempt;
+                      console.log(`[Gemini API] 503 pada "${modelName}", coba ulang model yang sama dalam ${delayMs}ms sebelum pindah model.`);
+                      await new Promise(resolve => setTimeout(resolve, delayMs));
+                      continue;
+                    }
+                    console.log(`[Gemini API] Model "${modelName}" tetap sibuk; gunakan model cadangan.`);
+                    break;"""
+          if s.count(old_503) != 1:
+              raise SystemExit('Kode penanganan 503 sudah berubah; patch berhenti aman.')
+          s = s.replace(old_503, new_503, 1)
+
+          anchor = """        const isUnavailableOrRateLimited =
+          """
+          add = r"""        // Kuota harian nol tidak akan pulih dengan mengulang model yang sama.
+                  if ((errMessage.includes('429') || errMessage.includes('RESOURCE_EXHAUSTED')) &&
+                      (/limit:\s*0\b|per day limit exceeded|retry in \d+h/i.test(errMessage))) {
+                    console.log(`[Gemini API] Kuota model "${modelName}" tidak tersedia; jangan buang waktu retry.`);
+                    break;
+                  }
+
+          """
+          if s.count(anchor) != 1:
+              raise SystemExit('Lokasi optimasi kuota tidak cocok; patch berhenti aman.')
+          s = s.replace(anchor, add + anchor, 1)
+
+          old_timeout = """        // 120s timeout per call to prevent hanging sockets
+                  const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Koneksi model Gemini melebihi batas waktu (timeout).')), 120000)
+                  );"""
+          new_timeout = """        // Model pilihan utama tetap memiliki batas 120 detik untuk artikel panjang.
+                  // Batas model CADANGAN lebih singkat agar fallback yang menggantung tidak menahan seluruh proses.
+                  const timeoutMs = modelName === targetModels[0] ? 120000 : 75000;
+                  const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Koneksi model Gemini melebihi batas waktu (timeout).')), timeoutMs)
+                  );"""
+          if s.count(old_timeout) != 1:
+              raise SystemExit('Lokasi pengaturan timeout tidak cocok; patch berhenti aman.')
+          s = s.replace(old_timeout, new_timeout, 1)
+
+          front = app.read_text(encoding='utf-8')
+          start = front.find('  // Helper to safely execute and parse JSON API responses with automatic retry and endpoint fallback')
+          end = front.find('  const makeSafeWordFileName', start)
+          if start < 0 or end < 0 or end <= start:
+              raise SystemExit('Helper fetch Link 7 tidak ditemukan; patch berhenti aman.')
+          old_helper = front[start:end]
+          if 'const safeFetchJson' not in old_helper or 'maxRetries = 4' not in old_helper:
+              raise SystemExit('Helper Link 7 sudah berubah; patch berhenti aman.')
+          new_helper = r"""  // ZAINNET_LINK7_PERFORMANCE_RETRY_GUARD_V1
+            // Hindari pemanggilan ganda endpoint tahap AI bila server sudah mengembalikan error.
+            // Tetap gunakan prompt, model, struktur artikel, dan panjang konten yang sama.
+            const safeFetchJson = async (
+              primaryPath: string,
+              options: RequestInit,
+              stageName: string,
+              maxRetries = 2
+            ) => {
+              const pathsToTry = [
+                primaryPath.startsWith('/api/journal7') ? primaryPath : `/api/journal7${primaryPath.replace('/api', '')}`,
+                primaryPath.startsWith('/api/journal7') ? primaryPath.replace('/api/journal7', '/api') : primaryPath,
+              ];
+              let lastErr: Error | null = null;
+              for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                let shouldRetry = false;
+                let matchedEndpoint = false;
+                for (const targetUrl of pathsToTry) {
+                  try {
+                    const res = await fetch(targetUrl, options);
+                    if (res.status === 404) continue; // URL kedua hanya jika endpoint pertama tidak ada.
+                    matchedEndpoint = true;
+                    const contentType = res.headers.get('content-type') || '';
+                    if (!contentType.includes('application/json')) {
+                      const error = new Error(`Respons server tidak berupa JSON pada ${stageName} (HTTP ${res.status}).`);
+                      (error as any).retryable = res.status >= 502;
+                      throw error;
+                    }
+                    const data = await res.json();
+                    if (!res.ok) {
+                      const message = String(data?.error || `Gagal pada ${stageName} (HTTP ${res.status}).`);
+                      const error = new Error(message);
+                      (error as any).retryable = [502, 503, 504].includes(res.status) ||
+                        (res.status === 500 && /\b503\b|high demand|UNAVAILABLE|timeout/i.test(message));
+                      throw error;
+                    }
+                    return data;
+                  } catch (err: any) {
+                    lastErr = err instanceof Error ? err : new Error(String(err));
+                    const transient = err?.retryable === true ||
+                      (err?.retryable === undefined &&
+                        /Failed to fetch|NetworkError|ECONNRESET|ETIMEDOUT/i.test(String(err?.message || '')));
+                    if (!transient) throw lastErr; // Jangan panggil ulang AI jika kuota/validasi gagal.
+                    shouldRetry = true;
+                    break; // Jangan kirim pekerjaan yang sama ke URL fallback.
+                  }
+                }
+                if (!matchedEndpoint && !shouldRetry) {
+                  throw new Error(`Endpoint AI untuk ${stageName} tidak tersedia (404).`);
+                }
+                if (!shouldRetry || attempt >= maxRetries) break;
+                setGenerationStatus((prev) => ({
+                  ...prev,
+                  message: `Koneksi ${stageName} terputus; menghubungkan ulang (${attempt}/${maxRetries})...`,
+                }));
+                await new Promise(resolve => setTimeout(resolve, attempt * 1800));
+              }
+              throw lastErr || new Error(`Gagal memproses ${stageName}.`);
+            };
+
+          """
+          front = front[:start] + new_helper + front[end:]
+          # Simpan hanya setelah kedua patch cocok dan berhasil disusun.
+          router.write_text(s, encoding='utf-8')
+          app.write_text(front, encoding='utf-8')
+          print('Optimasi selesai. Prompt, target kata, model utama dan export tidak diubah.')
+
+          PY_PATCH
+
+      - name: Instal dependensi
+        run: npm install --no-audit --no-fund
+
+      - name: Uji build frontend
+        env:
+          VITE_BASE_PATH: /Karyazainnet/
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: npm run build
+
+      - name: Simpan source code saja
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- src/journalConverter/App.tsx server/journal7/router.ts
+          if ! git diff --cached --quiet; then
+            git commit -m "Link7: smarter Gemini retry and avoid duplicate stage requests"
+            git push origin HEAD:main
+          else
+            echo "Source code sudah sesuai; tidak ada perubahan."
+          fi
+
+      - name: Jalankan GitHub Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main

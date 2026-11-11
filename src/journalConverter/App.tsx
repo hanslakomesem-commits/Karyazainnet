@@ -100,74 +100,62 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
     percent: number;
   }>({ stage: 0, message: '', percent: 0 });
 
-  // Helper to safely execute and parse JSON API responses with automatic retry and endpoint fallback
+  // ZAINNET_LINK7_PERFORMANCE_RETRY_GUARD_V1
+  // Hindari pemanggilan ganda endpoint tahap AI bila server sudah mengembalikan error.
+  // Tetap gunakan prompt, model, struktur artikel, dan panjang konten yang sama.
   const safeFetchJson = async (
     primaryPath: string,
     options: RequestInit,
     stageName: string,
-    maxRetries = 4
+    maxRetries = 2
   ) => {
-    let lastErr: any = null;
     const pathsToTry = [
       primaryPath.startsWith('/api/journal7') ? primaryPath : `/api/journal7${primaryPath.replace('/api', '')}`,
       primaryPath.startsWith('/api/journal7') ? primaryPath.replace('/api/journal7', '/api') : primaryPath,
     ];
-
+    let lastErr: Error | null = null;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      let shouldRetry = false;
+      let matchedEndpoint = false;
       for (const targetUrl of pathsToTry) {
         try {
           const res = await fetch(targetUrl, options);
-          if (res.status === 404) {
-            // Try fallback URL in pathsToTry
-            continue;
-          }
+          if (res.status === 404) continue; // URL kedua hanya jika endpoint pertama tidak ada.
+          matchedEndpoint = true;
           const contentType = res.headers.get('content-type') || '';
           if (!contentType.includes('application/json')) {
-            const rawText = await res.text();
-            console.warn(`Non-JSON response from ${targetUrl} (attempt ${attempt}/${maxRetries}):`, rawText.slice(0, 200));
-            if (attempt < maxRetries) {
-              setGenerationStatus((prev) => ({
-                ...prev,
-                message: `Menghubungkan ke server (${attempt}/${maxRetries})... mohon tunggu sejenak.`,
-              }));
-              await new Promise((resolve) => setTimeout(resolve, attempt * 2500));
-              continue;
-            }
-            throw new Error(
-              `Server mengembalikan respon tidak valid pada ${stageName}. Silakan coba klik tombol Mulai Proses kembali.`
-            );
+            const error = new Error(`Respons server tidak berupa JSON pada ${stageName} (HTTP ${res.status}).`);
+            (error as any).retryable = res.status >= 502;
+            throw error;
           }
-
           const data = await res.json();
           if (!res.ok) {
-            throw new Error(data.error || `Gagal pada ${stageName}.`);
+            const message = String(data?.error || `Gagal pada ${stageName} (HTTP ${res.status}).`);
+            const error = new Error(message);
+            (error as any).retryable = [502, 503, 504].includes(res.status) ||
+              (res.status === 500 && /\b503\b|high demand|UNAVAILABLE|timeout/i.test(message));
+            throw error;
           }
           return data;
         } catch (err: any) {
-          lastErr = err;
-          console.warn(`Fetch error for ${stageName} on ${targetUrl} (attempt ${attempt}/${maxRetries}):`, err.message);
-
-          if (err.message && (err.message.includes('spending cap') || err.message.includes('Monthly Spending Cap'))) {
-            throw err;
-          }
-
-          if (
-            attempt < maxRetries &&
-            (err.message?.includes('Failed to fetch') ||
-              err.message?.includes('NetworkError') ||
-              err.message?.includes('tidak valid') ||
-              err.message?.includes('timeout') ||
-              err.message?.includes('JSON'))
-          ) {
-            setGenerationStatus((prev) => ({
-              ...prev,
-              message: `Menghubungkan kembali (${attempt}/${maxRetries})...`,
-            }));
-            await new Promise((resolve) => setTimeout(resolve, attempt * 2500));
-            continue;
-          }
+          lastErr = err instanceof Error ? err : new Error(String(err));
+          const transient = err?.retryable === true ||
+            (err?.retryable === undefined &&
+              /Failed to fetch|NetworkError|ECONNRESET|ETIMEDOUT/i.test(String(err?.message || '')));
+          if (!transient) throw lastErr; // Jangan panggil ulang AI jika kuota/validasi gagal.
+          shouldRetry = true;
+          break; // Jangan kirim pekerjaan yang sama ke URL fallback.
         }
       }
+      if (!matchedEndpoint && !shouldRetry) {
+        throw new Error(`Endpoint AI untuk ${stageName} tidak tersedia (404).`);
+      }
+      if (!shouldRetry || attempt >= maxRetries) break;
+      setGenerationStatus((prev) => ({
+        ...prev,
+        message: `Koneksi ${stageName} terputus; menghubungkan ulang (${attempt}/${maxRetries})...`,
+      }));
+      await new Promise(resolve => setTimeout(resolve, attempt * 1800));
     }
     throw lastErr || new Error(`Gagal memproses ${stageName}.`);
   };

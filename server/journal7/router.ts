@@ -221,9 +221,11 @@ async function generateContentWithFallback(params: {
           config,
         });
 
-        // 120s timeout per call to prevent hanging sockets
+        // Model pilihan utama tetap memiliki batas 120 detik untuk artikel panjang.
+        // Batas model CADANGAN lebih singkat agar fallback yang menggantung tidak menahan seluruh proses.
+        const timeoutMs = modelName === targetModels[0] ? 120000 : 75000;
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Koneksi model Gemini melebihi batas waktu (timeout).')), 120000)
+          setTimeout(() => reject(new Error('Koneksi model Gemini melebihi batas waktu (timeout).')), timeoutMs)
         );
 
         const response: any = await Promise.race([callPromise, timeoutPromise]);
@@ -267,7 +269,20 @@ async function generateContentWithFallback(params: {
           errMessage.includes('UNAVAILABLE') ||
           errMessage.includes('overloaded')
         ) {
-          console.log(`[Gemini API] Model "${modelName}" is at high demand (503), switching to next available candidate model immediately.`);
+          if (attempt < maxRetriesPerModel) {
+            const delayMs = 1200 * attempt;
+            console.log(`[Gemini API] 503 pada "${modelName}", coba ulang model yang sama dalam ${delayMs}ms sebelum pindah model.`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            continue;
+          }
+          console.log(`[Gemini API] Model "${modelName}" tetap sibuk; gunakan model cadangan.`);
+          break;
+        }
+
+        // Kuota harian nol tidak akan pulih dengan mengulang model yang sama.
+        if ((errMessage.includes('429') || errMessage.includes('RESOURCE_EXHAUSTED')) &&
+            (/limit:\s*0\b|per day limit exceeded|retry in \d+h/i.test(errMessage))) {
+          console.log(`[Gemini API] Kuota model "${modelName}" tidak tersedia; jangan buang waktu retry.`);
           break;
         }
 

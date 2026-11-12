@@ -160,7 +160,7 @@ jobs:
                   handler_new = f"{path}\nrouter.post(['/generate-journal/stage{stage}', '/api/generate-journal/stage{stage}'], authorizeJournal7, async (req, res) => {{\n  const startedAt = Date.now();\n  try {{"
                   source = exact(source, handler_start, handler_new, f'router stage {stage} start')
                   source = exact(source, f'    res.json(data{stage});\n  }} catch (error: any) {{',
-                                 f'    console.log(`[Link7] Stage {stage} AI completed in ${{Date.now() - startedAt}}ms.`);\n    res.json(data{stage});\n  }} catch (error: any) {{', f'router stage {stage} completion')
+                                 f'    console.log(`[Link7] Stage {stage} AI completed in __JS_MS__ms.`);\n    res.json(data{stage});\n  }} catch (error: any) {{'.replace('__JS_MS__', '$' + '{Date.now() - startedAt}'), f'router stage {stage} completion')
               return source
           
           

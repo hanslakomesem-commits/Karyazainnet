@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react'; // ZAINNET_LINK7_GEMINI_FAST_FALLBACK_20261112
 import { Header } from './components/Header';
 import { SkripsiUploader } from './components/SkripsiUploader';
 import { JournalPreview } from './components/JournalPreview';
@@ -48,7 +48,22 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
     }
     setActiveTab(tab);
   };
+  // ZAINNET_LINK7_GEMINI_FAST_FALLBACK_20261112
+  // In-memory progress cache; never saved to localStorage or to a third-party service.
+  // Completed stages can be reused if the next stage fails and the same input is re-submitted.
+  const stageCache = useRef<{
+    rawText: string; settings: string; stage1?: any; stage2?: any; stage3?: any;
+  } | null>(null);
+  const generationBusy = useRef(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  useEffect(() => {
+    if (!isLoading) { setElapsedSeconds(0); return; }
+    const startedAt = Date.now();
+    const tick = () => setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [isLoading]);
   const [isDownloadingDocx, setIsDownloadingDocx] = useState(false);
   const [isDownloadingCoverCd, setIsDownloadingCoverCd] = useState(false);
   // ZAINNET_LINK7_ZIP5_20261111: File objects remain in browser memory, not backend storage.
@@ -137,7 +152,7 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
     primaryPath: string,
     options: RequestInit,
     stageName: string,
-    maxRetries = 2
+    maxRetries = 1 // Never duplicate expensive POST stage requests on uncertain network errors.
   ) => {
     const pathsToTry = [
       primaryPath.startsWith('/api/journal7') ? primaryPath : `/api/journal7${primaryPath.replace('/api', '')}`,
@@ -298,6 +313,19 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
     if (articleMode === 'template' && !findJournalMaster(templateId)) {
       setErrorMsg('Pilih master jurnal yang tersedia terlebih dahulu.'); return;
     }
+    if (generationBusy.current) return; // Prevent double-click / duplicate charge.
+    generationBusy.current = true;
+    const settings = JSON.stringify({
+      metadata: input.metadata, footnoteStyle: input.footnoteStyle,
+      pages: input.targetLengthPages, model: input.selectedModel,
+      methodology: input.methodologyType, templateId,
+      file: original ? [original.name, original.size, original.lastModified] : null,
+    });
+    if (!stageCache.current || stageCache.current.rawText !== input.rawText || stageCache.current.settings !== settings) {
+      stageCache.current = { rawText: input.rawText, settings };
+    }
+    const cached = stageCache.current;
+    const totalStartedAt = Date.now();
     // Starting a genuinely new generation opens a new transaction. Merely
     // opening the module or retrying the existing ZIP does not.
     onGenerationStarted?.();
@@ -328,7 +356,7 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
         percent: 30,
       });
 
-      const stage1Data = await safeFetchJson(
+      const stage1Data = cached.stage1 ?? await safeFetchJson(
         '/api/journal7/generate-journal/stage1',
         {
           method: 'POST',
@@ -337,6 +365,8 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
         },
         'Tahap 1 (Pendahuluan & Metode)'
       );
+      cached.stage1 = stage1Data;
+      console.info(`[Link7] Tahap 1 selesai/dipulihkan pada detik ${Math.round((Date.now() - totalStartedAt) / 1000)}.`);
 
       // Stage 2: Hasil & Pembahasan
       setGenerationStatus({
@@ -345,7 +375,7 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
         percent: 65,
       });
 
-      const stage2Data = await safeFetchJson(
+      const stage2Data = cached.stage2 ?? await safeFetchJson(
         '/api/journal7/generate-journal/stage2',
         {
           method: 'POST',
@@ -361,6 +391,8 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
         },
         'Tahap 2 (Hasil & Pembahasan)'
       );
+      cached.stage2 = stage2Data;
+      console.info(`[Link7] Tahap 2 selesai/dipulihkan pada detik ${Math.round((Date.now() - totalStartedAt) / 1000)}.`);
 
       // Stage 3: Kesimpulan, Footnotes & Daftar Pustaka
       setGenerationStatus({
@@ -369,7 +401,7 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
         percent: 90,
       });
 
-      const stage3Data = await safeFetchJson(
+      const stage3Data = cached.stage3 ?? await safeFetchJson(
         '/api/journal7/generate-journal/stage3',
         {
           method: 'POST',
@@ -386,6 +418,8 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
         },
         'Tahap 3 (Kesimpulan & Referensi)'
       );
+      cached.stage3 = stage3Data;
+      console.info(`[Link7] Tahap 3 selesai/dipulihkan pada detik ${Math.round((Date.now() - totalStartedAt) / 1000)}.`);
 
       // Merge all 3 stages with authentic title resolution
       const clientTitle = (input.metadata?.judul && !isSuspiciousFilenameTitle(input.metadata.judul) && isValidThesisTitle(input.metadata.judul))
@@ -428,11 +462,14 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
       setGenerationStatus({ stage: 0, message: '', percent: 100 });
       // Auto-download ONE five-file ZIP (no separate Word downloads, no extra ZIP button).
       const thesisWord = original?.name.toLowerCase().endsWith('.docx') ? original : null;
-      await prepareAndDownloadZip(fullArticle, thesisWord);
+      const zipRequested = await prepareAndDownloadZip(fullArticle, thesisWord);
+      if (zipRequested) stageCache.current = null; // New purchase => fresh content.
     } catch (err: any) {
       console.error('Generation Error:', err);
       setErrorMsg(err.message || 'Terjadi kesalahan saat memproses skripsi.');
     } finally {
+      generationBusy.current = false;
+      console.info(`[Link7] Durasi total proses yang diamati: ${Math.round((Date.now() - totalStartedAt) / 1000)} detik.`);
       setIsLoading(false);
       setGenerationStatus({ stage: 0, message: '', percent: 0 });
     }
@@ -703,7 +740,10 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
           <SkripsiUploader
             onSubmit={handleGenerateJournal}
             isLoading={isLoading}
-            generationStatus={generationStatus}
+            generationStatus={{
+              ...generationStatus,
+              message: isLoading ? `${generationStatus.message} (${elapsedSeconds} detik berjalan)` : generationStatus.message,
+            }}
             thesisPdfStatus={thesisPdfStatus}
             selectedModel={selectedModel}
             onSelectModel={handleSelectModel}

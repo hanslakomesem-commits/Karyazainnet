@@ -191,7 +191,13 @@ function safeJsonParse(rawText: string, fallback: any = {}): any {
   }
 }
 
-// Robust wrapper with automatic exponential backoff retry and multi-model fallback
+// ZAINNET_LINK7_GEMINI_FAST_FALLBACK_20261112
+// A short-lived per-instance health circuit: when Gemini reports 503 or times out,
+// prefer another configured model on subsequent stages instead of waiting twice.
+// No request content, student information or API tokens are cached here.
+const geminiCooldownUntil = new Map<string, number>();
+
+// Robust wrapper with fast fallback and bounded timeouts
 async function generateContentWithFallback(params: {
   contents: string;
   config?: any;
@@ -213,27 +219,50 @@ async function generateContentWithFallback(params: {
   }
 
   for (const modelName of targetModels) {
+    // A temporarily unhealthy model is skipped, never endlessly re-tried.
+    const cooldown = geminiCooldownUntil.get(modelName) || 0;
+    if (cooldown > Date.now()) {
+      console.log(`[Gemini API] Skipping busy model "${modelName}" for another ${Math.ceil((cooldown - Date.now()) / 1000)}s.`);
+      continue;
+    }
     for (let attempt = 1; attempt <= maxRetriesPerModel; attempt++) {
+      const modelStartedAt = Date.now();
       try {
         console.log(`[Gemini API] Trying model "${modelName}" (attempt ${attempt}/${maxRetriesPerModel})...`);
+        // Disable SDK internal repeated HTTP requests; cross-model fallback
+        // handles 503/timeouts so retries do not multiply unintentionally.
+        const callTimeoutMs = modelName === targetModels[0] ? 90000 : 75000;
         const callPromise = ai.models.generateContent({
           model: modelName,
           contents,
-          config,
+          config: {
+            ...(config || {}),
+            httpOptions: {
+              ...(config?.httpOptions || {}),
+              timeout: callTimeoutMs,
+              retryOptions: { attempts: 1 },
+            },
+          },
         });
 
-        // Model pilihan utama tetap memiliki batas 120 detik untuk artikel panjang.
-        // Batas model CADANGAN lebih singkat agar fallback yang menggantung tidak menahan seluruh proses.
-        const timeoutMs = modelName === targetModels[0] ? 120000 : 75000;
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Koneksi model Gemini melebihi batas waktu (timeout).')), timeoutMs)
-        );
-
-        const response: any = await Promise.race([callPromise, timeoutPromise]);
+        // 90s for first choice, 75s for a backup. Previously 120s / 75s.
+        // Always clear the deadline timer after the call, including failures.
+        const timeoutMs = modelName === targetModels[0] ? 90000 : 75000;
+        let deadline: ReturnType<typeof setTimeout> | undefined;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          deadline = setTimeout(() => reject(new Error('Koneksi model Gemini melebihi batas waktu (timeout).')), timeoutMs);
+        });
+        let response: any;
+        try {
+          response = await Promise.race([callPromise, timeoutPromise]);
+        } finally {
+          if (deadline !== undefined) clearTimeout(deadline);
+        }
         const textContent = getTextFromResponse(response);
 
         if (textContent && textContent.trim().length > 0) {
-          console.log(`[Gemini API] Success using model "${modelName}".`);
+          geminiCooldownUntil.delete(modelName);
+          console.log(`[Gemini API] Success using model "${modelName}" in ${Date.now() - modelStartedAt}ms.`);
           return response;
         }
       } catch (err: any) {
@@ -263,20 +292,23 @@ async function generateContentWithFallback(params: {
           break;
         }
 
-        // If model is experiencing temporary high-demand (503 UNAVAILABLE), immediately try next candidate model
+        // A 503 is a capacity failure, not an article-content error.
+        // Skip same-model retries immediately and cool it down for 90 seconds.
         if (
           errMessage.includes('503') ||
           errMessage.includes('high demand') ||
           errMessage.includes('UNAVAILABLE') ||
           errMessage.includes('overloaded')
         ) {
-          if (attempt < maxRetriesPerModel) {
-            const delayMs = 1200 * attempt;
-            console.log(`[Gemini API] 503 pada "${modelName}", coba ulang model yang sama dalam ${delayMs}ms sebelum pindah model.`);
-            await new Promise(resolve => setTimeout(resolve, delayMs));
-            continue;
-          }
-          console.log(`[Gemini API] Model "${modelName}" tetap sibuk; gunakan model cadangan.`);
+          geminiCooldownUntil.set(modelName, Date.now() + 90_000);
+          console.log(`[Gemini API] Model "${modelName}" sibuk; langsung pindah model cadangan (cooldown 90 detik).`);
+          break;
+        }
+
+        // After a long timeout, do not wait on the same unresponsive model again.
+        if (/melebihi batas waktu|timeout/i.test(errMessage)) {
+          geminiCooldownUntil.set(modelName, Date.now() + 60_000);
+          console.log(`[Gemini API] Model "${modelName}" timeout; pindah model cadangan.`);
           break;
         }
 
@@ -1461,12 +1493,14 @@ const authorizeJournal7 = async (req: express.Request, res: express.Response, ne
 
 // Stage 1 Endpoint
 router.post(['/generate-journal/stage1', '/api/generate-journal/stage1'], authorizeJournal7, async (req, res) => {
+  const startedAt = Date.now();
   try {
     const { rawText, metadata, targetLengthPages, selectedModel, methodologyType, templateId } = req.body;
     if (!rawText || rawText.trim().length === 0) {
       return res.status(400).json({ error: 'Teks skripsi tidak boleh kosong.' });
     }
     const data1 = await runStage1(ai, rawText, metadata, targetLengthPages, selectedModel, methodologyType, templateId);
+    console.log(`[Link7] Stage 1 AI completed in ${Date.now() - startedAt}ms.`);
     res.json(data1);
   } catch (error: any) {
     console.error('Error in Stage 1:', error);
@@ -1476,12 +1510,14 @@ router.post(['/generate-journal/stage1', '/api/generate-journal/stage1'], author
 
 // Stage 2 Endpoint
 router.post(['/generate-journal/stage2', '/api/generate-journal/stage2'], authorizeJournal7, async (req, res) => {
+  const startedAt = Date.now();
   try {
     const { rawText, stage1Data, targetLengthPages, selectedModel, methodologyType, templateId } = req.body;
     if (!rawText || rawText.trim().length === 0) {
       return res.status(400).json({ error: 'Teks skripsi tidak boleh kosong.' });
     }
     const data2 = await runStage2(ai, rawText, stage1Data, targetLengthPages, selectedModel, methodologyType, templateId);
+    console.log(`[Link7] Stage 2 AI completed in ${Date.now() - startedAt}ms.`);
     res.json(data2);
   } catch (error: any) {
     console.error('Error in Stage 2:', error);
@@ -1491,12 +1527,14 @@ router.post(['/generate-journal/stage2', '/api/generate-journal/stage2'], author
 
 // Stage 3 Endpoint
 router.post(['/generate-journal/stage3', '/api/generate-journal/stage3'], authorizeJournal7, async (req, res) => {
+  const startedAt = Date.now();
   try {
     const { rawText, stage1Data, stage2Data, footnoteStyle, selectedModel, methodologyType, templateId } = req.body;
     if (!rawText || rawText.trim().length === 0) {
       return res.status(400).json({ error: 'Teks skripsi tidak boleh kosong.' });
     }
     const data3 = await runStage3(ai, rawText, stage1Data, stage2Data, footnoteStyle, selectedModel, methodologyType, templateId);
+    console.log(`[Link7] Stage 3 AI completed in ${Date.now() - startedAt}ms.`);
     res.json(data3);
   } catch (error: any) {
     console.error('Error in Stage 3:', error);

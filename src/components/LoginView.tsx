@@ -277,14 +277,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   <label className="text-xs font-semibold text-slate-300">
                     Kata Sandi
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('admin_pin')}
-                    className="text-[11px] text-amber-400 hover:text-amber-300 transition-colors cursor-pointer flex items-center gap-1"
-                  >
-                    <Crown className="w-3 h-3" />
-                    <span>Login Kunci PIN Admin</span>
-                  </button>
+                  {/* ZAINNET_SUPABASE_ADMIN_AUTH_V1: Admin uses the regular email/password form. */}
+                  <span className="text-[11px] text-emerald-400">Admin: password Supabase</span>
                 </div>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />

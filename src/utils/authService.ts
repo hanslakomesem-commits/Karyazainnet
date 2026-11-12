@@ -144,6 +144,11 @@ export const registerStudentAccount = async (payload: RegisterPayload): Promise<
     console.warn('Supabase check notice:', e);
   }
 
+  // ZAINNET_SUPABASE_ADMIN_AUTH_V1: do not mint an admin through public registration.
+  if (cleanEmail === 'hanslakomesem@gmail.com' ||
+      payload.rolesConfig.adminEmails.some(e => e.trim().toLowerCase() === cleanEmail)) {
+    return { success: false, error: 'Email administrator harus masuk melalui Supabase Auth, bukan pendaftaran akun biasa.' };
+  }
   const role: UserRole = resolveUserRole(cleanEmail, payload.rolesConfig);
   const passwordHash = await hashPassword(cleanPassword);
   const uid = `mhs_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -244,6 +249,42 @@ export const loginWithEmailPassword = async (payload: LoginPayload): Promise<Reg
 
   if (!cleanPassword) {
     return { success: false, error: 'Silakan masukkan kata sandi akun Anda.' };
+  }
+
+  // ZAINNET_SUPABASE_ADMIN_AUTH_V1: only the verified Auth session may grant admin.
+  // Password is validated by Supabase Auth; it is NEVER read from legacy auth_accounts.
+  const authorizedAdminEmail = 'hanslakomesem@gmail.com';
+  if (cleanEmail === authorizedAdminEmail) {
+    try {
+      const { data, error } = await database().auth.signInWithPassword({
+        email: cleanEmail, password: cleanPassword
+      });
+      if (error || !data.user) {
+        return { success: false, error: 'Login Supabase gagal: ' + (error?.message || 'Email atau password tidak cocok.') };
+      }
+      if (data.user.app_metadata?.academic_role !== 'admin' ||
+          data.user.email?.trim().toLowerCase() !== authorizedAdminEmail) {
+        await database().auth.signOut();
+        return { success: false, error: 'Akun belum memiliki izin administrator di Supabase Auth.' };
+      }
+      clearActiveSession(); // avoid reviving the insecure local admin profile
+      return { success: true, user: {
+        uid: data.user.id,
+        email: authorizedAdminEmail,
+        displayName: data.user.user_metadata?.full_name || data.user.user_metadata?.name || 'Administrator ZAIN.NET',
+        photoURL: null,
+        isCustomAuth: false,
+        role: 'admin',
+        createdAt: Date.now()
+      } };
+    } catch (error: any) {
+      return { success: false, error: 'Tidak dapat terhubung ke Supabase Auth: ' + (error?.message || 'Coba ulang.') };
+    }
+  }
+  // Legacy PIN and password hashes must never grant an administrative role.
+  if (payload.rolesConfig.adminEmails.some(e => e.trim().toLowerCase() === cleanEmail) ||
+      cleanEmail === 'fastprint2026@gmail.com') {
+    return { success: false, error: 'Login admin lama sudah dinonaktifkan. Gunakan akun admin Supabase Auth yang telah diverifikasi.' };
   }
 
   const inputHash = await hashPassword(cleanPassword);
@@ -372,32 +413,10 @@ if (!account && connectionError) {
 export const SESSION_SECURITY_EPOCH = 'zain_auth_epoch_v2026_doraemon12';
 
 // Direct Admin Master PIN Login
-export const loginWithAdminMasterPin = (pin: string, adminEmail: string, rolesConfig: RolesConfig): RegisterResult => {
-  const targetPin = (rolesConfig.adminPinCode || 'Doraemon12').trim();
-  const inputPin = pin.trim();
-
-  if (!inputPin) {
-    return { success: false, error: 'Silakan masukkan PIN Rahasia Admin.' };
-  }
-
-  if (inputPin !== targetPin && inputPin !== 'Doraemon12') {
-    return { success: false, error: 'PIN Rahasia Admin salah. Pastikan Anda memasukkan PIN yang benar.' };
-  }
-
-  const cleanEmail = adminEmail.trim().toLowerCase() || rolesConfig.adminEmails[0] || 'fastprint2026@gmail.com';
-  const appUser: AppUser = {
-    uid: `admin_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
-    email: cleanEmail,
-    displayName: cleanEmail === 'fastprint2026@gmail.com' ? 'Admin Fastprint' : 'Administrator ZAIN.NET',
-    photoURL: null,
-    isCustomAuth: true,
-    role: 'admin',
-    createdAt: Date.now()
-  };
-
-  setActiveSession(appUser);
-  return { success: true, user: appUser };
-};
+// ZAINNET_SUPABASE_ADMIN_AUTH_V1: legacy master PIN cannot create an admin session.
+export const loginWithAdminMasterPin = (_pin: string, _adminEmail: string, _rolesConfig: RolesConfig): RegisterResult => ({
+  success: false, error: 'Akses admin melalui PIN ditutup. Masuk menggunakan email dan password Supabase Auth.'
+});
 
 export interface AdminCreateResellerPayload {
   email: string;

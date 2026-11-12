@@ -293,7 +293,9 @@ function AcademicHubMainApp({ onNavigateToPath, initialToolId }: { onNavigateToP
     return defaultRolesConfig;
   });
 
-  const userRole: UserRole = (user as any)?.role === 'admin' 
+  // ZAINNET_SUPABASE_ADMIN_AUTH_V1: admin must come from an authenticated Supabase event.
+  const [verifiedAdminUid, setVerifiedAdminUid] = useState<string | null>(null);
+  const userRole: UserRole = (user?.uid && user.uid === verifiedAdminUid) 
     ? 'admin' 
     : ((user as any)?.role === 'reseller' || (user?.email && rolesConfig.resellerEmails?.some(e => e.trim().toLowerCase() === user.email?.trim().toLowerCase())))
     ? 'reseller' 
@@ -678,7 +680,11 @@ function AcademicHubMainApp({ onNavigateToPath, initialToolId }: { onNavigateToP
     window.addEventListener('popstate', handlePopState);
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-
+      // ZAINNET_SUPABASE_ADMIN_AUTH_V1: trust only Supabase Auth's app_metadata claim.
+      const validAdmin = !!currentUser && !!currentUser.uid &&
+        currentUser.email?.trim().toLowerCase() === 'hanslakomesem@gmail.com' &&
+        (currentUser as any).role === 'admin' && !(currentUser as any).isCustomAuth;
+      setVerifiedAdminUid(validAdmin ? currentUser.uid : null);
       setUser(currentUser);
       if (currentUser) {
         void hydrateUserSessions(currentUser.uid).catch(console.warn);
@@ -894,6 +900,14 @@ function AcademicHubMainApp({ onNavigateToPath, initialToolId }: { onNavigateToP
         if (savedCustom) {
           try {
             const parsedUser: AppUser = JSON.parse(savedCustom);
+            // ZAINNET_SUPABASE_ADMIN_AUTH_V1: never restore an admin from localStorage.
+            if (parsedUser.role === 'admin' ||
+                parsedUser.email?.trim().toLowerCase() === 'hanslakomesem@gmail.com') {
+              localStorage.removeItem('zain_custom_auth_user');
+              localStorage.removeItem('admin_logged_in');
+              localStorage.removeItem('zain_admin_logged_in');
+              return;
+            }
             auth.currentUser = parsedUser as any;
             setUser(parsedUser);
             setIsGuest(false);
@@ -1320,10 +1334,10 @@ function AcademicHubMainApp({ onNavigateToPath, initialToolId }: { onNavigateToP
       customUser = userOrEmail;
     }
 
-    const isAdmin = customUser.role === 'admin' || rolesConfig.adminEmails.map(e => e.toLowerCase()).includes((customUser.email || '').toLowerCase());
-    if (isAdmin) {
-      customUser.role = 'admin';
-    }
+    // ZAINNET_SUPABASE_ADMIN_AUTH_V1: email and PIN are not admin credentials.
+    const isAdmin = customUser.role === 'admin' && customUser.isCustomAuth === false &&
+      customUser.email?.trim().toLowerCase() === 'hanslakomesem@gmail.com';
+    if (!isAdmin && customUser.role === 'admin') customUser.role = 'public';
 
     auth.currentUser = customUser as any;
     setUser(customUser);
@@ -1333,7 +1347,8 @@ function AcademicHubMainApp({ onNavigateToPath, initialToolId }: { onNavigateToP
     setAuthLoading(false);
 
     try {
-      localStorage.setItem('zain_custom_auth_user', JSON.stringify(customUser));
+      if (isAdmin) localStorage.removeItem('zain_custom_auth_user');
+      else localStorage.setItem('zain_custom_auth_user', JSON.stringify(customUser));
       if (isAdmin) {
         localStorage.setItem('admin_logged_in', 'true');
         localStorage.setItem('zain_admin_logged_in', 'true');

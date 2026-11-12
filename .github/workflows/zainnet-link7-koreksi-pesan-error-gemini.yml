@@ -1,0 +1,90 @@
+name: ZAIN.NET - Koreksi Pesan Error Gemini Link 7
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix-gemini-messages:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Correct Gemini error classifications
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          p = Path('server/journal7/router.ts')
+          s = p.read_text(encoding='utf-8')
+          marker = 'ZAINNET_LINK7_EXACT_GEMINI_ERRORS_20261112'
+          if marker in s:
+              print('Patch sudah ada. Tidak perlu diulang.')
+              raise SystemExit(0)
+          def change(old, new, label):
+              global s
+              count = s.count(old)
+              if count != 1:
+                  raise RuntimeError(f'{label}: anchor not unique ({count}). No changes saved.')
+              s = s.replace(old, new, 1)
+          change("  let lastError: any = null;", """  // ZAINNET_LINK7_EXACT_GEMINI_ERRORS_20261112
+            // Separate capacity failures, free-tier quota, and explicit billing caps.
+            let hadCapacityIssue = false;
+            let hadFreeTierZero = false;
+            let lastError: any = null;""", 'flags')
+          change("""        lastError = err;
+                  const errMessage = err?.message || JSON.stringify(err);""", """        lastError = err;
+                  const errMessage = err?.message || JSON.stringify(err);
+                  if (/503|504|UNAVAILABLE|DEADLINE_EXCEEDED|high demand|overloaded|timeout|melebihi batas waktu/i.test(errMessage)) {
+                    hadCapacityIssue = true;
+                  }
+                  if (/429|RESOURCE_EXHAUSTED/i.test(errMessage) && /limit:\\s*0\\b|free[_ -]?tier/i.test(errMessage)) {
+                    hadFreeTierZero = true;
+                  }""".replace('\\\\', '\\'), 'per-model flags')
+          change("""  if (finalErrMsg.includes('spending cap') || finalErrMsg.includes('RESOURCE_EXHAUSTED')) {
+              throw new Error(
+                'Batas kuota / pengeluaran API tercapai (Spending Cap Exceeded). Silakan periksa pengaturan kuota di https://ai.studio/spend atau coba lagi nanti.'
+              );
+            }""", """  // A Free Tier quota 429 is not evidence that monthly spending is exhausted.
+            if (/monthly spending cap|exceeded its monthly spending cap|spend cap exceeded/i.test(finalErrMsg)) {
+              throw new Error('Batas pengeluaran bulanan Gemini API tercapai. Periksa proyek API terkait di https://ai.studio/spend.');
+            }
+            if (hadCapacityIssue) {
+              throw new Error('Layanan Gemini sedang sibuk atau timeout (503/504). ' +
+                (hadFreeTierZero ? 'Model Pro cadangan juga tidak memiliki kuota Free Tier (429, limit 0). ' : '') +
+                'Belum ada bukti batas pengeluaran bulanan tercapai. Coba lagi saat layanan Google pulih.');
+            }
+            if (hadFreeTierZero) {
+              throw new Error('Kuota Free Tier model Gemini tidak tersedia (429, limit 0). Periksa Rate Limits atau pilih model yang memiliki kuota pada proyek Anda.');
+            }
+            if (/429|RESOURCE_EXHAUSTED/i.test(finalErrMsg)) {
+              throw new Error('Batas permintaan atau kuota Gemini API tercapai (429). Periksa Rate Limits Google AI Studio; ini tidak otomatis berarti batas pengeluaran bulanan.');
+            }""", 'final error classification')
+          p.write_text(s, encoding='utf-8')
+          print('Perbaikan pesan error Gemini diterapkan.')
+          PYCODE
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install packages
+        run: npm install --no-audit --no-fund
+      - name: Build website
+        run: npm run build
+      - name: Commit tested change
+        shell: bash
+        run: |
+          if git diff --quiet -- server/journal7/router.ts; then
+            echo "No changes needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/journal7/router.ts
+          git commit -m "fix(link7): distinguish Gemini Free Tier quota from monthly spending cap"
+          git push origin HEAD:main

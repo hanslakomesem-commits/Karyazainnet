@@ -19,7 +19,6 @@ import {
   getDocs, 
   deleteDoc,
   onSnapshot,
-  increment
 } from './storage/documents';
 import { 
   categoriesData, 
@@ -1377,11 +1376,12 @@ function AcademicHubMainApp({ onNavigateToPath, initialToolId }: { onNavigateToP
     if (tool.id === 'art-7') {
       if (!user?.uid) throw new Error('Masuk ke akun Supabase untuk menyelesaikan transaksi Link 7.');
       const finished = getSessionForTool(tool.id, user.uid);
-      if (!finished || finished.status !== 'completed' || finished.userId !== user.uid) {
+      if (!finished || finished.userId !== user.uid) {
         throw new Error('Identitas sesi Link 7 tidak sesuai dengan akun Supabase.');
       }
+      const verifiedSession = { ...finished, status: 'completed', completedAt: Date.now() };
       const { data, error } = await database().rpc('academic_complete_session', {
-        p_session: finished,
+        p_session: verifiedSession,
         p_details: details || 'Paket artikel Link 7 siap; unduhan ZIP diminta'
       });
       if (error) throw error;
@@ -1474,86 +1474,74 @@ function AcademicHubMainApp({ onNavigateToPath, initialToolId }: { onNavigateToP
     }
   };
 
-  // Pay directly with dashboard balance / wallet
+  // ZAINNET_LINK7_QUOTA_SERVER_GUARD_20261112
+  // Wallet purchase: atomically debit money AND credit quota in Supabase.
+  // Never save { __academic_increment: 1 } into academic_documents as a JSON value.
   const handlePayWithWallet = async (target: CheckoutTarget, quantity: number, totalCost: number) => {
     if (!user) { setShowLoginModal(true); return; }
-    if (userWalletBalance < totalCost) {
-      alert(`Saldo tidak mencukupi. Saldo Anda: Rp ${userWalletBalance.toLocaleString('id-ID')}, Dibutuhkan: Rp ${totalCost.toLocaleString('id-ID')}. Silakan isi saldo akun terlebih dahulu.`);
-      setShowTopUpModal(true);
+    if (target.type !== 'tool' && target.type !== 'category') {
+      alert('Pembelian lewat saldo tersedia per modul dan kategori.');
       return;
     }
-
     const orderId = `WALLET-${Date.now().toString(36).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
-
-    const purchase: UserPurchase = {
-      id: orderId,
-      userId: user.uid,
-      userEmail: user.email || 'user@zain.net',
-      itemId: target.type === 'tool' ? `tool:${target.id}` : target.type === 'category' ? `category:${target.id}` : 'all_access',
-      itemType: target.type,
-      itemTitle: quantity > 1 ? `${target.title} (${quantity}x)` : target.title,
-      amountPaid: totalCost,
-      originalAmount: (target.priceRp || 0) * quantity,
-      uniqueCode: 0,
-      orderId: orderId,
-      purchasedAt: Date.now(),
-      quotaGranted: quantity,
-      paymentType: 'wallet_balance',
-      method: 'wallet',
-      status: 'completed',
-      senderName: user.displayName || user.email?.split('@')[0] || 'Pengguna',
-      senderBank: 'Saldo Akun',
-      userEnteredAmount: totalCost,
-      paymentProofUrl: '',
-      transferNotes: `Pembayaran instan via Saldo Akun: Rp ${totalCost.toLocaleString('id-ID')}`
-    };
-
     try {
-      // 1. Deduct wallet balance
-      const newBal = Math.max(0, userWalletBalance - totalCost);
-      setUserWalletBalance(newBal);
-      localStorage.setItem(`zain_wallet_${user.uid}`, newBal.toString());
-      if (user.email) {
-        localStorage.setItem(`zain_wallet_${user.email}`, newBal.toString());
-        const emailDocId = user.email.trim().toLowerCase().replace(/[^a-zA-Z0-9]/g, '_');
-        setDoc(doc(db, 'wallets_by_email', emailDocId), {
-          userId: user.uid,
-          userEmail: user.email,
-          balance: newBal,
-          updatedAt: Date.now()
-        }, { merge: true }).catch(() => {});
+      const { data, error } = await database().rpc('academic_wallet_purchase', {
+        p_id: orderId, p_kind: target.type, p_item: String(target.id),
+        p_quantity: quantity, p_expected_total: totalCost,
+      });
+      if (error) throw error;
+      const purchase = data as UserPurchase;
+      const [quotas, wallet, trials] = await Promise.all([
+        getDoc(doc(db, 'users', user.uid, 'data', 'quotas')),
+        getDoc(doc(db, 'users', user.uid, 'data', 'wallet')),
+        getDoc(doc(db, 'users', user.uid, 'data', 'reseller_trials')),
+      ]);
+      if (quotas.exists()) {
+        const fresh = quotas.data() as UserQuotas;
+        setUserQuotas(fresh);
+        localStorage.setItem(`zain_quotas_${user.uid}`, JSON.stringify(fresh));
       }
-      await setDoc(doc(db, 'users', user.uid, 'data', 'wallet'), {
-        userId: user.uid,
-        balance: newBal,
-        updatedAt: Date.now()
-      }, { merge: true });
-      await setDoc(doc(db, 'users', user.uid), {
-        walletBalance: newBal,
-        updatedAt: new Date().toISOString()
-      }, { merge: true }).catch(() => {});
-
-      // 2. Grant quota
-      if (target.type === 'tool') {
-        const toolId = target.id;
-        const currentQ = userQuotas[toolId] || 0;
-        const newQuotas = { ...userQuotas, [toolId]: currentQ + quantity };
-        setUserQuotas(newQuotas);
-        localStorage.setItem(`zain_quotas_${user.uid}`, JSON.stringify(newQuotas));
-        await setDoc(doc(db, 'users', user.uid, 'data', 'quotas'), {
-          [toolId]: increment(quantity),
-          updatedAt: Date.now()
-        }, { merge: true });
+      if (wallet.exists()) {
+        const balance = Number(wallet.data()?.balance);
+        if (Number.isFinite(balance)) {
+          setUserWalletBalance(balance);
+          localStorage.setItem(`zain_wallet_${user.uid}`, String(balance));
+        }
       }
-
-      // 3. Save transactions
-      await setDoc(doc(db, 'transactions', orderId), purchase);
-      await setDoc(doc(db, 'users', user.uid, 'purchases', orderId), purchase);
-
+      if (trials.exists()) setResellerTrials(trials.data() as ResellerTrials);
       await handlePaymentSuccess(purchase);
     } catch (err: any) {
-      console.error('Error processing wallet purchase:', err);
-      alert('Gagal memproses pembayaran via saldo: ' + (err?.message || 'Terjadi kesalahan'));
+      console.error('Server wallet purchase failed:', err);
+      alert('Pembelian gagal diverifikasi oleh Supabase: ' + (err?.message || 'Periksa koneksi.'));
+    }
+  };
+
+  // Read fresh account rights from Supabase; ignore any stale local browser quota.
+  const openLink7Verified = async (tool: ToolItem) => {
+    if (!user?.uid) { setShowLoginModal(true); return; }
+    if (userRole === 'admin' && verifiedAdminUid === user.uid) { setActiveTool(tool); return; }
+    try {
+      const client = database();
+      const { data: identity, error: identityError } = await client.auth.getUser();
+      if (identityError || identity.user?.id !== user.uid) throw new Error('Login Supabase perlu diperbarui.');
+      const [quotaRes, trialRes] = await Promise.all([
+        client.from('academic_documents').select('payload').eq('path', `users/${user.uid}/data/quotas`).maybeSingle(),
+        client.from('academic_documents').select('payload').eq('path', `users/${user.uid}/data/reseller_trials`).maybeSingle(),
+      ]);
+      if (quotaRes.error || trialRes.error) throw quotaRes.error || trialRes.error;
+      const fresh = (quotaRes.data?.payload || {}) as UserQuotas;
+      const raw = (fresh as any)[tool.id];
+      const paid = typeof raw === 'number' && Number.isSafeInteger(raw) && raw > 0 ? raw : 0;
+      const trialData = (trialRes.data?.payload || {}) as ResellerTrials;
+      const usedRaw = (trialData as any)[tool.id];
+      const used = typeof usedRaw === 'number' && Number.isSafeInteger(usedRaw) && usedRaw >= 0 ? usedRaw : 0;
+      const free = identity.user?.app_metadata?.academic_role === 'reseller' && used < RESELLER_MAX_FREE_TRIALS;
+      setUserQuotas({ ...fresh, [tool.id]: paid });
+      setResellerTrials(trialData);
+      if (paid > 0 || free) setActiveTool(tool);
+      else setCheckoutTarget({ type: 'tool', id: tool.id, title: `1x Pembuatan: ${tool.title}`, priceRp: tool.priceRp || 0 } as CheckoutTarget);
+    } catch (err: any) {
+      alert('Belum bisa memverifikasi kuota Link 7 di Supabase. Akses ditunda: ' + (err?.message || 'Periksa koneksi.'));
     }
   };
 
@@ -2041,6 +2029,10 @@ function AcademicHubMainApp({ onNavigateToPath, initialToolId }: { onNavigateToP
                 isFreeTrialEligible={false}
                 userId={user?.uid}
                 onOpenTool={(tool) => {
+                  if (tool.id === 'art-7') {
+                    void openLink7Verified(tool);
+                    return;
+                  }
                   if (isIframeTool(tool) && userRole !== 'admin') {
                     setSelectedIframeLockedTool(tool);
                     setShowIframeLockedModal(true);

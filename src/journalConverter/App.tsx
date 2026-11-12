@@ -8,6 +8,7 @@ import { SkripsiInput, JournalArticle, FootnoteItem } from './types/journal';
 import { buildJournalDocx, exportJournalToDocx } from './utils/docxExport';
 import { triggerBundleDownload, downloadCoverCdOnly, buildFiveFileBundle, convertWordToPdf } from './utils/bundleExport';
 import { buildCoverCdDocx } from './utils/coverCdExport';
+import { database } from '../storage/client'; // ZAINNET_LINK7_QUOTA_SERVER_GUARD_20261112
 import { isSuspiciousFilenameTitle, isValidThesisTitle, extractMetadataFromSkripsiText } from './components/SkripsiUploader';
 import { AlertCircle } from 'lucide-react';
 import { JOURNAL_MASTER_CATALOG, findJournalMaster } from './data/journalTemplatesCatalog';
@@ -148,7 +149,15 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
       let matchedEndpoint = false;
       for (const targetUrl of pathsToTry) {
         try {
-          const res = await fetch(targetUrl, options);
+          // Always send the logged-in Supabase session to the protected AI API.
+          // A fresh user token is required even if a browser cached an old quota.
+          const { data: { session }, error: authError } = await database().auth.getSession();
+          if (authError || !session?.access_token) {
+            throw new Error('Sesi akun sudah berakhir. Masuk kembali untuk membuat artikel.');
+          }
+          const requestHeaders = new Headers(options.headers);
+          requestHeaders.set('Authorization', `Bearer ${session.access_token}`);
+          const res = await fetch(targetUrl, { ...options, headers: requestHeaders });
           if (res.status === 404) continue; // URL kedua hanya jika endpoint pertama tidak ada.
           matchedEndpoint = true;
           const contentType = res.headers.get('content-type') || '';

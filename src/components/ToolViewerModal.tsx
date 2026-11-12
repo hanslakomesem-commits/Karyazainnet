@@ -37,6 +37,8 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
   const [completed,setCompleted] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const done = useRef(false);
+  // ZAINNET_LINK7_QUOTA_SERVER_GUARD_20261112
+  const link7Saved = useRef(false);
   const finishRef = useRef(onFinishCreation);
   finishRef.current = onFinishCreation;
   const iframeKey = tool?.id;
@@ -82,6 +84,7 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
     if (!tool) return;
     if (link7ReturnTimer.current) clearTimeout(link7ReturnTimer.current);
     done.current = false;
+    link7Saved.current = false;
     setCompleted(false);
     recordSessionInProgress(tool, effectiveUserId, [], 0, 0, 'Pembuatan artikel Link 7 baru dimulai.');
     setStatus('Artikel sedang diproses. Transaksi akan selesai setelah ZIP berhasil disiapkan dan unduhan diminta.');
@@ -89,17 +92,22 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
   const handleLink7GenerationReady = (fileName: string) => {
     if (!tool || done.current) return;
     done.current = true;
-    setStatus('ZIP sudah dibuat dan unduhan diminta. Kembali otomatis ke menu utama...');
-    recordSessionCompleted(tool, effectiveUserId, { fileName, reason: 'Artikel Link 7 selesai dibuat' }, [], 0);
-    Promise.resolve(finishRef.current?.(tool, 'Artikel Link 7 selesai dibuat')).catch((err) => {
-      setStatus('ZIP diminta; pencatatan akun tertunda: ' + (err?.message || 'Periksa akun.'));
+    setStatus('ZIP sudah diminta. Menunggu konfirmasi transaksi dari Supabase...');
+    // Only a successful SERVER RPC may mark a session completed.
+    // The previous implementation showed success locally before quota was charged.
+    Promise.resolve(finishRef.current?.(tool, `ZIP Link 7: ${fileName}`)).then(() => {
+      link7Saved.current = true;
+      recordSessionCompleted(tool, effectiveUserId, { fileName, reason: 'Artikel Link 7 selesai, kuota tercatat di server' }, [], 0);
+      setStatus('Transaksi selesai di Supabase. Kembali otomatis ke menu utama...');
+      returnToHomeAfterZip(3500);
+    }).catch((err: any) => {
+      done.current = false;
+      link7Saved.current = false;
+      setStatus('ZIP sudah diminta, tetapi transaksi belum tersimpan: ' + (err?.message || 'Periksa akun.') + '. Tekan Unduh Ulang ZIP untuk mencoba sinkronisasi.');
     });
-    // Allow Chrome a short window to start the download and user to retry.
-    // Give Firefox/Chrome time to display the download and offer a manual fallback.
-    returnToHomeAfterZip(8000);
   };
   const handleLink7DownloadsConfirmed = () => {
-    if (!done.current) return;
+    if (!done.current || !link7Saved.current) return;
     setStatus('Kembali ke menu utama...');
     returnToHomeAfterZip(150);
   };

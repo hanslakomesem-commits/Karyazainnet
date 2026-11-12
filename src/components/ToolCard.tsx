@@ -356,7 +356,7 @@ export const ToolCard: React.FC<ToolCardProps> = ({
                     : 'bg-blue-600 hover:bg-blue-500 text-white'
                 }`}
               >
-                {isFreeDirectTool ? 'Buka Nota (Gratis)' : isCompletedSession ? 'Buka Lagi' : 'Buka'}
+                {isFreeDirectTool ? 'Buka Nota (Gratis)' : isAdmin ? 'Buka (Admin)' : isCompletedSession ? 'Buat Lagi (Gunakan Kuota)' : 'Buka'}
               </button>
             )}
           </div>

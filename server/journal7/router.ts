@@ -1,4 +1,5 @@
 import express from 'express';
+import { createClient } from '@supabase/supabase-js'; // ZAINNET_LINK7_QUOTA_SERVER_GUARD_20261112
 import path from 'path';
 import fs from 'fs';
 import { execFileSync } from 'child_process';
@@ -1418,8 +1419,48 @@ Kembalikan HANYA format JSON valid dengan field 'kesimpulan', 'daftarPustaka', d
   return parsed;
 }
 
+// ZAINNET_LINK7_QUOTA_SERVER_GUARD_20261112
+// Deny AI work when the authenticated account has no verified remaining use.
+// This server check cannot be bypassed by editing localStorage or the Buka Lagi button.
+const authorizeJournal7 = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const token = (req.get('Authorization') || '').match(/^Bearer\s+(.+)$/i)?.[1];
+  if (!token) return res.status(401).json({ error: 'Login Supabase diperlukan untuk menggunakan Generator Artikel Link 7.' });
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://pxseiytikiulxincoolh.supabase.co';
+  const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_KA2AwEzwuepbHm2yu95IkA_eUBb2sXK';
+  if (!key) return res.status(503).json({ error: 'Konfigurasi autentikasi backend belum tersedia.' });
+  try {
+    const sb = createClient(url, key, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data: identity, error: userError } = await sb.auth.getUser(token);
+    const user = userError ? null : identity?.user;
+    if (!user) return res.status(401).json({ error: 'Sesi Supabase tidak valid. Silakan login kembali.' });
+    if (user.app_metadata?.academic_role === 'admin') return next();
+    const uid = user.id;
+    const [{ data: quota, error: quotaError }, { data: trials, error: trialError }] = await Promise.all([
+      sb.from('academic_documents').select('payload').eq('path', `users/${uid}/data/quotas`).maybeSingle(),
+      sb.from('academic_documents').select('payload').eq('path', `users/${uid}/data/reseller_trials`).maybeSingle(),
+    ]);
+    if (quotaError || trialError) throw quotaError || trialError;
+    // Reject invalid increment objects and non-integer browser data as non-entitlements.
+    const raw = quota?.payload?.['art-7'];
+    const paid = typeof raw === 'number' && Number.isSafeInteger(raw) && raw > 0 ? raw : 0;
+    const usedRaw = trials?.payload?.['art-7'];
+    const used = typeof usedRaw === 'number' && Number.isSafeInteger(usedRaw) && usedRaw >= 0 ? usedRaw : 0;
+    const hasResellerTrial = user.app_metadata?.academic_role === 'reseller' && used < 3;
+    if (!paid && !hasResellerTrial) {
+      return res.status(402).json({ error: 'Kuota Link 7 sudah habis atau belum valid. Silakan membeli 1x pembuatan sebelum membuat artikel baru.' });
+    }
+    return next();
+  } catch (err: any) {
+    console.warn('[Link7] Quota verification failed:', err?.message || err);
+    return res.status(503).json({ error: 'Pemeriksaan kuota Supabase gagal. Coba kembali tanpa mengulang pembayaran.' });
+  }
+};
+
 // Stage 1 Endpoint
-router.post(['/generate-journal/stage1', '/api/generate-journal/stage1'], async (req, res) => {
+router.post(['/generate-journal/stage1', '/api/generate-journal/stage1'], authorizeJournal7, async (req, res) => {
   try {
     const { rawText, metadata, targetLengthPages, selectedModel, methodologyType, templateId } = req.body;
     if (!rawText || rawText.trim().length === 0) {
@@ -1434,7 +1475,7 @@ router.post(['/generate-journal/stage1', '/api/generate-journal/stage1'], async 
 });
 
 // Stage 2 Endpoint
-router.post(['/generate-journal/stage2', '/api/generate-journal/stage2'], async (req, res) => {
+router.post(['/generate-journal/stage2', '/api/generate-journal/stage2'], authorizeJournal7, async (req, res) => {
   try {
     const { rawText, stage1Data, targetLengthPages, selectedModel, methodologyType, templateId } = req.body;
     if (!rawText || rawText.trim().length === 0) {
@@ -1449,7 +1490,7 @@ router.post(['/generate-journal/stage2', '/api/generate-journal/stage2'], async 
 });
 
 // Stage 3 Endpoint
-router.post(['/generate-journal/stage3', '/api/generate-journal/stage3'], async (req, res) => {
+router.post(['/generate-journal/stage3', '/api/generate-journal/stage3'], authorizeJournal7, async (req, res) => {
   try {
     const { rawText, stage1Data, stage2Data, footnoteStyle, selectedModel, methodologyType, templateId } = req.body;
     if (!rawText || rawText.trim().length === 0) {
@@ -1464,7 +1505,7 @@ router.post(['/generate-journal/stage3', '/api/generate-journal/stage3'], async 
 });
 
 // Single combined endpoint running all 3 stages in sequence (Fallback & direct backend call)
-router.post(['/generate-journal', '/api/generate-journal'], async (req, res) => {
+router.post(['/generate-journal', '/api/generate-journal'], authorizeJournal7, async (req, res) => {
   try {
     const { rawText, metadata, footnoteStyle, targetLengthPages, selectedModel, methodologyType, templateId } = req.body;
 
@@ -1508,7 +1549,7 @@ router.post(['/generate-journal', '/api/generate-journal'], async (req, res) => 
 });
 
 // 3. Regenerate / Polish Specific Section Endpoint
-router.post(['/regenerate-section', '/api/regenerate-section'], async (req, res) => {
+router.post(['/regenerate-section', '/api/regenerate-section'], authorizeJournal7, async (req, res) => {
   try {
     const { sectionName, currentText, instructions, contextTitle, selectedModel } = req.body;
 
@@ -1547,7 +1588,7 @@ Hasilkan teks bagian "${sectionName}" yang baru dan lengkap dalam bahasa Indones
 });
 
 // 4. Regenerate Standard Footnotes Endpoint (Book Citations & Interview/Observation with Interviewee Names)
-router.post(['/regenerate-footnotes', '/api/regenerate-footnotes'], async (req, res) => {
+router.post(['/regenerate-footnotes', '/api/regenerate-footnotes'], authorizeJournal7, async (req, res) => {
   try {
     const { article, selectedModel } = req.body;
     if (!article) {

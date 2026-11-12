@@ -1,0 +1,291 @@
+name: ZAIN.NET - Kunci Link 7 Setelah Selesai dan Perbaiki Kuota
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  secure-link7:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Patch Link 7 and payment flow
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          #!/usr/bin/env python3
+          """ZAIN.NET Link 7: close stale-quota reuse, verify server billing and harden AI gate.
+          Runs only at the root of Karyazainnet. Refuses ambiguous source patterns.
+          """
+          from pathlib import Path
+          M='ZAINNET_LINK7_QUOTA_SERVER_GUARD_20261112'
+          
+          def replace(s,old,new,label):
+              n=s.count(old)
+              if n!=1: raise RuntimeError(f'{label}: expected 1 match; got {n}')
+              return s.replace(old,new,1)
+          
+          def edit(fname, transformer):
+              f=Path(fname)
+              old=f.read_text(encoding='utf-8')
+              if M in old:
+                  print(f'Already patched: {fname}')
+                  return
+              new=transformer(old)
+              if new==old: raise RuntimeError(f'{fname}: no changes')
+              f.write_text(new,encoding='utf-8')
+              print(f'Patched: {fname}')
+          
+          def converter(s):
+              s=replace(s,"import { buildCoverCdDocx } from './utils/coverCdExport';", "import { buildCoverCdDocx } from './utils/coverCdExport';\nimport { database } from '../storage/client'; // "+M, 'converter import')
+              s=replace(s,"""      for (const targetUrl of pathsToTry) {
+                  try {
+                    const res = await fetch(targetUrl, options);""", """      for (const targetUrl of pathsToTry) {
+                  try {
+                    // Always send the logged-in Supabase session to the protected AI API.
+                    // A fresh user token is required even if a browser cached an old quota.
+                    const { data: { session }, error: authError } = await database().auth.getSession();
+                    if (authError || !session?.access_token) {
+                      throw new Error('Sesi akun sudah berakhir. Masuk kembali untuk membuat artikel.');
+                    }
+                    const requestHeaders = new Headers(options.headers);
+                    requestHeaders.set('Authorization', `Bearer ${session.access_token}`);
+                    const res = await fetch(targetUrl, { ...options, headers: requestHeaders });""", 'converter auth headers')
+              return s
+          
+          def router(s):
+              s=replace(s,"import express from 'express';", "import express from 'express';\nimport { createClient } from '@supabase/supabase-js'; // "+M, 'router import')
+              s=replace(s,"// Stage 1 Endpoint", """// ZAINNET_LINK7_QUOTA_SERVER_GUARD_20261112
+          // Deny AI work when the authenticated account has no verified remaining use.
+          // This server check cannot be bypassed by editing localStorage or the Buka Lagi button.
+          const authorizeJournal7 = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+            const token = (req.get('Authorization') || '').match(/^Bearer\\s+(.+)$/i)?.[1];
+            if (!token) return res.status(401).json({ error: 'Login Supabase diperlukan untuk menggunakan Generator Artikel Link 7.' });
+            const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://pxseiytikiulxincoolh.supabase.co';
+            const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_KA2AwEzwuepbHm2yu95IkA_eUBb2sXK';
+            if (!key) return res.status(503).json({ error: 'Konfigurasi autentikasi backend belum tersedia.' });
+            try {
+              const sb = createClient(url, key, {
+                global: { headers: { Authorization: `Bearer ${token}` } },
+                auth: { persistSession: false, autoRefreshToken: false },
+              });
+              const { data: identity, error: userError } = await sb.auth.getUser(token);
+              const user = userError ? null : identity?.user;
+              if (!user) return res.status(401).json({ error: 'Sesi Supabase tidak valid. Silakan login kembali.' });
+              if (user.app_metadata?.academic_role === 'admin') return next();
+              const uid = user.id;
+              const [{ data: quota, error: quotaError }, { data: trials, error: trialError }] = await Promise.all([
+                sb.from('academic_documents').select('payload').eq('path', `users/${uid}/data/quotas`).maybeSingle(),
+                sb.from('academic_documents').select('payload').eq('path', `users/${uid}/data/reseller_trials`).maybeSingle(),
+              ]);
+              if (quotaError || trialError) throw quotaError || trialError;
+              // Reject invalid increment objects and non-integer browser data as non-entitlements.
+              const raw = quota?.payload?.['art-7'];
+              const paid = typeof raw === 'number' && Number.isSafeInteger(raw) && raw > 0 ? raw : 0;
+              const usedRaw = trials?.payload?.['art-7'];
+              const used = typeof usedRaw === 'number' && Number.isSafeInteger(usedRaw) && usedRaw >= 0 ? usedRaw : 0;
+              const hasResellerTrial = user.app_metadata?.academic_role === 'reseller' && used < 3;
+              if (!paid && !hasResellerTrial) {
+                return res.status(402).json({ error: 'Kuota Link 7 sudah habis atau belum valid. Silakan membeli 1x pembuatan sebelum membuat artikel baru.' });
+              }
+              return next();
+            } catch (err: any) {
+              console.warn('[Link7] Quota verification failed:', err?.message || err);
+              return res.status(503).json({ error: 'Pemeriksaan kuota Supabase gagal. Coba kembali tanpa mengulang pembayaran.' });
+            }
+          };
+          
+          // Stage 1 Endpoint""", 'router guard declaration')
+              for endpoint in [
+                  "router.post(['/generate-journal/stage1', '/api/generate-journal/stage1'], async (req, res) => {",
+                  "router.post(['/generate-journal/stage2', '/api/generate-journal/stage2'], async (req, res) => {",
+                  "router.post(['/generate-journal/stage3', '/api/generate-journal/stage3'], async (req, res) => {",
+                  "router.post(['/generate-journal', '/api/generate-journal'], async (req, res) => {",
+                  "router.post(['/regenerate-section', '/api/regenerate-section'], async (req, res) => {",
+                  "router.post(['/regenerate-footnotes', '/api/regenerate-footnotes'], async (req, res) => {",
+              ]:
+                  s=replace(s,endpoint,endpoint.replace(', async (req, res) => {', ', authorizeJournal7, async (req, res) => {'), 'protected endpoint')
+              return s
+          
+          def viewer(s):
+              s=replace(s,"""  const done = useRef(false);
+            const finishRef = useRef(onFinishCreation);""", """  const done = useRef(false);
+            // ZAINNET_LINK7_QUOTA_SERVER_GUARD_20261112
+            const link7Saved = useRef(false);
+            const finishRef = useRef(onFinishCreation);""", 'viewer ref')
+              s=replace(s,"""    done.current = false;
+              setCompleted(false);
+              recordSessionInProgress(tool, effectiveUserId, [], 0, 0, 'Pembuatan artikel Link 7 baru dimulai.');""", """    done.current = false;
+              link7Saved.current = false;
+              setCompleted(false);
+              recordSessionInProgress(tool, effectiveUserId, [], 0, 0, 'Pembuatan artikel Link 7 baru dimulai.');""", 'new generation state')
+              before="""  const handleLink7GenerationReady = (fileName: string) => {
+              if (!tool || done.current) return;
+              done.current = true;
+              setStatus('ZIP sudah dibuat dan unduhan diminta. Kembali otomatis ke menu utama...');
+              recordSessionCompleted(tool, effectiveUserId, { fileName, reason: 'Artikel Link 7 selesai dibuat' }, [], 0);
+              Promise.resolve(finishRef.current?.(tool, 'Artikel Link 7 selesai dibuat')).catch((err) => {
+                setStatus('ZIP diminta; pencatatan akun tertunda: ' + (err?.message || 'Periksa akun.'));
+              });
+              // Allow Chrome a short window to start the download and user to retry.
+              // Give Firefox/Chrome time to display the download and offer a manual fallback.
+              returnToHomeAfterZip(8000);
+            };"""
+              after="""  const handleLink7GenerationReady = (fileName: string) => {
+              if (!tool || done.current) return;
+              done.current = true;
+              setStatus('ZIP sudah diminta. Menunggu konfirmasi transaksi dari Supabase...');
+              // Only a successful SERVER RPC may mark a session completed.
+              // The previous implementation showed success locally before quota was charged.
+              Promise.resolve(finishRef.current?.(tool, `ZIP Link 7: ${fileName}`)).then(() => {
+                link7Saved.current = true;
+                recordSessionCompleted(tool, effectiveUserId, { fileName, reason: 'Artikel Link 7 selesai, kuota tercatat di server' }, [], 0);
+                setStatus('Transaksi selesai di Supabase. Kembali otomatis ke menu utama...');
+                returnToHomeAfterZip(3500);
+              }).catch((err: any) => {
+                done.current = false;
+                link7Saved.current = false;
+                setStatus('ZIP sudah diminta, tetapi transaksi belum tersimpan: ' + (err?.message || 'Periksa akun.') + '. Tekan Unduh Ulang ZIP untuk mencoba sinkronisasi.');
+              });
+            };"""
+              s=replace(s,before,after,'viewer server-first completion')
+              s=replace(s,"""  const handleLink7DownloadsConfirmed = () => {
+              if (!done.current) return;""", """  const handleLink7DownloadsConfirmed = () => {
+              if (!done.current || !link7Saved.current) return;""",'viewer confirmed guard')
+              return s
+          
+          def app(s):
+              s=replace(s,"""      const finished = getSessionForTool(tool.id, user.uid);
+                if (!finished || finished.status !== 'completed' || finished.userId !== user.uid) {
+                  throw new Error('Identitas sesi Link 7 tidak sesuai dengan akun Supabase.');
+                }
+                const { data, error } = await database().rpc('academic_complete_session', {
+                  p_session: finished,""", """      const finished = getSessionForTool(tool.id, user.uid);
+                if (!finished || finished.userId !== user.uid) {
+                  throw new Error('Identitas sesi Link 7 tidak sesuai dengan akun Supabase.');
+                }
+                const verifiedSession = { ...finished, status: 'completed', completedAt: Date.now() };
+                const { data, error } = await database().rpc('academic_complete_session', {
+                  p_session: verifiedSession,""",'app server-first completion')
+              a="""  // Pay directly with dashboard balance / wallet
+            const handlePayWithWallet = async (target: CheckoutTarget, quantity: number, totalCost: number) => {"""
+              b="""  const handleToggleSection = (id: number) => {"""
+              start=s.count(a); end=s.count(b)
+              if start!=1 or end!=1:raise RuntimeError('Wallet section markers changed')
+              before=s[s.index(a):s.index(b)]
+              after="""  // ZAINNET_LINK7_QUOTA_SERVER_GUARD_20261112
+            // Wallet purchase: atomically debit money AND credit quota in Supabase.
+            // Never save { __academic_increment: 1 } into academic_documents as a JSON value.
+            const handlePayWithWallet = async (target: CheckoutTarget, quantity: number, totalCost: number) => {
+              if (!user) { setShowLoginModal(true); return; }
+              if (target.type !== 'tool' && target.type !== 'category') {
+                alert('Pembelian lewat saldo tersedia per modul dan kategori.');
+                return;
+              }
+              const orderId = `WALLET-${Date.now().toString(36).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+              try {
+                const { data, error } = await database().rpc('academic_wallet_purchase', {
+                  p_id: orderId, p_kind: target.type, p_item: String(target.id),
+                  p_quantity: quantity, p_expected_total: totalCost,
+                });
+                if (error) throw error;
+                const purchase = data as UserPurchase;
+                const [quotas, wallet, trials] = await Promise.all([
+                  getDoc(doc(db, 'users', user.uid, 'data', 'quotas')),
+                  getDoc(doc(db, 'users', user.uid, 'data', 'wallet')),
+                  getDoc(doc(db, 'users', user.uid, 'data', 'reseller_trials')),
+                ]);
+                if (quotas.exists()) {
+                  const fresh = quotas.data() as UserQuotas;
+                  setUserQuotas(fresh);
+                  localStorage.setItem(`zain_quotas_${user.uid}`, JSON.stringify(fresh));
+                }
+                if (wallet.exists()) {
+                  const balance = Number(wallet.data()?.balance);
+                  if (Number.isFinite(balance)) {
+                    setUserWalletBalance(balance);
+                    localStorage.setItem(`zain_wallet_${user.uid}`, String(balance));
+                  }
+                }
+                if (trials.exists()) setResellerTrials(trials.data() as ResellerTrials);
+                await handlePaymentSuccess(purchase);
+              } catch (err: any) {
+                console.error('Server wallet purchase failed:', err);
+                alert('Pembelian gagal diverifikasi oleh Supabase: ' + (err?.message || 'Periksa koneksi.'));
+              }
+            };
+          
+          """
+              s=replace(s,before,after,'wallet atomic RPC')
+              c="""  const handleToggleSection = (id: number) => {"""
+              insert="""  // Read fresh account rights from Supabase; ignore any stale local browser quota.
+            const openLink7Verified = async (tool: ToolItem) => {
+              if (!user?.uid) { setShowLoginModal(true); return; }
+              if (userRole === 'admin' && verifiedAdminUid === user.uid) { setActiveTool(tool); return; }
+              try {
+                const client = database();
+                const { data: identity, error: identityError } = await client.auth.getUser();
+                if (identityError || identity.user?.id !== user.uid) throw new Error('Login Supabase perlu diperbarui.');
+                const [quotaRes, trialRes] = await Promise.all([
+                  client.from('academic_documents').select('payload').eq('path', `users/${user.uid}/data/quotas`).maybeSingle(),
+                  client.from('academic_documents').select('payload').eq('path', `users/${user.uid}/data/reseller_trials`).maybeSingle(),
+                ]);
+                if (quotaRes.error || trialRes.error) throw quotaRes.error || trialRes.error;
+                const fresh = (quotaRes.data?.payload || {}) as UserQuotas;
+                const raw = (fresh as any)[tool.id];
+                const paid = typeof raw === 'number' && Number.isSafeInteger(raw) && raw > 0 ? raw : 0;
+                const trialData = (trialRes.data?.payload || {}) as ResellerTrials;
+                const usedRaw = (trialData as any)[tool.id];
+                const used = typeof usedRaw === 'number' && Number.isSafeInteger(usedRaw) && usedRaw >= 0 ? usedRaw : 0;
+                const free = identity.user?.app_metadata?.academic_role === 'reseller' && used < RESELLER_MAX_FREE_TRIALS;
+                setUserQuotas({ ...fresh, [tool.id]: paid });
+                setResellerTrials(trialData);
+                if (paid > 0 || free) setActiveTool(tool);
+                else setCheckoutTarget({ type: 'tool', id: tool.id, title: `1x Pembuatan: ${tool.title}`, priceRp: tool.priceRp || 0 } as CheckoutTarget);
+              } catch (err: any) {
+                alert('Belum bisa memverifikasi kuota Link 7 di Supabase. Akses ditunda: ' + (err?.message || 'Periksa koneksi.'));
+              }
+            };
+          
+          """
+              s=replace(s,c,insert+c,'app fresh quota function')
+              s=replace(s,"""                onOpenTool={(tool) => {
+                            if (isIframeTool(tool) && userRole !== 'admin') {""", """                onOpenTool={(tool) => {
+                            if (tool.id === 'art-7') {
+                              void openLink7Verified(tool);
+                              return;
+                            }
+                            if (isIframeTool(tool) && userRole !== 'admin') {""", 'app menu open check')
+              s=replace(s, '  increment\n', '', 'remove unused increment import')
+              return s
+          
+          def card(s):
+              return replace(s, "isFreeDirectTool ? 'Buka Nota (Gratis)' : isCompletedSession ? 'Buka Lagi' : 'Buka'", "isFreeDirectTool ? 'Buka Nota (Gratis)' : isAdmin ? 'Buka (Admin)' : isCompletedSession ? 'Buat Lagi (Gunakan Kuota)' : 'Buka'", 'card button display')
+          
+          edit('src/journalConverter/App.tsx',converter)
+          edit('server/journal7/router.ts',router)
+          edit('src/components/ToolViewerModal.tsx',viewer)
+          edit('src/App.tsx',app)
+          edit('src/components/ToolCard.tsx',card)
+          print('Patch finished. Run npm install && npm run lint && npm run build.')
+          PYCODE
+
+      - name: Verify implementation and build
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Commit tested changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then echo "Nothing to update"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx src/components/ToolCard.tsx src/components/ToolViewerModal.tsx src/journalConverter/App.tsx server/journal7/router.ts
+          git commit -m "fix(link7): require verified quota, atomic wallet purchase and server-confirmed completion"
+          git push origin HEAD:main

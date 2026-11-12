@@ -1,0 +1,237 @@
+name: ZAIN.NET - Perbaiki Link 7 ZIP dan Status Transaksi
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix-link7:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Apply Link 7 patch safely
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          #!/usr/bin/env python3
+          """ZAIN.NET Link 7: ZIP retry, Supabase session identity and auto-return patch.
+
+          Run at the root of the Karyazainnet repository. Safe to rerun.
+          """
+          from pathlib import Path
+
+          MARKER = 'ZAINNET_LINK7_DOWNLOAD_SYNC_FIX_20261112'
+
+
+          def replace_once(source: str, old: str, new: str, label: str) -> str:
+              matches = source.count(old)
+              if matches != 1:
+                  raise RuntimeError(f'{label}: expected one match, found {matches}; aborting without modifying this file')
+              return source.replace(old, new, 1)
+
+
+          def patch(path: str, transform):
+              file = Path(path)
+              content = file.read_text(encoding='utf-8')
+              if MARKER in content:
+                  print(f'Already applied: {path}')
+                  return
+              updated = transform(content)
+              if updated == content:
+                  raise RuntimeError(f'No changes in {path}')
+              file.write_text(updated, encoding='utf-8')
+              print(f'Patched: {path}')
+
+
+          def session_patch(s: str) -> str:
+              s = replace_once(s, """    data.forEach((row: any) => {
+                if (row.payload && row.payload.toolId) {
+                  existing[row.payload.toolId] = row.payload as UserSessionRecord;
+                }
+              });""", """    // ZAINNET_LINK7_DOWNLOAD_SYNC_FIX_20261112: do not overwrite a newer
+              // local completion with an older remote in-progress snapshot.
+              data.forEach((row: any) => {
+                if (!row.payload?.toolId) return;
+                const incoming = row.payload as UserSessionRecord;
+                const local = existing[incoming.toolId];
+                const remoteTime = Number(incoming.completedAt || incoming.lastActiveAt || 0);
+                const localTime = Number(local?.completedAt || local?.lastActiveAt || 0);
+                if (!local || remoteTime > localTime ||
+                    (remoteTime === localTime && local.status !== 'completed')) {
+                  existing[incoming.toolId] = incoming;
+                }
+              });""", 'hydrate older session')
+              s = replace_once(s, """  if (!client) return;
+
+            for (const sid of sessionIds) {
+              const sess = outbox[sid];
+              try {""", """  if (!client) return;
+
+            // Verify the CURRENT Supabase Auth account. Outbox entries from a guest,
+            // another account or a legacy login must not trigger 'Invalid session'.
+            const { data: identity, error: identityError } = await client.auth.getUser();
+            const authenticatedUid = identityError ? null : identity?.user?.id;
+            if (!authenticatedUid) return;
+
+            for (const sid of sessionIds) {
+              const sess = outbox[sid];
+              if (!sess || sess.userId !== authenticatedUid || sess.status !== 'completed') continue;
+              try {""", 'outbox auth filtering')
+              s = replace_once(s, """           detail: { ok: false, message: error.message || 'Gagal menyimpan status ke Supabase.' }""", """           detail: { ok: false, toolId: sess.toolId, sessionId: sid, message: error.message || 'Gagal menyimpan status ke Supabase.' }""", 'RPC error scoping')
+              s = replace_once(s, """          detail: { ok: true }""", """          detail: { ok: true, toolId: sess.toolId, sessionId: sid }""", 'RPC success scoping')
+              s = replace_once(s, """          detail: { ok: false, message: e?.message || 'Koneksi database terputus.' }""", """          detail: { ok: false, toolId: sess.toolId, sessionId: sid, message: e?.message || 'Koneksi database terputus.' }""", 'RPC exception scoping')
+              return s
+
+
+          def viewer_patch(s: str) -> str:
+              s = replace_once(s, """  const iframeKey = tool?.id;
+            const addLog""", """  const iframeKey = tool?.id;
+            // ZAINNET_LINK7_DOWNLOAD_SYNC_FIX_20261112
+            const isLink7 = tool?.id === 'art-7' || tool?.url === 'internal://journal-converter' || tool?.url === '/journal-converter';
+            const addLog""", 'Link 7 flag')
+              s = replace_once(s, """    done.current=false; setCompleted(false);
+              recordSessionInProgress(tool,effectiveUserId,[],0,0,'Modul dibuka. Menunggu hasil proses.');
+              const sync = (event: Event) => {
+                const detail=(event as CustomEvent).detail;
+                if (!done.current) return;
+                setStatus(detail?.ok ? 'Selesai — status tersimpan di akun.' : `Hasil siap; penyimpanan akun tertunda. ${detail?.message || 'Akan dicoba ulang otomatis.'}`);
+              };""", """    done.current=false; setCompleted(false);
+              const previous = getSessionForTool(tool.id, effectiveUserId);
+              if (isLink7 && previous?.status === 'completed') {
+                // Merely reopening a link must NOT create a new transaction.
+                setStatus('Transaksi Link 7 terakhir sudah selesai. Proses artikel baru untuk memulai sesi baru.');
+              } else {
+                recordSessionInProgress(tool,effectiveUserId,[],0,0,'Modul dibuka. Menunggu hasil proses.');
+                setStatus('Proses belum selesai. Status dicatat setelah hasil tersedia.');
+              }
+              const sync = (event: Event) => {
+                const detail=(event as CustomEvent).detail;
+                if (!done.current || (detail?.toolId && detail.toolId !== tool.id)) return;
+                const current = getSessionForTool(tool.id, effectiveUserId);
+                if (detail?.sessionId && current?.id !== detail.sessionId) return;
+                setStatus(detail?.ok ? 'Selesai — status tersimpan di akun Supabase.' : `Hasil siap; sinkronisasi akun tertunda. ${detail?.message || 'Akan dicoba ulang otomatis.'}`);
+              };""", 'viewer session on reopen')
+              s = replace_once(s, """  const handleLink7GenerationReady = (fileName: string) => {""", """  const handleLink7GenerationStarted = () => {
+              if (!tool) return;
+              if (link7ReturnTimer.current) clearTimeout(link7ReturnTimer.current);
+              done.current = false;
+              setCompleted(false);
+              recordSessionInProgress(tool, effectiveUserId, [], 0, 0, 'Pembuatan artikel Link 7 baru dimulai.');
+              setStatus('Artikel sedang diproses. Transaksi akan selesai setelah ZIP berhasil disiapkan dan unduhan diminta.');
+            };
+            const handleLink7GenerationReady = (fileName: string) => {""", 'new generation handler')
+              s = replace_once(s, """    returnToHomeAfterZip(5000);""", """    // Give Firefox/Chrome time to display the download and offer a manual fallback.
+              returnToHomeAfterZip(8000);""", 'return delay')
+              s = replace_once(s, """  const isLink7 = tool?.id === 'art-7' || tool?.url === 'internal://journal-converter' || tool?.url === '/journal-converter';
+            const handleAutoFinishDownload""", """  const handleAutoFinishDownload""", 'remove duplicate Link 7 flag')
+              s = replace_once(s, """            <JournalConverterApp
+                        onArticleComplete""", """            <JournalConverterApp
+                        onGenerationStarted={handleLink7GenerationStarted}
+                        onArticleComplete""", 'wire generation callback')
+              return s
+
+
+          def hub_patch(s: str) -> str:
+              s = replace_once(s, """  // Consume 1 creation quota when session finishes (Admin has unlimited free sessions)
+            const handleConsumeQuota = async (tool: ToolItem, details?: string) => {
+              if (userRole === 'admin') {""", """  // Consume 1 creation quota when session finishes (Admin has unlimited free sessions)
+            const handleConsumeQuota = async (tool: ToolItem, details?: string) => {
+              // ZAINNET_LINK7_DOWNLOAD_SYNC_FIX_20261112: Supabase RPC is atomic and
+              // idempotent per session ID. Never write a decremented local quota first:
+              // that caused a second charge when academic_complete_session also debited.
+              if (tool.id === 'art-7') {
+                if (!user?.uid) throw new Error('Masuk ke akun Supabase untuk menyelesaikan transaksi Link 7.');
+                const finished = getSessionForTool(tool.id, user.uid);
+                if (!finished || finished.status !== 'completed' || finished.userId !== user.uid) {
+                  throw new Error('Identitas sesi Link 7 tidak sesuai dengan akun Supabase.');
+                }
+                const { data, error } = await database().rpc('academic_complete_session', {
+                  p_session: finished,
+                  p_details: details || 'Paket artikel Link 7 siap; unduhan ZIP diminta'
+                });
+                if (error) throw error;
+                if (data?.quotas) {
+                  setUserQuotas(data.quotas);
+                  localStorage.setItem(`zain_quotas_${user.uid}`, JSON.stringify(data.quotas));
+                }
+                if (data?.trials) {
+                  setResellerTrials(data.trials);
+                  localStorage.setItem(`zain_reseller_trials_${user.uid}`, JSON.stringify(data.trials));
+                }
+                return;
+              }
+              if (userRole === 'admin') {""", 'atomic quota Link 7')
+              return s
+
+
+          def converter_patch(s: str) -> str:
+              s = replace_once(s, """interface JournalConverterAppProps {
+            onArticleComplete?: (fileName: string) => void;
+            onDownloadsConfirmed?: () => void;
+          }
+
+          export default function App({ onArticleComplete, onDownloadsConfirmed }: JournalConverterAppProps) {""", """interface JournalConverterAppProps {
+            onGenerationStarted?: () => void;
+            onArticleComplete?: (fileName: string) => void;
+            onDownloadsConfirmed?: () => void;
+          }
+
+          // ZAINNET_LINK7_DOWNLOAD_SYNC_FIX_20261112
+          export default function App({ onGenerationStarted, onArticleComplete, onDownloadsConfirmed }: JournalConverterAppProps) {""", 'converter props')
+              s = replace_once(s, """  const retryZipDownload = async () => {
+              if (!article || zipBusy.current) return;
+              await prepareAndDownloadZip(article, sourceThesis.word);
+            };""", """  const retryZipDownload = async () => {
+              if (!article || zipBusy.current) return;
+              const requested = await prepareAndDownloadZip(article, sourceThesis.word);
+              // The cached ZIP is clicked synchronously in the user's gesture, which
+              // makes this path more reliable on Firefox/Chrome than background auto-save.
+              if (requested) onDownloadsConfirmed?.();
+            };""", 'manual ZIP callback')
+              s = replace_once(s, """    if (articleMode === 'template' && !findJournalMaster(templateId)) {
+                setErrorMsg('Pilih master jurnal yang tersedia terlebih dahulu.'); return;
+              }
+              setSourceThesis""", """    if (articleMode === 'template' && !findJournalMaster(templateId)) {
+                setErrorMsg('Pilih master jurnal yang tersedia terlebih dahulu.'); return;
+              }
+              // Starting a genuinely new generation opens a new transaction. Merely
+              // opening the module or retrying the existing ZIP does not.
+              onGenerationStarted?.();
+              setSourceThesis""", 'start new session on actual generation')
+              s = replace_once(s, """                <p className="text-xs sm:text-sm text-slate-200 mt-1 break-words">{wordPairPhase === 'requested' ? 'Unduhan ZIP sudah diminta ke browser. Kembali otomatis ke beranda dalam beberapa detik.' : wordPairMessage}</p>""", """                <p className="text-xs sm:text-sm text-slate-200 mt-1 break-words">{wordPairPhase === 'requested' ? 'Unduhan otomatis sudah dicoba. Periksa folder Download. Bila terblokir, tekan Unduh Ulang ZIP sebelum kembali otomatis.' : wordPairMessage}</p>""", 'ZIP wording')
+              s = replace_once(s, """                  Kembali Sekarang""", """                   ZIP Sudah Tersimpan — Kembali""", 'confirm button wording')
+              return s
+
+
+          patch('src/utils/sessionTracker.ts', session_patch)
+          patch('src/components/ToolViewerModal.tsx', viewer_patch)
+          patch('src/App.tsx', hub_patch)
+          patch('src/journalConverter/App.tsx', converter_patch)
+          print('Link 7 patch successful. Next: npm install && npm run build')
+          PYCODE
+
+      - name: Validate website build before publishing
+        shell: bash
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Publish verified patch to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No changes needed: patch already applied"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/utils/sessionTracker.ts src/components/ToolViewerModal.tsx src/App.tsx src/journalConverter/App.tsx
+          git commit -m "fix(link7): ZIP retry, authenticated session sync, atomic completion and auto-return"
+          git push origin HEAD:main

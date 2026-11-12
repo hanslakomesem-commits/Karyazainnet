@@ -55,20 +55,33 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
   },[tool?.id,effectiveUserId]);
   // ZAINNET_LINK7_SAFE_CLOSE_PARENT_20261109
   // Generation completion is NOT a download completion signal.
+  // ZAINNET_LINK7_MOBILE_AUTORETURN_V1: download request is not OS download confirmation.
+  const link7ReturnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (link7ReturnTimer.current) clearTimeout(link7ReturnTimer.current);
+  }, []);
+  const returnToHomeAfterZip = (delayMs: number) => {
+    if (link7ReturnTimer.current) clearTimeout(link7ReturnTimer.current);
+    link7ReturnTimer.current = setTimeout(() => {
+      setCompleted(true);
+      onClose();
+    }, delayMs);
+  };
   const handleLink7GenerationReady = (fileName: string) => {
     if (!tool || done.current) return;
     done.current = true;
-    setStatus('ZIP lima file sudah dibuat dan unduhan otomatis diminta. Periksa folder Download lalu konfirmasi ZIP tersimpan.');
+    setStatus('ZIP sudah dibuat dan unduhan diminta. Kembali otomatis ke menu utama...');
     recordSessionCompleted(tool, effectiveUserId, { fileName, reason: 'Artikel Link 7 selesai dibuat' }, [], 0);
     Promise.resolve(finishRef.current?.(tool, 'Artikel Link 7 selesai dibuat')).catch((err) => {
-      setStatus('Artikel selesai, tetapi pencatatan kuota tertunda: ' + (err?.message || 'Periksa akun.'));
+      setStatus('ZIP diminta; pencatatan akun tertunda: ' + (err?.message || 'Periksa akun.'));
     });
+    // Allow Chrome a short window to start the download and user to retry.
+    returnToHomeAfterZip(5000);
   };
   const handleLink7DownloadsConfirmed = () => {
     if (!done.current) return;
-    setStatus('ZIP lima file dikonfirmasi tersimpan. Kembali ke menu utama...');
-    setCompleted(true);
-    setTimeout(() => onClose(), 1200);
+    setStatus('Kembali ke menu utama...');
+    returnToHomeAfterZip(150);
   };
   const isLink7 = tool?.id === 'art-7' || tool?.url === 'internal://journal-converter' || tool?.url === '/journal-converter';
   const handleAutoFinishDownload = (fileName: string, reason: string) => {
@@ -128,10 +141,6 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
       <div className="flex-1"><strong>{tool.title}</strong><p role="status" className="text-xs mt-1 text-slate-300">{status}</p></div>
       <button title="Layar penuh" onClick={() => containerRef.current?.requestFullscreen?.()}><Maximize2 size={20}/></button>
       <button aria-label="Kembali ke menu" onClick={() => {
-        if (isLink7 && done.current) {
-          setStatus('Periksa ZIP di folder Download terlebih dahulu dan tekan tombol konfirmasi ZIP.');
-          return;
-        }
         onClose();
       }}><X size={24}/></button>
     </header>

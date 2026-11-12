@@ -536,77 +536,43 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
         onSelectModel={handleSelectModel}
       />
 
-      {/* 2-file download confirmation stays visible until the user confirms. ZIP is optional. */}
+      {/* ZAINNET_LINK7_MOBILE_AUTORETURN_V1: compact, mobile-first ZIP status. */}
       {article && (
-        <div role="status" className="sticky top-0 z-40 mx-auto w-full max-w-5xl bg-blue-950 text-white p-4 shadow-xl border-b-4 border-cyan-400">
-          <p className="font-bold text-base">Artikel AI selesai — {articleMode === 'template' ? `Template ${findJournalMaster(selectedJournalId)?.name || ''}` : 'Mode biasa'} — ZIP lengkap 5 file otomatis</p>
-          <p className="text-sm mt-1" aria-live="polite">{wordPairMessage}</p>
-          <div className="mt-3 rounded-lg border border-cyan-500/50 bg-slate-900 p-3">
-            <p className="text-sm font-bold text-cyan-200">Paket Lengkap ZIP — 5 file dalam 1 ZIP</p>
-            <p className="text-xs text-slate-200 mt-1">ZIP otomatis berisi Skripsi Word + PDF, Artikel Word + PDF, dan Cover CD Word. PDF skripsi diproses selagi AI menyusun artikel. Tidak perlu menekan tombol Paket Lengkap.</p>
-            <div className="mt-3 rounded-md bg-slate-800/70 p-3 text-xs">
-              {sourceThesis.word ? (
-                <p className="text-emerald-200 font-semibold">✓ Skripsi Word telah diterima: {sourceThesis.word.name}</p>
-              ) : (
-                <label className="flex flex-col gap-2">
-                  <span className="text-amber-200">Skripsi Word belum tersedia. Unggah .docx untuk membuat ZIP.</span>
-                  <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    className="text-white file:mr-2 file:rounded file:border-0 file:p-2 file:bg-blue-600 file:text-white"
-                    onChange={e => handleThesisWordPick(e.target.files?.[0])} />
-                </label>
-              )}
-              <p className="mt-2 text-slate-200">PDF skripsi otomatis dibuat dari Word asli. PDF artikel otomatis dibuat dari Artikel Word menggunakan LibreOffice di Render. Tidak perlu mengunggah PDF kedua.</p>
+        <section role="status" aria-live="polite" className="w-full max-w-5xl mx-auto px-3 sm:px-5 pt-3 pb-2">
+          <div className="rounded-xl border border-cyan-600/60 bg-slate-900 text-white shadow-md p-3 sm:p-4 min-w-0">
+            <div className="flex items-start gap-2 min-w-0">
+              <span aria-hidden="true" className="text-emerald-300 text-xl shrink-0">{wordPairPhase === 'requested' ? '✓' : '📦'}</span>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-sm sm:text-base font-bold leading-snug break-words">{wordPairPhase === 'requested' ? 'ZIP 5 File Siap' : wordPairPhase === 'error' ? 'ZIP Belum Berhasil' : 'Menyiapkan ZIP 5 File'}</h2>
+                <p className="text-xs sm:text-sm text-slate-200 mt-1 break-words">{wordPairPhase === 'requested' ? 'Unduhan ZIP sudah diminta ke browser. Kembali otomatis ke beranda dalam beberapa detik.' : wordPairMessage}</p>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-3 items-center mt-3">
-              <button type="button" onClick={handleDownloadZip}
-                disabled={isDownloadingZip || wordPairPhase === 'preparing' || !sourceThesis.word}
-                className="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-4 py-2 font-bold disabled:opacity-50">
-                {isDownloadingZip ? 'Menyiapkan ZIP otomatis...' : 'Unduh Ulang ZIP (jika belum tersimpan)'}
+            <div className="mt-3 flex flex-col sm:flex-row gap-2">
+              <button type="button" onClick={retryZipDownload} disabled={isDownloadingZip || wordPairPhase === 'preparing' || !sourceThesis.word}
+                className="w-full sm:w-auto min-h-11 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-sm font-bold disabled:opacity-50">
+                {isDownloadingZip || wordPairPhase === 'preparing' ? 'Sedang menyiapkan...' : 'Unduh Ulang ZIP'}
               </button>
-              <span aria-live="polite" className="text-xs text-amber-100">{zipMessage}</span>
+              {wordPairPhase === 'requested' && (
+                <button type="button" onClick={confirmZipDownload} className="w-full sm:w-auto min-h-11 rounded-lg border border-slate-500 px-4 py-2 text-sm font-semibold">
+                  Kembali Sekarang
+                </button>
+              )}
             </div>
-
-            {/* ZAINNET_LINK7_AUTOHEAL_SUCCESS_20261111 */}
-            {zipAutoFixed > 0 && (
-              <div role="status" className="my-2 rounded-lg bg-emerald-950 border border-emerald-400 p-3 text-sm text-emerald-100">
-                ✓ Perbaikan PDF otomatis dilakukan: {zipAutoFixed} kotak teks judul yang bertumpuk telah ditata ulang pada salinan PDF. Skripsi Word asli tetap utuh.
+            <p className="mt-2 text-[11px] leading-relaxed text-slate-300">Periksa folder Download. Jika Chrome memblokir unduhan otomatis, tekan Unduh Ulang ZIP sebelum kembali.</p>
+            <details className="mt-2 text-xs text-slate-300">
+              <summary className="cursor-pointer py-1">Rincian paket dan pemeriksaan</summary>
+              <div className="mt-2 space-y-2 break-words">
+                <p>Isi: Skripsi Word + PDF, Artikel Word + PDF, dan Cover CD Word.</p>
+                <p>{sourceThesis.word ? `Skripsi: ${sourceThesis.word.name}` : 'Skripsi Word belum tersedia.'}</p>
+                {!sourceThesis.word && <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={e => handleThesisWordPick(e.target.files?.[0])} className="w-full max-w-full text-xs" />}
+                <p>{zipMessage}</p>
+                {zipAutoFixed > 0 && <p>Perbaikan otomatis PDF: {zipAutoFixed} bagian.</p>}
+                {templateWarnings.length > 0 && <p>Catatan template ({templateWarnings.length}): {templateWarnings.join('; ')}</p>}
+                {zipLayoutWarnings.length > 0 && <p className="text-amber-200">Peringatan tata letak: {zipLayoutWarnings.join('; ')}</p>}
               </div>
-            )}
-            {articleMode === 'template' && templateWarnings.length > 0 && (
-              <details className="mt-3 rounded-lg bg-amber-950 text-amber-100 p-3 text-sm">
-                <summary>Catatan pemeriksaan master jurnal ({templateWarnings.length})</summary>
-                <ul className="list-disc pl-5 mt-2">{templateWarnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
-                <p className="mt-2">Periksa logo, DOI, footnote, header/footer, margin, dan halaman. Format belum dijamin 100%.</p>
-              </details>
-            )}
-            {zipLayoutWarnings.length > 0 && (
-              <div role="alert" className="mt-3 rounded-lg border-2 border-amber-400 bg-amber-950/80 px-4 py-3 text-amber-100">
-                <p className="font-bold">⚠ Perhatian: Risiko posisi foto pada hasil PDF</p>
-                <p className="mt-1 text-sm font-semibold">Foto mungkin menumpuk / pindah posisi / jadi berantakan. Coba cek lagi hasil PDF Word-nya sebelum dicetak.</p>
-                <ul className="mt-2 list-disc pl-5 text-xs space-y-1">
-                  {zipLayoutWarnings.map((warning, index) => <li key={index}>{warning}</li>)}
-                </ul>
-                <p className="mt-2 text-xs">PDF tetap dibuat dan paket ZIP tetap diunduh. Word asli tetap utuh. Deteksi ini menunjukkan risiko tata letak, bukan bukti pasti bahwa setiap foto rusak.</p>
-              </div>
-            )}
-            <p className="text-xs text-slate-300 mt-2">Kedua PDF dikonversi dari file Word yang sebenarnya melalui LibreOffice di server. Periksa halaman, font, dan catatan kaki sebelum dicetak.</p>
+            </details>
           </div>
-          <div className="flex flex-wrap gap-2 mt-3">
-            <button type="button" onClick={retryZipDownload}
-              disabled={wordPairPhase === 'preparing'}
-              className="rounded-lg bg-blue-600 px-4 py-2 font-semibold disabled:opacity-50">
-              {wordPairPhase === 'preparing' ? 'Menyiapkan ZIP...' : 'Unduh Ulang ZIP Otomatis'}
-            </button>
-            <button type="button" onClick={confirmZipDownload}
-              disabled={wordPairPhase !== 'requested'}
-              className="rounded-lg bg-emerald-600 px-4 py-2 font-bold disabled:opacity-50">
-              ZIP Sudah Tersimpan — Kembali ke Beranda
-            </button>
-          </div>
-          <p className="text-xs text-blue-100 mt-2">
-            Browser bisa memblokir unduhan otomatis. Jika ZIP belum ada di Download, tekan Unduh Ulang ZIP. Aplikasi tetap terbuka sampai Anda mengonfirmasi file ZIP tersimpan.
-          </p>
-        </div>
+        </section>
       )}
 
       {/* Main Workspace Body */}

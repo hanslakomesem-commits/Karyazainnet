@@ -301,6 +301,53 @@ function normalizeArticleNode(node,rule,prototypes){
  for(const p of get(node,'p'))for(const pp of children(p,'pPr'))for(const s of children(pp,'sectPr'))pp.removeChild(s);
  return node;
 }
+// ZAINNET_TEMPLATE_BOUNDARY_NO_BLANK_PAGE_V1_20261112
+// Journal DOCX masters remain UNMODIFIED. At the hand-off from front matter to
+// imported body, a stand-alone manual page-break paragraph can create an empty
+// page after a long article-info/abstract table (confirmed in IQTISHADIA, p[11]).
+// Only touch trailing EMPTY top-level paragraphs immediately before rule.cut.
+// Never edit body prose, tables, drawings, notes, or section definitions.
+function compactTemplateBoundary(tDoc,rule,warnings){
+ const cut=Number(rule.cut),els=bodyEls(tDoc);
+ if(!Number.isInteger(cut)||cut<=0||cut>els.length)return {breaks:0,paragraphs:0};
+ let breaks=0,paragraphs=0;
+ for(let i=cut-1;i>=Math.max(0,cut-8);i--){
+  const p=els[i];
+  if(!p||p.localName!=='p')break;
+  if(textOf(p) || ['drawing','pict','object','fldSimple','fldChar',
+       'footnoteReference','endnoteReference','sym','instrText'].some(k=>get(p,k).length))break;
+  const oldPpr=first(p,'pPr');
+  if(oldPpr&&children(oldPpr,'sectPr').length)break;
+  // Remove only explicit page breaks inside empty boundary paragraphs.
+  const forced=get(p,'br').filter(br=>aval(br,'type')==='page');
+  for(const br of forced){if(br.parentNode)br.parentNode.removeChild(br);breaks++;}
+  for(const br of get(p,'lastRenderedPageBreak')){
+   if(br.parentNode)br.parentNode.removeChild(br);
+  }
+  const ppr=oldPpr||make(tDoc,'pPr');
+  if(!ppr.parentNode)p.insertBefore(ppr,p.firstChild);
+  for(const elem of [...children(ppr,'pageBreakBefore'),...children(ppr,'keepNext'),
+      ...children(ppr,'keepLines'),...children(ppr,'snapToGrid')]){
+   if(elem.parentNode)elem.parentNode.removeChild(elem);
+  }
+  // Make any surplus blank separator negligible (1 point), not a full line that
+  // can overflow a full-page table onto its own near-empty page.
+  let sp=first(ppr,'spacing');
+  if(!sp){sp=make(tDoc,'spacing');ppr.appendChild(sp);}
+  attr(sp,'before',0);attr(sp,'after',0);attr(sp,'line',20);attr(sp,'lineRule','exact');
+  let rp=first(ppr,'rPr');
+  if(!rp){rp=make(tDoc,'rPr');ppr.appendChild(rp);}
+  for(const key of ['sz','szCs']){
+   let size=first(rp,key);if(!size){size=make(tDoc,key);rp.appendChild(size);}
+   attr(size,'val',2);
+  }
+  paragraphs++;
+ }
+ if(breaks)warnings.push('Pemisah halaman kosong bawaan master '+String(rule.id||'jurnal').toUpperCase()+
+   ' di batas abstrak dan isi artikel telah diperbaiki ('+breaks+' page break).');
+ return {breaks,paragraphs};
+}
+
 function appendMain(tDoc,rule,srcContent,prototypes,warnings){
  const body=getBody(tDoc),els=bodyEls(tDoc),cut=Number(rule.cut);
  if(!els[cut]||els[cut].localName==='sectPr')throw Error('Penanda badan utama jurnal tidak valid: '+rule.id);
@@ -813,6 +860,8 @@ async function build(articleBuffer,templateBuffer,rule,metadata={}){
  const frontCount=replaceFront(tplDoc,rule,info,metadata,warnings)+fillRabbaniWord2010Table(tplDoc,info,metadata,rule,warnings);
  if(rule.id==='nuansa')fitNuansaLongTitle(tplDoc,info,warnings);
  safeEditorDates(tplZip,tplDoc,rule,metadata);
+ // This must run BEFORE appendMain, while template prefix indices are stable.
+ const boundaryFixes=compactTemplateBoundary(tplDoc,rule,warnings);
  const imported=appendMain(tplDoc,actualRule,extracted.content,prototype,warnings);
  const body=bodyEls(tplDoc);
  // newly inserted source elements appear immediately after the original preface
@@ -841,7 +890,7 @@ async function build(articleBuffer,templateBuffer,rule,metadata={}){
  if(rule.id==='rabbani')warnings.push('RABBANI: hanya abstrak Bahasa Indonesia digunakan sesuai pilihan pengguna. Contoh tanggal penerbitan, volume, nomor, DOI dan jumlah halaman tidak menjadi metadata artikel; periksa hasil di Word 2010.');
  warnings.push('Volume/nomor/tahun/DOI contoh dari template mungkin belum diterbitkan; editor wajib memverifikasi dan melengkapinya sebelum pengiriman.');
  if(headers<Object.keys(rule.header||{}).length)warnings.push('Sebagian running header tidak terpetakan secara otomatis; cek semua halaman di Word.');
- return {blob,details:{journal:rule.id,templateBased:true,frontFields:frontCount,contentBlocks:imported,sourceTables:extracted.tables,sourceFootnotes:extracted.hasNotes,sourceAssets:deps.assets,sourceRelationships:deps.relationships,packageErrors:guard.errors.length,packageWarnings:guard.warnings.length,headersModified:headers,footerFixes,propertyOrderFixes,otherPartOrderFixes,compatFixes,warnings:[...new Set(warnings)],extracted:{title:info.title,author:info.author,affiliation:info.affiliation,email:info.email,abstractEnWords:absEnWords,abstractIdWords:absIdWords}}};
+ return {blob,details:{journal:rule.id,templateBased:true,frontFields:frontCount,contentBlocks:imported,sourceTables:extracted.tables,sourceFootnotes:extracted.hasNotes,sourceAssets:deps.assets,sourceRelationships:deps.relationships,packageErrors:guard.errors.length,packageWarnings:guard.warnings.length,headersModified:headers,footerFixes,propertyOrderFixes,otherPartOrderFixes,compatFixes,boundaryFixes,warnings:[...new Set(warnings)],extracted:{title:info.title,author:info.author,affiliation:info.affiliation,email:info.email,abstractEnWords:absEnWords,abstractIdWords:absIdWords}}};
 }
 global.ZainDocxEngine={build};
 })(typeof window!=='undefined'?window:globalThis);

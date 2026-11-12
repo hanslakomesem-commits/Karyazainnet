@@ -43,7 +43,7 @@ export const MaintenanceNoticeModal: React.FC<MaintenanceNoticeModalProps> = ({
       case 'token_exhausted':
         return {
           icon: <Flame className="w-4 h-4 text-amber-400" />,
-          label: 'Kuota Token AI Habis Terpakai',
+          label: 'Kapasitas Pemrosesan Sedang Terbatas',
           bg: 'bg-amber-500/20 border-amber-500/40 text-amber-300'
         };
       case 'error':

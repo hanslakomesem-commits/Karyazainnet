@@ -272,7 +272,7 @@ export const MakalahBatchUploadModal: React.FC<MakalahBatchUploadModalProps> = (
 
         // Step 2: AI / Heuristic Analysis & Document Type Detection + Auto Description
         setBatchItems(curr => curr.map((it, idx) => 
-          idx === i ? { ...it, status: 'ai_processing', progressMessage: 'AI mendeteksi jenis dokumen & menyusun keterangan otomatis...', dataUrl, fileHash } : it
+          idx === i ? { ...it, status: 'ai_processing', progressMessage: 'Menganalisis jenis dokumen dan menyusun keterangannya...', dataUrl, fileHash } : it
         ));
 
         const aiResult = await analyzeMakalahWithAI(extracted.rawText, extracted.htmlContent, item.fileName);
@@ -429,7 +429,7 @@ export const MakalahBatchUploadModal: React.FC<MakalahBatchUploadModalProps> = (
       if (duplicateRejectedCount > 0 && batchItems.length === duplicateRejectedCount) {
         alert('Semua file yang diunggah ditolak karena sudah ada di postingan. Postingan dibatalkan.');
       } else {
-        alert('Belum ada postingan yang siap diterbitkan. Silakan klik "Mulai Deteksi Otomatis & Ekstrak AI" terlebih dahulu.');
+        alert('Belum ada postingan yang siap diterbitkan. Silakan klik "Mulai Analisis & Ekstraksi Dokumen" terlebih dahulu.');
       }
       return;
     }
@@ -507,7 +507,7 @@ export const MakalahBatchUploadModal: React.FC<MakalahBatchUploadModalProps> = (
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-bold text-white">Unggah & Deteksi Otomatis File</h2>
                 <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-bold border border-indigo-500/30 flex items-center gap-1">
-                  <Sparkles className="w-2.5 h-2.5 text-indigo-400" /> Multi-Document AI Engine
+                  <Sparkles className="w-2.5 h-2.5 text-indigo-400" /> Sistem Analisis Multi-Dokumen
                 </span>
               </div>
               <p className="text-xs text-gray-400">
@@ -640,12 +640,12 @@ export const MakalahBatchUploadModal: React.FC<MakalahBatchUploadModalProps> = (
                   {isProcessing ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Sedang Deteksi Otomatis & Analisis AI...</span>
+                      <span>Sedang Menganalisis dan Mengekstrak Dokumen...</span>
                     </>
                   ) : (
                     <>
                       <Sparkles className="w-3.5 h-3.5" />
-                      <span>Mulai Deteksi Otomatis & Ekstrak AI</span>
+                      <span>Mulai Analisis & Ekstraksi Dokumen</span>
                     </>
                   )}
                 </button>
@@ -1050,7 +1050,7 @@ export const MakalahBatchUploadModal: React.FC<MakalahBatchUploadModalProps> = (
                 <strong className="text-emerald-400">{readyCount} dokumen</strong> siap dipublikasikan ke blog repositori terbuka.
               </span>
             ) : (
-              <span>Unggah file (.docx, .doc, .txt, .pdf dll) lalu klik "Mulai Deteksi Otomatis & Ekstrak AI".</span>
+              <span>Unggah file (.docx, .doc, .txt, .pdf dll) lalu klik "Mulai Analisis & Ekstraksi Dokumen".</span>
             )}
           </div>
 

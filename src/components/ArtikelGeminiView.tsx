@@ -193,7 +193,7 @@ export function ArtikelGeminiView({ onBackToHome, onExportComplete, isStandalone
     setEnglishAbstract('');
     setEnglishKeywords('');
     setTidiedSections({});
-    setMsg({ text: `File "${f.name}" siap dianalisis dengan Gemini 3.1 Flash Lite.`, type: 'ok' });
+    setMsg({ text: `File "${f.name}" siap dianalisis dengan Layanan Akademik ZAIN.NET.`, type: 'ok' });
   };
 
   // Rebuild the Word DOCX blob whenever data changes
@@ -285,14 +285,14 @@ export function ArtikelGeminiView({ onBackToHome, onExportComplete, isStandalone
     await updateBlob(doc, analysis, newPlan);
   };
 
-  // Tidying a single section using Gemini 3.1 Flash Lite (preserves all footnoteIds!)
+  // Tidying a single section using Layanan Akademik ZAIN.NET (preserves all footnoteIds!)
   const tidySingleSection = async (secId: string, secTitle: string) => {
     if (!doc || !plan || !analysis) return;
     const targetSection = plan.sections.find(s => s.id === secId);
     if (!targetSection) return;
 
     setIsTidying(true);
-    setMsg({ text: `Gemini 3.1 Flash Lite sedang merapikan bagian ${secTitle} tanpa menghilangkan footnote...`, type: 'info' });
+    setMsg({ text: `Layanan Akademik ZAIN.NET sedang merapikan bagian ${secTitle} tanpa menghilangkan footnote...`, type: 'info' });
 
     try {
       const rawParagraphs = targetSection.items.map(x => itemText(doc, x)).filter(Boolean);
@@ -325,7 +325,7 @@ export function ArtikelGeminiView({ onBackToHome, onExportComplete, isStandalone
     }
   };
 
-  // Batch Tidying: Polishes all eligible sections sequentially with Gemini 3.1 Flash Lite
+  // Batch Tidying: Polishes all eligible sections sequentially with Layanan Akademik ZAIN.NET
   const tidyAllSectionsWithGemini = async () => {
     if (!doc || !plan || !analysis) return;
 
@@ -334,7 +334,7 @@ export function ArtikelGeminiView({ onBackToHome, onExportComplete, isStandalone
 
     setIsTidyingAll(true);
     setMsg({
-      text: `⚡ Menyiapkan perapian ${eligibleSections.length} bab artikel sekaligus dengan Gemini 3.1 Flash Lite...`,
+      text: `⚡ Menyiapkan perapian ${eligibleSections.length} bab artikel sekaligus dengan Layanan Akademik ZAIN.NET...`,
       type: 'info',
     });
 
@@ -347,7 +347,7 @@ export function ArtikelGeminiView({ onBackToHome, onExportComplete, isStandalone
         const sec = eligibleSections[i];
         setTidyAllProgress({ current: i + 1, total: eligibleSections.length, title: sec.title });
         setMsg({
-          text: `⚡ [${i + 1}/${eligibleSections.length}] Merapikan bab <b>${sec.title}</b> dengan Gemini 3.1 Flash Lite...`,
+          text: `⚡ [${i + 1}/${eligibleSections.length}] Merapikan bab <b>${sec.title}</b> dengan Layanan Akademik ZAIN.NET...`,
           type: 'info',
         });
 
@@ -387,7 +387,7 @@ export function ArtikelGeminiView({ onBackToHome, onExportComplete, isStandalone
       await updateBlob(doc, analysis, currentWorkingPlan);
 
       setMsg({
-        text: `⚡ <b>Selesai Sempurna!</b> Seluruh bab naskah artikel (${eligibleSections.length} bab) berhasil dirapikan berstandar jurnal ilmiah Gemini 3.1 Flash Lite. Footnote skripsi tetap tersinkronisasi 100%.`,
+        text: `⚡ <b>Selesai Sempurna!</b> Seluruh bab naskah artikel (${eligibleSections.length} bab) berhasil dirapikan berstandar jurnal ilmiah Layanan Akademik ZAIN.NET. Footnote skripsi tetap tersinkronisasi 100%.`,
         type: 'ok',
       });
     } catch (err: any) {
@@ -410,7 +410,7 @@ export function ArtikelGeminiView({ onBackToHome, onExportComplete, isStandalone
     const refs = plan.sections.find(s => s.id === 'biblio')?.items.length || 0;
     const abs = extractAbstractSource(doc, plan);
 
-    let txt = `ZAIN.NET — LAPORAN SCRIB ARTICLE AI • GEMINI 3.1 FLASH LITE\n\n`;
+    let txt = `ZAIN.NET — LAPORAN PENYUSUNAN ARTIKEL AKADEMIK\n\n`;
     txt += `File Sumber: ${file?.name || 'Skripsi'}\n`;
     txt += `Judul Artikel: ${analysis.meta.title}\n`;
     txt += `Penulis: ${author || analysis.meta.author}\n`;
@@ -423,7 +423,7 @@ export function ArtikelGeminiView({ onBackToHome, onExportComplete, isStandalone
     txt += `Referensi Daftar Pustaka Terpilih: ${refs}\n`;
     txt += `Paragraf Abstrak Indonesia: ${abs.paragraphs.length}\n`;
     txt += `Paragraf Abstract English: ${paragraphMatchStatus.enCount}\n`;
-    txt += `Model AI: gemini-3.1-flash-lite (Ultra Cepat & Rapi)\n\n`;
+    txt += `Layanan Pengolahan Dokumen: ZAIN.NET Akademik\n\n`;
     txt += `DAFTAR CATATAN KAKI (FOOTNOTES) TERPAKAI:\n`;
     usedFootnotes.forEach(f => {
       txt += `[${f.num}] ${f.text}\n`;
@@ -476,7 +476,7 @@ export function ArtikelGeminiView({ onBackToHome, onExportComplete, isStandalone
               <h1 className="text-lg md:text-xl font-bold tracking-tight text-white flex items-center gap-2">
                 ZAIN.NET — Skripsi Jadi Artikel
                 <span className="text-xs px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-400 border border-sky-500/30 font-mono font-medium">
-                  Gemini 3.1 Flash Lite
+                  Layanan Akademik ZAIN.NET
                 </span>
               </h1>
               <p className="text-xs text-[#98aac2] hidden sm:block">
@@ -749,7 +749,7 @@ export function ArtikelGeminiView({ onBackToHome, onExportComplete, isStandalone
             {/* Header & Stats */}
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-[#243b57]">
               <h2 className="text-sm font-bold uppercase tracking-wider text-sky-400 flex items-center gap-2">
-                <BookOpen className="w-4 h-4" /> 2. Hasil Scrib Article AI • Gemini 3.1 Flash Lite
+                <BookOpen className="w-4 h-4" /> 2. Hasil Penyusunan Artikel Akademik • Layanan Akademik ZAIN.NET
               </h2>
 
               {/* Action Downloads & Batch AI Tidying */}
@@ -769,7 +769,7 @@ export function ArtikelGeminiView({ onBackToHome, onExportComplete, isStandalone
                   ) : (
                     <>
                       <Zap className="w-3.5 h-3.5 text-slate-950 fill-slate-950" />
-                      <span>⚡ Rapikan Seluruh Bab Sekaligus (Gemini)</span>
+                      <span>⚡ Rapikan Seluruh Bab Sekaligus</span>
                     </>
                   )}
                 </button>
@@ -811,7 +811,7 @@ export function ArtikelGeminiView({ onBackToHome, onExportComplete, isStandalone
                   <RefreshCw className="w-4 h-4 text-amber-400 animate-spin shrink-0" />
                   <div>
                     <b className="text-white block">
-                      Gemini 3.1 Flash Lite sedang merapikan bab: {tidyAllProgress.title} ({tidyAllProgress.current} dari {tidyAllProgress.total})
+                      Layanan Akademik ZAIN.NET sedang merapikan bab: {tidyAllProgress.title} ({tidyAllProgress.current} dari {tidyAllProgress.total})
                     </b>
                     <span className="text-[11px] text-amber-300/80">
                       Mengubah gaya bahasa skripsi menjadi jurnal ilmiah dan menjaga seluruh rujukan catatan kaki (footnote).
@@ -888,7 +888,7 @@ export function ArtikelGeminiView({ onBackToHome, onExportComplete, isStandalone
                 }`}
               >
                 <Info className="w-3.5 h-3.5" />
-                Cara Kerja Footnote & AI
+                Cara Kerja Catatan Kaki & Perapian Naskah
               </button>
             </div>
 
@@ -1080,7 +1080,7 @@ export function ArtikelGeminiView({ onBackToHome, onExportComplete, isStandalone
                           <div className="flex items-center gap-2">
                             {isTidied && (
                               <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 flex items-center gap-1">
-                                <Check className="w-3 h-3" /> Dirapikan Gemini (Footnote Terjaga)
+                                <Check className="w-3 h-3" /> Dirapikan Otomatis (Footnote Terjaga)
                               </span>
                             )}
                             {canTidy && (
@@ -1091,7 +1091,7 @@ export function ArtikelGeminiView({ onBackToHome, onExportComplete, isStandalone
                                 className="px-2.5 py-1 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 text-[11px] font-semibold flex items-center gap-1 transition"
                               >
                                 <Wand2 className="w-3 h-3" />
-                                Rapikan Paragraf (Gemini)
+                                Rapikan Paragraf
                               </button>
                             )}
                           </div>
@@ -1187,7 +1187,7 @@ export function ArtikelGeminiView({ onBackToHome, onExportComplete, isStandalone
               </div>
             )}
 
-            {/* Tab 3: Cara Kerja Footnote & AI */}
+            {/* Tab 3: Cara Kerja Catatan Kaki & Perapian Naskah */}
             {activeTab === 'info' && (
               <div className="flex-1 overflow-y-auto max-h-[750px] space-y-4 pr-1 text-xs leading-relaxed text-slate-300">
                 <div className="p-4 rounded-xl bg-[#091a2d] border border-emerald-600/40">
@@ -1211,13 +1211,13 @@ export function ArtikelGeminiView({ onBackToHome, onExportComplete, isStandalone
                 </div>
 
                 <div className="p-4 rounded-xl bg-[#081829] border border-[#1f3b5c]">
-                  <h4 className="font-bold text-sky-400 mb-2">Peran Gemini 3.1 Flash Lite:</h4>
+                  <h4 className="font-bold text-sky-400 mb-2">Peran Layanan Akademik ZAIN.NET:</h4>
                   <ul className="list-disc pl-5 space-y-1.5 text-slate-300">
                     <li>
-                      <b className="text-white">Terjemahan Abstrak Kilat:</b> Menggantikan model AI lokal yang lemot, Gemini menerjemahkan Abstrak Indonesia ke Inggris dalam hitungan 1 detik dengan susunan paragraf yang 100% simetris.
+                      <b className="text-white">Terjemahan Abstrak Kilat:</b> Menggantikan pemrosesan lokal sebelumnya, Gemini menerjemahkan Abstrak Indonesia ke Inggris secara otomatis dengan susunan paragraf yang 100% simetris.
                     </li>
                     <li>
-                      <b className="text-white">Perapian Kalimat Akademis:</b> Tombol "Rapikan Paragraf (Gemini)" membersihkan frasa khas skripsi (seperti "pada bab selanjutnya", "tujuan penulisan skripsi") tanpa menghapus nomor atau rujukan footnote.
+                      <b className="text-white">Perapian Kalimat Akademis:</b> Tombol "Rapikan Paragraf" membersihkan frasa khas skripsi (seperti "pada bab selanjutnya", "tujuan penulisan skripsi") tanpa menghapus nomor atau rujukan footnote.
                     </li>
                   </ul>
                 </div>

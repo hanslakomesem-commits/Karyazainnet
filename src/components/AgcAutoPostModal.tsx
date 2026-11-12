@@ -106,7 +106,7 @@ export const AgcAutoPostModal: React.FC<AgcAutoPostModalProps> = ({
               <span>Konsep Alur Blog AGC (Auto Generated Content)</span>
             </div>
             <p className="text-slate-300">
-              Sesuai kebutuhan Anda, <strong>bukan Anda yang membuat artikel secara manual</strong>. Mesin AI AGC ZAIN.NET otomatis memindai topik viral dan trending terkini setiap hari, menyusun format berita jurnalistik lengkap beserta foto, poin kunci, dan tagar, lalu langsung menerbitkannya ke <strong>Blog AGC</strong>.
+              Sesuai kebutuhan Anda, <strong>bukan Anda yang membuat artikel secara manual</strong>. Sistem publikasi otomatis ZAIN.NET otomatis memindai topik viral dan trending terkini setiap hari, menyusun format berita jurnalistik lengkap beserta foto, poin kunci, dan tagar, lalu langsung menerbitkannya ke <strong>Blog AGC</strong>.
             </p>
           </div>
 

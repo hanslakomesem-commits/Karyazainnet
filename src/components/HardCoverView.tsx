@@ -147,7 +147,7 @@ export const HardCoverView: React.FC<HardCoverViewProps> = ({
           key={iframeKey}
           id="hardcover-app-frame"
           src={iframeSrc}
-          title="ZAIN.NET AI Cover Skripsi V4.2"
+          title="ZAIN.NET Cover Skripsi Presisi V4.2"
           className="w-full h-full border-0 bg-slate-900"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; camera; microphone; print"
           allowFullScreen

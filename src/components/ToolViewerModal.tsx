@@ -235,7 +235,7 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
               onExportComplete={(outFileName) => {
                 handleAutoFinishDownload(
                   outFileName,
-                  'Penyusunan naskah artikel ilmiah .DOCX + Gemini 3.1 Flash Lite selesai'
+                  'Penyusunan dan perapian artikel ilmiah .DOCX selesai'
                 );
               }}
             />

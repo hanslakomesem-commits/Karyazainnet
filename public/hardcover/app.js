@@ -330,7 +330,7 @@ async function loadStatus(){
   try{
     const response=await fetch('/api/status');if(!response.ok)throw new Error('Server tidak tersedia');
     const result=await response.json();availableMM=result.thicknesses||availableMM;geminiConfigured=!!result.gemini_configured;
-    $('connection').textContent=geminiConfigured?'PDF & Gemini siap':'PDF / Word lokal siap · Foto Gemini belum diatur';
+    $('connection').textContent=geminiConfigured?'Pemrosesan PDF dan foto siap':'PDF / Word siap · Analisis foto belum dikonfigurasi';
     $('serverDot').classList.add('online');
     if(!result.original_font_match)document.querySelector('.safety').innerHTML='<strong>Periksa sebelum cetak:</strong> font '+escapeHTML(result.bold_font)+' belum identik dengan Times New Roman asli. Cetak percobaan skala 100%.';
   }catch(error){$('connection').textContent='Backend belum berjalan';notice('Backend belum tersedia. Jalankan sesuai README.','error');}

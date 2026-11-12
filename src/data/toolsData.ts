@@ -254,8 +254,8 @@ export const categoriesData: ToolCategory[] = [
         title: "Generator Artikel (Link 5)",
         domain: "hanslakomesem-commits.github.io",
         url: "https://hanslakomesem-commits.github.io/artikel-V4.1/",
-        description: "Link 5: ZAIN.NET Scrib Article AI Lokal V1.4 — ubah skripsi DOCX menjadi artikel dengan Abstract bilingual, sinkron footnote–daftar pustaka & AI lokal.",
-        badge: "Link 5 • Scrib AI V1.4",
+        description: "Link 5: ZAIN.NET Penyusunan Artikel Akademik — konversi skripsi DOCX ke artikel dengan abstrak dua bahasa, catatan kaki dan daftar pustaka tersinkronisasi.",
+        badge: "Link 5 • Penyusunan Akademik",
         priceRp: 20000,
       },
       {
@@ -265,8 +265,8 @@ export const categoriesData: ToolCategory[] = [
         title: "Generator Artikel (Link 6)",
         domain: "artikel-gemini.zain.net",
         url: "/artikel-gemini",
-        description: "Link 6: ZAIN.NET Skripsi Jadi Artikel • Gemini 3.1 Flash Lite — konversi skripsi DOCX jadi artikel ilmiah terstruktur otomatis dengan perapian AI & abstrak bilingual super cepat.",
-        badge: "Link 6 • Gemini 3.1 Flash Lite",
+        description: "Link 6: ZAIN.NET Skripsi Jadi Artikel — konversi skripsi DOCX menjadi artikel ilmiah terstruktur, dengan perapian naskah dan abstrak dua bahasa.",
+        badge: "Link 6 • Perapian Naskah",
         priceRp: 20000,
       },
       {
@@ -276,8 +276,8 @@ export const categoriesData: ToolCategory[] = [
         title: "Generator Artikel (Link 7)",
         domain: "artikel-jurnal.zain.net",
         url: "internal://journal-converter",
-        description: "Link 7: Generator Artikel Jurnal Ilmiah (IAIN Madura) + Cover CD Otomatis • Gemini 3.1 Flash Lite — ubah skripsi DOCX menjadi artikel jurnal ilmiah terstruktur, footnote rapi, dan cover CD siap cetak.",
-        badge: "Link 7 • Gemini 3.1 Flash Lite",
+        description: "Link 7: Generator Artikel Jurnal Ilmiah + Cover CD — susun artikel dari skripsi DOCX sesuai template jurnal, dengan catatan kaki dan cover CD siap cetak.",
+        badge: "Link 7 • Artikel Jurnal & Cover CD",
         priceRp: 20000,
       }
     ]

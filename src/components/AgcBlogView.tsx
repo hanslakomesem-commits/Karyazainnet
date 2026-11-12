@@ -471,7 +471,7 @@ export const AgcBlogView: React.FC<AgcBlogViewProps> = ({
                     }}
                     className="text-[#1a74ba] hover:underline"
                   >
-                    {selectedPost.category}
+                    {selectedPost.category === 'Teknologi & AI' ? 'Teknologi Digital' : selectedPost.category}
                   </button>
                   <span>»</span>
                   <span className="text-[#333] font-semibold truncate max-w-[280px]">
@@ -480,7 +480,7 @@ export const AgcBlogView: React.FC<AgcBlogViewProps> = ({
                 </>
               ) : (
                 <span className="text-[#333] font-semibold">
-                  {selectedCategory === 'Semua' ? 'Semua Postingan' : `Label: ${selectedCategory}`}
+                  {selectedCategory === 'Semua' ? 'Semua Postingan' : `Label: ${selectedCategory === 'Teknologi & AI' ? 'Teknologi Digital' : selectedCategory}`}
                 </span>
               )}
             </div>
@@ -663,7 +663,7 @@ export const AgcBlogView: React.FC<AgcBlogViewProps> = ({
                       }}
                       className="text-[#1a74ba] hover:underline font-bold"
                     >
-                      {selectedPost.category}
+                      {selectedPost.category === 'Teknologi & AI' ? 'Teknologi Digital' : selectedPost.category}
                     </button>
                     {selectedPost.tags && selectedPost.tags.map((t, idx) => (
                       <span key={idx} className="text-[#888]">
@@ -856,7 +856,7 @@ export const AgcBlogView: React.FC<AgcBlogViewProps> = ({
                           </p>
                           <div className="mt-2 flex items-center justify-between">
                             <span className="text-[11px] text-[#888] bg-[#eee] px-2 py-0.5 rounded">
-                              Kategori: <strong>{post.category}</strong>
+                              Kategori: <strong>{post.category === 'Teknologi & AI' ? 'Teknologi Digital' : post.category}</strong>
                             </span>
                             <button
                               onClick={() => handleSelectPost(post)}
@@ -1006,7 +1006,7 @@ export const AgcBlogView: React.FC<AgcBlogViewProps> = ({
                         }`}
                       >
                         <span>•</span>
-                        <span>{cat}</span>
+                        <span>{cat === 'Teknologi & AI' ? 'Teknologi Digital' : cat}</span>
                       </button>
                       <span className="text-[10px] text-[#999] bg-[#f0f0f0] px-1.5 py-0.2 rounded font-semibold">
                         {count}
@@ -1038,7 +1038,7 @@ export const AgcBlogView: React.FC<AgcBlogViewProps> = ({
                         {top.title}
                       </h5>
                       <span className="text-[10px] text-[#888] block mt-0.5">
-                        {top.wordCount ? `${top.wordCount.toLocaleString('id-ID')} kata` : '7.180 kata'} • {top.category}
+                        {top.wordCount ? `${top.wordCount.toLocaleString('id-ID')} kata` : '7.180 kata'} • {top.category === 'Teknologi & AI' ? 'Teknologi Digital' : top.category}
                       </span>
                     </div>
                   </div>

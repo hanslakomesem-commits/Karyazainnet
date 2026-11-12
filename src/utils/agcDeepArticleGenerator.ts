@@ -24,7 +24,7 @@ export function generateProcedural7000WordArticle(
   const todayStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
   const searchIntent: AgcSearchIntent = category.includes('Bisnis') || category.includes('Finansial')
-    ? 'Commercial Investigation' 
+    ? 'Commercial Investigation'
     : 'Tutorial / How-to';
 
   const defaultImg = coverImage || (
@@ -60,16 +60,16 @@ export function generateProcedural7000WordArticle(
 
       {/* AI GENERATED PHOTO SEO */}
       <figure class="my-6 border border-[#ccc] p-2 bg-white rounded text-center shadow-sm">
-        <img 
-          src="/src/assets/images/zain_blog_seo_1790031404391.jpg" 
-          alt="Foto AI SEO: Panduan dan Tutorial Lengkap ${cleanTitle} - Zain.net Update Berita" 
-          title="Zain.net Update Berita: Analisis dan Panduan ${cleanTitle}" 
-          loading="lazy" 
-          class="w-full h-auto max-h-[420px] object-cover rounded mx-auto" 
-          referrerPolicy="no-referrer" 
+        <img
+          src="/src/assets/images/zain_blog_seo_1790031404391.jpg"
+          alt="Ilustrasi Analisis SEO: Panduan dan Tutorial Lengkap ${cleanTitle} - Zain.net Update Berita"
+          title="Zain.net Update Berita: Analisis dan Panduan ${cleanTitle}"
+          loading="lazy"
+          class="w-full h-auto max-h-[420px] object-cover rounded mx-auto"
+          referrerPolicy="no-referrer"
         />
         <figcaption class="text-xs text-black font-bold mt-2 text-right">
-          Foto AI SEO: Visualisasi Konseptual &amp; Alur Strategis ${cleanTitle} (Zain.net Update Berita)
+          Ilustrasi Analisis SEO: Visualisasi Konseptual &amp; Alur Strategis ${cleanTitle} (Zain.net Update Berita)
         </figcaption>
       </figure>
 
@@ -175,7 +175,7 @@ export function generateProcedural7000WordArticle(
       <p class="text-slate-200 leading-relaxed text-base">
         Sekarang saatnya kita masuk ke inti pembahasan tutorial! Silakan simak dan ikuti tahapan demi tahapan berikut ini secara runut:
       </p>
-      
+
       <div id="tahap-persiapan-awal" class="space-y-3 my-4">
         <h3 class="text-lg font-bold text-amber-300">Tahap 1: Persiapan &amp; Penentuan Fokus Awal</h3>
         <div class="p-4 rounded-xl bg-slate-900 border border-slate-800">

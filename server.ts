@@ -792,7 +792,7 @@ async function generateLabel103ContentWithFallback(
     }
   }
 
-  throw lastError || new Error('Server AI sedang sibuk. Silakan coba beberapa saat lagi.');
+  throw lastError || new Error('Layanan pembacaan dokumen sedang sibuk. Silakan coba beberapa saat lagi.');
 }
 
 // Endpoint: Extract guest names from photo (e.g. handwritten notebook with pen) for Menu No. 9 (Label 103)
@@ -805,7 +805,7 @@ app.post('/api/extract-from-image', async (req, res) => {
 
     const ai = getAI();
     if (!ai) {
-      return res.status(500).json({ error: 'Layanan AI belum terkonfigurasi di server' });
+      return res.status(500).json({ error: 'Layanan analisis dokumen belum tersedia. Hubungi pengelola ZAIN.NET.' });
     }
 
     const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
@@ -879,7 +879,7 @@ Kembalikan HANYA array string JSON berisi daftar nama tamu secara berurutan.`;
   } catch (error: any) {
     console.error('Error in /api/extract-from-image:', error);
     return res.status(500).json({
-      error: 'Server AI sedang mengalami lonjakan trafik tinggi (503). Silakan klik Pindai sekali lagi dalam beberapa detik.',
+      error: 'Layanan pemindaian dokumen sedang sibuk (503). Silakan coba kembali beberapa saat lagi.',
     });
   }
 });
@@ -1119,7 +1119,7 @@ Kembalikan HANYA format JSON valid berikut:
     return res.status(200).json({
       success: false,
       fallback: true,
-      error: lastError?.message || 'Gagal memproses OCR dengan model Gemini.',
+      error: 'Pembacaan teks dokumen belum berhasil. Silakan coba kembali.',
     });
   } catch (error: any) {
     console.warn('Document OCR warning (using fallback):', error?.message || error);
@@ -1190,7 +1190,7 @@ ${keywords || '-'}`;
     const translatedParagraphs = Array.isArray(parsed.paragraphs) ? parsed.paragraphs : [];
 
     if (translatedParagraphs.length === 0) {
-      throw new Error('Gemini tidak mengembalikan paragraf terjemahan yang valid.');
+      throw new Error('Hasil terjemahan abstrak belum sesuai format. Silakan coba kembali.');
     }
 
     res.json({
@@ -1204,7 +1204,7 @@ ${keywords || '-'}`;
   } catch (error: any) {
     console.error('Error translate-abstract:', error);
     res.status(500).json({
-      error: error.message || 'Gagal menerjemahkan abstrak dengan Gemini 3.1 Flash Lite.',
+      error: 'Layanan penerjemahan abstrak belum berhasil. Silakan coba kembali.',
     });
   }
 });
@@ -1281,7 +1281,7 @@ ${paragraphs.map((p: string, idx: number) => `[Paragraf ${idx + 1}]:\n${p}`).joi
   } catch (error: any) {
     console.error('Error tidy-section:', error);
     res.status(500).json({
-      error: error.message || 'Gagal merapikan bagian dengan Gemini 3.1 Flash Lite.',
+      error: 'Layanan perapian bagian naskah belum berhasil. Silakan coba kembali.',
     });
   }
 });
@@ -1348,7 +1348,7 @@ Kembalikan JSON array of paragraphs yang sudah rapi.`;
   } catch (error: any) {
     console.error('Error tidy-article:', error);
     res.status(500).json({
-      error: error.message || 'Gagal merapikan artikel dengan Gemini 3.1 Flash Lite.',
+      error: 'Layanan perapian artikel belum berhasil. Silakan coba kembali.',
     });
   }
 });

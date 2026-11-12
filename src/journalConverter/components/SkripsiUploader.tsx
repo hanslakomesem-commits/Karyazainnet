@@ -878,7 +878,7 @@ export const SkripsiUploader: React.FC<SkripsiUploaderProps> = ({
                 ) : (
                   <span className="text-[10px] bg-indigo-50 text-indigo-700 font-semibold px-2 py-0.5 rounded-full border border-indigo-200 flex items-center space-x-1">
                     <Sparkles className="w-3 h-3 text-indigo-500" />
-                    <span>Otomatis Diekstrak AI dari Naskah</span>
+                    <span>Judul Dibaca Otomatis dari Naskah</span>
                   </span>
                 )}
               </label>
@@ -886,11 +886,11 @@ export const SkripsiUploader: React.FC<SkripsiUploaderProps> = ({
                 type="text"
                 value={metadata.judul}
                 onChange={(e) => setMetadata({ ...metadata, judul: e.target.value })}
-                placeholder="Otomatis diekstrak AI dari cover skripsi (atau ketik/edit langsung judul skripsi asli di sini)..."
+                placeholder="Dibaca otomatis dari halaman judul skripsi (atau ketik/edit langsung judul skripsi asli di sini)..."
                 className="w-full text-sm px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-900 bg-white transition-all shadow-sm"
               />
               <p className="text-[11px] text-slate-500 mt-1">
-                💡 Judul artikel jurnal wajib disamakan persis dengan judul skripsi asli tanpa parafrase. Jika dikosongkan, AI akan mengekstrak judul asli langsung dari cover skripsi.
+                💡 Judul artikel jurnal wajib disamakan persis dengan judul skripsi asli tanpa parafrase. Jika dikosongkan, sistem akan membaca judul asli dari halaman depan skripsi.
               </p>
             </div>
 
@@ -1153,7 +1153,7 @@ export const SkripsiUploader: React.FC<SkripsiUploaderProps> = ({
               </div>
               <p className="text-xs mt-2 leading-relaxed">{thesisPdfStatus.message}</p>
               <p className="text-[11px] mt-1 text-cyan-800">
-                {thesisPdfStatus.status === 'running' ? 'Sedang diproses selagi AI menyusun artikel…' :
+                {thesisPdfStatus.status === 'running' ? 'Sedang diproses selagi artikel disusun…' :
                  thesisPdfStatus.status === 'ready' ? 'Selesai ✓ PDF akan dimasukkan ke ZIP otomatis.' :
                  thesisPdfStatus.status === 'error' ? 'Akan dicoba kembali saat ZIP dibuat.' :
                  'Menunggu file Word skripsi.'}

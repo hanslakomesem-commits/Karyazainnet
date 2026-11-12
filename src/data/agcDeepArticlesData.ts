@@ -22,7 +22,7 @@ export const AGC_DEEP_7000_ARTICLES: AgcPost[] = [
     searchIntent: 'Tutorial / How-to',
     excerpt: 'Banyak orang membuat blog dengan harapan bisa langsung menghasilkan uang, namun sering bingung harus mulai dari mana. Simak panduan lengkap dan terbukti ampuh agar blog sobat ramai pengunjung dan bisa menghasilkan pundi-pundi rupiah secara konsisten di portal Zain.net Update Berita.',
     coverImageUrl: '/src/assets/images/zain_blog_seo_1790031404391.jpg',
-    imageAltText: 'Foto AI SEO: Seorang blogger sedang menganalisis grafik trafik organik Google dan dasbor Google AdSense - Zain.net Update Berita',
+    imageAltText: 'Ilustrasi Analisis SEO: Seorang blogger sedang menganalisis grafik trafik organik Google dan dasbor Google AdSense - Zain.net Update Berita',
     author: 'Redaksi Zain.net Update Berita',
     readingTimeMinutes: 26,
     wordCount: 7180,
@@ -118,7 +118,7 @@ export const AGC_DEEP_7000_ARTICLES: AgcPost[] = [
             referrerPolicy="no-referrer" 
           />
           <figcaption class="text-xs text-black font-bold mt-2 text-right">
-            Foto AI SEO: Ruang Kerja Digital Kreator Konten, Pemantauan Grafik Trafik Pengunjung Organik &amp; Analisis Kinerja Monetisasi Google AdSense (Zain.net Update Berita)
+            Ilustrasi Analisis SEO: Ruang Kerja Digital Kreator Konten, Pemantauan Grafik Trafik Pengunjung Organik &amp; Analisis Kinerja Monetisasi Google AdSense (Zain.net Update Berita)
           </figcaption>
         </figure>
 
@@ -343,7 +343,7 @@ export const AGC_DEEP_7000_ARTICLES: AgcPost[] = [
             referrerPolicy="no-referrer" 
           />
           <figcaption class="text-xs text-black font-bold mt-2 text-right">
-            Foto AI SEO: Dasbor Laporan Pertumbuhan Saldo Google AdSense &amp; Grafik Kenaikan Trafik Pengunjung Harian (Zain.net Update Berita)
+            Ilustrasi Analisis SEO: Dasbor Laporan Pertumbuhan Saldo Google AdSense &amp; Grafik Kenaikan Trafik Pengunjung Harian (Zain.net Update Berita)
           </figcaption>
         </figure>
 
@@ -538,7 +538,7 @@ export const AGC_DEEP_7000_ARTICLES: AgcPost[] = [
     searchIntent: 'Tutorial / How-to',
     excerpt: 'Kecepatan loading dan kerapian kode template adalah fondasi utama kenyamanan pengunjung. Simak panduan teknis langkah demi langkah merapikan kode template Blogspot sobat agar ringan dan ramah SEO di portal Zain.net Update Berita.',
     coverImageUrl: '/src/assets/images/zain_adsense_monetize_1790031419884.jpg',
-    imageAltText: 'Foto AI SEO: Pengembang web sedang mengoptimasi susunan kode template dan dasbor performa AdSense - Zain.net Update Berita',
+    imageAltText: 'Ilustrasi Analisis SEO: Pengembang web sedang mengoptimasi susunan kode template dan dasbor performa AdSense - Zain.net Update Berita',
     author: 'Redaksi Zain.net Update Berita',
     readingTimeMinutes: 24,
     wordCount: 7110,
@@ -614,7 +614,7 @@ export const AGC_DEEP_7000_ARTICLES: AgcPost[] = [
             referrerPolicy="no-referrer" 
           />
           <figcaption class="text-xs text-black font-bold mt-2 text-right">
-            Foto AI SEO: Pemantauan Kecepatan Loading Template, Peningkatan Pengunjung &amp; Pertumbuhan Saldo Google AdSense (Zain.net Update Berita)
+            Ilustrasi Analisis SEO: Pemantauan Kecepatan Loading Template, Peningkatan Pengunjung &amp; Pertumbuhan Saldo Google AdSense (Zain.net Update Berita)
           </figcaption>
         </figure>
 
@@ -717,7 +717,7 @@ export const AGC_DEEP_7000_ARTICLES: AgcPost[] = [
           referrerPolicy="no-referrer" 
         />
         <figcaption class="text-xs text-black font-bold mt-2 text-right">
-          Foto AI SEO: Evaluasi Struktur Kode Template, Uji Responsivitas Perangkat &amp; Optimasi Core Web Vitals (Zain.net Update Berita)
+          Ilustrasi Analisis SEO: Evaluasi Struktur Kode Template, Uji Responsivitas Perangkat &amp; Optimasi Core Web Vitals (Zain.net Update Berita)
         </figcaption>
       </figure>
 

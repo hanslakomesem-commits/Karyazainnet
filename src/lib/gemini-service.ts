@@ -27,7 +27,7 @@ export async function translateAbstractWithGemini(
 
   const data = await res.json();
   if (!res.ok) {
-    throw new Error(data.error || 'Gagal menerjemahkan abstrak dengan Gemini 3.1 Flash Lite.');
+    throw new Error(data.error || 'Layanan penerjemahan abstrak belum berhasil. Silakan coba kembali.');
   }
   return data;
 }
@@ -51,7 +51,7 @@ export async function tidySectionWithGemini(
 
   const data = await res.json();
   if (!res.ok) {
-    throw new Error(data.error || 'Gagal merapikan bagian dengan Gemini 3.1 Flash Lite.');
+    throw new Error(data.error || 'Perapian bagian naskah belum berhasil. Silakan coba kembali.');
   }
   return data;
 }
@@ -68,7 +68,7 @@ export async function tidyArticleWithGemini(
 
   const data = await res.json();
   if (!res.ok) {
-    throw new Error(data.error || 'Gagal merapikan draf artikel dengan Gemini 3.1 Flash Lite.');
+    throw new Error(data.error || 'Perapian draf artikel belum berhasil. Silakan coba kembali.');
   }
   return data;
 }

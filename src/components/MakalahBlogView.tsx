@@ -559,7 +559,7 @@ export const MakalahBlogView: React.FC<MakalahBlogViewProps> = ({
                 className="ml-2 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Tools AI Akademik</span>
+                <span>Layanan Pengolahan Akademik</span>
               </button>
             </nav>
 
@@ -757,7 +757,7 @@ export const MakalahBlogView: React.FC<MakalahBlogViewProps> = ({
                 className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 text-white font-bold text-xs flex items-center justify-center gap-2"
               >
                 <Sparkles className="w-4 h-4" />
-                <span>Beralih ke Tools AI Akademik</span>
+                <span>Beralih ke Layanan Pengolahan Akademik</span>
               </button>
             </div>
           </div>
@@ -1904,7 +1904,7 @@ export const MakalahBlogView: React.FC<MakalahBlogViewProps> = ({
                       className="w-full py-2 px-3 rounded-xl bg-white text-slate-900 font-extrabold text-xs hover:bg-slate-100 transition-colors shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
                     >
                       <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>Gunakan Generator AI Skripsi</span>
+                      <span>Gunakan Penyusun Artikel Skripsi</span>
                     </button>
                   </div>
                 </div>
@@ -1959,10 +1959,10 @@ export const MakalahBlogView: React.FC<MakalahBlogViewProps> = ({
             {/* Academic AI Tools Link */}
             <div className="md:col-span-3 space-y-2">
               <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-900 dark:text-white">
-                Layanan Akademik AI
+                Layanan Akademik Digital
               </h4>
               <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed">
-                Tersedia alat bantu AI penyusun makalah, parafrase penurun plagiasi, dan perumus judul skripsi otomatis.
+                Tersedia alat bantu otomatis penyusun makalah, parafrase penurun plagiasi, dan perumus judul skripsi otomatis.
               </p>
               <button
                 type="button"
@@ -1970,7 +1970,7 @@ export const MakalahBlogView: React.FC<MakalahBlogViewProps> = ({
                 className="inline-flex items-center gap-1.5 text-xs font-bold hover:underline cursor-pointer"
                 style={{ color: crimson }}
               >
-                <span>Buka Tools AI Generator</span>
+                <span>Buka Layanan Penyusunan Akademik</span>
                 <ArrowRight className="w-3 h-3" />
               </button>
             </div>

@@ -69,7 +69,7 @@ export const ToolMaintenanceModal: React.FC<ToolMaintenanceModalProps> = ({
   // Quick preset reasons
   const quickReasons = [
     'Link ini masih dalam perbaikan',
-    'Kuota token AI habis terpakai, sedang isi ulang',
+    'Kapasitas pemrosesan sementara terbatas; sedang ditangani',
     'Server modul sedang pemeliharaan berkala',
     'Sedang proses update tautan & perbaikan teknisi'
   ];
@@ -80,7 +80,7 @@ export const ToolMaintenanceModal: React.FC<ToolMaintenanceModalProps> = ({
       [toolId]: {
         ...prev[toolId],
         status,
-        reason: prev[toolId]?.reason || (status === 'token_exhausted' ? 'Kuota token AI habis terpakai, sedang isi ulang' : 'Masih dalam perbaikan')
+        reason: prev[toolId]?.reason || (status === 'token_exhausted' ? 'Kapasitas pemrosesan sementara terbatas; sedang ditangani' : 'Masih dalam perbaikan')
       }
     }));
   };
@@ -198,7 +198,7 @@ export const ToolMaintenanceModal: React.FC<ToolMaintenanceModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-gray-400 mt-0.5">
-                Kunci link modul yang sedang perbaikan, eror, atau token AI habis agar tidak dapat diklik mahasiswa & user.
+                Kunci link modul yang sedang perbaikan, eror, atau kapasitas pemrosesan terbatas agar tidak dapat diklik mahasiswa & user.
               </p>
             </div>
           </div>
@@ -284,7 +284,7 @@ export const ToolMaintenanceModal: React.FC<ToolMaintenanceModalProps> = ({
               type="text"
               value={globalNotice}
               onChange={(e) => setGlobalNotice(e.target.value)}
-              placeholder="Contoh: Beberapa server AI sedang proses isi ulang kuota token & update sistem. Mohon bersabar."
+              placeholder="Contoh: Sebagian layanan pemrosesan dokumen sedang dalam pemeliharaan. Silakan mencoba kembali."
               className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-500"
             />
             <p className="text-[11px] text-gray-400">

@@ -650,7 +650,7 @@ export const MakalahDetailModal: React.FC<MakalahDetailModalProps> = ({
                       100% File Asli Upload
                     </span>
                     <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold border border-blue-200">
-                      Bukan Buatan AI
+                      Berkas Asli Pengunggah
                     </span>
                   </div>
                   <p className="text-xs text-slate-700 mt-1 font-mono break-all font-medium">
@@ -719,7 +719,7 @@ export const MakalahDetailModal: React.FC<MakalahDetailModalProps> = ({
             </div>
 
             <div className="mt-3 pt-3 border-t border-slate-200 text-[11px] text-slate-600 flex flex-wrap items-center justify-between gap-2">
-              <span>✓ 100% berkas dokumen asli murni (Word / PDF) tanpa manipulasi teks oleh AI.</span>
+              <span>✓ 100% berkas dokumen asli murni (Word / PDF) tanpa penyuntingan teks otomatis.</span>
               <span className="text-emerald-700 font-bold">Publik & Bebas Unduh Langsung Tanpa Akun</span>
             </div>
           </div>

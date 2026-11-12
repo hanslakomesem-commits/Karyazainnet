@@ -4,16 +4,16 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <meta name="theme-color" content="#0f467e" />
-<title>ZAIN.NET AI Cover Skripsi V4.1</title>
+<title>ZAIN.NET Cover Skripsi Presisi V4.1</title>
 <link rel="stylesheet" href="./style.css"/>
 </head>
 <body>
 <header class="topbar">
- <div class="brand"><div class="logo">Z<span>•</span></div><div><strong>ZAIN.NET <span>AI COVER</span></strong><small>Hard Cover Studio · V4.1</small></div></div>
+ <div class="brand"><div class="logo">Z<span>•</span></div><div><strong>ZAIN.NET <span>COVER PRESISI</span></strong><small>Hard Cover Studio · V4.1</small></div></div>
  <div class="header-right"><span class="dot" id="serverDot"></span><span id="connection">Memeriksa layanan...</span></div>
 </header>
 <main class="container">
- <div class="page-head"><div><p class="eyebrow">PRODUKSI PERCETAKAN</p><h1>Foto, PDF, Word <span>Jadi Cover Siap Cetak</span></h1><p class="subtitle">Upload foto (OCR Gemini), PDF asli (halaman 1), atau Word DOCX (halaman 1). Edit hasil, pilih warna dan ukuran tiap pesanan.</p></div><div class="format-chip">Polos 480 × 330 <small>Warna 475 × 320 mm</small></div></div>
+ <div class="page-head"><div><p class="eyebrow">PRODUKSI PERCETAKAN</p><h1>Foto, PDF, Word <span>Jadi Cover Siap Cetak</span></h1><p class="subtitle">Upload foto (pembacaan teks otomatis), PDF asli (halaman 1), atau Word DOCX (halaman 1). Edit hasil, pilih warna dan ukuran tiap pesanan.</p></div><div class="format-chip">Polos 480 × 330 <small>Warna 475 × 320 mm</small></div></div>
  <div class="stepper"><span class="active" data-step="1"><b>1</b> Upload Berkas</span><span data-step="2"><b>2</b> Periksa Teks</span><span data-step="3"><b>3</b> Ketebalan</span><span data-step="4"><b>4</b> PDF</span></div>
  <div id="notice" class="notice hidden" role="alert"></div>
  <div class="workspace">
@@ -24,14 +24,14 @@
   <div class="upload-actions"><button type="button" class="btn btn-outline" id="cameraButton">📷 Kamera / OCR</button><button type="button" class="btn btn-outline" id="pdfUploadButton">📄 Upload PDF (hal. 1)</button><button type="button" class="btn btn-outline" id="wordUploadButton">📝 Upload Word (hal. 1)</button><button type="button" class="btn btn-outline" id="manualButton">+ Pesanan Manual</button></div>
   <input type="file" id="pdfInput" accept="application/pdf,.pdf" multiple hidden/>
   <input type="file" id="wordInput" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple hidden/>
-  <div class="input-modes"><div><b>Foto</b><small>Gemini OCR hanya untuk gambar</small></div><div><b>PDF</b><small>Teks halaman 1 lokal, OCR hanya jika scan</small></div><div><b>Word</b><small>Ekstraksi halaman pertama tanpa OCR</small></div></div>
+  <div class="input-modes"><div><b>Foto</b><small>Pengenalan teks otomatis untuk gambar</small></div><div><b>PDF</b><small>Teks halaman 1 lokal, OCR hanya jika scan</small></div><div><b>Word</b><small>Ekstraksi halaman pertama tanpa OCR</small></div></div>
   <div class="batch-header"><div><h3>Daftar pesanan <span id="orderCount">(0)</span></h3><p>Setiap nama memiliki <b>jenis cover</b> dan ketebalan sendiri.</p></div></div>
   <div id="ordersList" class="orders-list" aria-live="polite"><p class="empty-orders">Belum ada pesanan. Pilih beberapa foto sekaligus.</p></div>
   <div id="batchProgress" class="batch-progress hidden" role="status"></div>
   <div class="batch-actions"><button type="button" class="btn btn-primary" id="ocrAllButton">✦ Baca Semua Berkas</button><button type="button" class="btn btn-outline" id="ocrButton">Baca Berkas Terpilih</button><select id="batchOutputMode" class="batch-output" aria-label="Bentuk hasil PDF massal"><option value="separate">PDF per orang (ZIP)</option><option value="combined">Gabung satu PDF</option><option value="both">ZIP PDF per orang + PDF gabungan</option></select><button type="button" class="btn btn-secondary" id="batchJobsButton">↓ Download Hasil Batch</button></div>
-  <div class="batch-note">Untuk setiap mahasiswa: cek hasil AI → pilih ketebalan 10–28 mm → tandai diperiksa. Pilih <b>Polos, Merah, Maroon, atau Custom</b> untuk setiap foto. Unduh tiap orang dalam ZIP atau gabungkan semua sebagai satu PDF; ukuran tiap halaman tetap sesuai jenis cover.</div>
+  <div class="batch-note">Untuk setiap mahasiswa: periksa hasil pembacaan otomatis → pilih ketebalan 10–28 mm → tandai diperiksa. Pilih <b>Polos, Merah, Maroon, atau Custom</b> untuk setiap foto. Unduh tiap orang dalam ZIP atau gabungkan semua sebagai satu PDF; ukuran tiap halaman tetap sesuai jenis cover.</div>
   <div class="upload-actions"><button type="button" class="btn btn-quiet" id="clearPhoto">Hapus pesanan terpilih</button></div>
-  <div class="micro-note"><b>Hemat token:</b> PDF/Word dengan teks asli diproses lokal tanpa Gemini. PDF scan menggunakan OCR hanya halaman 1. Foto memakai Gemini. Jenis dokumen tidak otomatis dikunci SKRIPSI.</div>
+  <div class="micro-note"><b>Hemat token:</b> PDF/Word dengan teks asli diproses lokal tanpa pemrosesan eksternal. PDF scan menggunakan OCR hanya halaman 1. Foto menggunakan pembacaan teks otomatis. Jenis dokumen tidak otomatis dikunci SKRIPSI.</div>
   <div class="info-section"><h3>Tata letak terkunci ke referensi asli</h3><p>Polos memakai tata letak Serli; merah dan maroon memakai posisi dari file PILIHAN WARNA.pdf, termasuk logo UIN Madura dan tulisan kuning. Punggung adaptif tiap pesanan.</p></div>
  </section>
  <section class="card editor-panel">
@@ -76,7 +76,7 @@
   <div class="micro-note"><a href="./contoh/SERLI_10MM_REFERENSI.pdf" target="_blank" rel="noopener">Lihat PDF contoh Serli 10 mm</a> &nbsp;·&nbsp; <a href="./contoh/SERLI_27MM_REFERENSI.pdf" target="_blank" rel="noopener">Lihat PDF contoh Serli 27 mm</a></div>
   <div class="safety"><strong>Periksa setiap pesanan sebelum cetak.</strong> Font sumber adalah Times New Roman Bold. Jika font asli tidak tersedia pada server, aplikasi menggunakan font Tinos yang metriknya kompatibel; hasil tetap perlu diperiksa pada printer dan skala 100%.</div>
  </section>
- <footer>© ZAIN.NET • AI COVER SKRIPSI V4.1 • Batch OCR + ketebalan per pesanan · Layout diambil dari dokumen asli, logo tersedia khusus warna; batch pisah/gabung.</footer>
+ <footer>© ZAIN.NET • COVER PRESISI SKRIPSI V4.1 • Batch OCR + ketebalan per pesanan · Layout diambil dari dokumen asli, logo tersedia khusus warna; batch pisah/gabung.</footer>
 </main>
 <script src="./deployment-config.js"></script>
 <script src="./app.js" defer></script>

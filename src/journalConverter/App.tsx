@@ -91,7 +91,7 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
     if (thesisPdfJob.current?.file === file) return;
     setThesisPdfStatus({
       status: 'running',
-      message: 'Konversi skripsi Word ke PDF sedang berjalan di server LibreOffice, bersamaan dengan proses AI.'
+      message: 'Konversi skripsi Word ke PDF sedang berjalan di server LibreOffice, bersamaan dengan penyusunan artikel.'
     });
     const promise = convertWordToPdf(file, 'Skripsi.docx')
       .then((pdf) => {
@@ -201,7 +201,7 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
         }
       }
       if (!matchedEndpoint && !shouldRetry) {
-        throw new Error(`Endpoint AI untuk ${stageName} tidak tersedia (404).`);
+        throw new Error(`Layanan penyusunan untuk ${stageName} tidak tersedia (404).`);
       }
       if (!shouldRetry || attempt >= maxRetries) break;
       setGenerationStatus((prev) => ({
@@ -223,7 +223,7 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
     if (zipBusy.current) return false;
     if (!originalWord) {
       setWordPairPhase('error');
-      setWordPairMessage('ZIP otomatis membutuhkan skripsi Word .docx asli. Unggah Word pada panel paket lalu pilih Unduh Ulang ZIP; AI tidak perlu diulang.');
+      setWordPairMessage('ZIP otomatis membutuhkan skripsi Word .docx asli. Unggah Word pada panel paket lalu pilih Unduh Ulang ZIP; proses penyusunan tidak perlu diulang.');
       return false;
     }
     zipBusy.current = true;
@@ -243,7 +243,7 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
 
       let assets = articleReadyAssets.current;
       if (!assets || assets.article !== readyArticle || assets.templateId !== templateId) {
-        setWordPairMessage('AI selesai. Membuat Word artikel dan Cover CD secara bersamaan...');
+        setWordPairMessage('Penyusunan artikel selesai. Menyiapkan Word artikel dan Cover CD...');
         const [word, cover] = await Promise.all([
           getArticleWord(readyArticle), buildCoverCdDocx(readyArticle),
         ]);
@@ -256,7 +256,7 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
         articleReadyAssets.current = assets;
       }
 
-      setWordPairMessage('Menggabungkan semua berkas: menunggu PDF skripsi yang diproses bersamaan dengan AI...');
+      setWordPairMessage('Menggabungkan semua berkas: menunggu PDF skripsi yang diproses bersamaan dengan penyusunan artikel...');
       const existingThesisPdf = thesisPdfJob.current?.file === originalWord
         ? await thesisPdfJob.current.promise : null;
       if (!existingThesisPdf) {
@@ -275,7 +275,7 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
       zipReadyAssets.current = { article: readyArticle, templateId, thesis: originalWord, blob, filename };
       triggerBundleDownload(blob, filename);
       setWordPairPhase('requested');
-      setWordPairMessage(`ZIP 5 file sudah dibuat dan unduhannya diminta otomatis: ${filename}. Periksa folder Download. Bila Chrome memblokirnya, tekan Unduh Ulang ZIP tanpa menjalankan AI kembali.`);
+      setWordPairMessage(`ZIP 5 file sudah dibuat dan unduhannya diminta otomatis: ${filename}. Periksa folder Download. Bila Chrome memblokirnya, tekan Unduh Ulang ZIP tanpa memulai penyusunan ulang.`);
       setZipMessage('ZIP selesai dibuat. Tidak ada unduhan Word/PDF terpisah yang berjalan otomatis.');
       // Report completion only after the entire ZIP exists and the browser download was requested.
       onArticleComplete?.(filename);
@@ -283,7 +283,7 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
     } catch (err: any) {
       console.error('[ZAIN.NET Link 7] Auto ZIP:', err);
       setWordPairPhase('error');
-      setWordPairMessage(`ZIP belum berhasil: ${err?.message || 'Konversi gagal'}. Artikel AI tetap tersedia. Tekan Unduh Ulang ZIP untuk mencoba lagi.`);
+      setWordPairMessage(`ZIP belum berhasil: ${err?.message || 'Konversi gagal'}. Artikel yang sudah dibuat tetap tersedia. Tekan Unduh Ulang ZIP untuk mencoba lagi.`);
       setZipMessage(`Paket ZIP belum siap: ${err?.message || 'Periksa server LibreOffice.'}`);
       return false;
     } finally {
@@ -343,7 +343,7 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
       setThesisPdfStatus({ status: 'skipped', message: 'PDF otomatis memerlukan skripsi Word .docx asli. Upload Word untuk menyiapkan ZIP lengkap.' });
     }
     setZipMessage(original?.name.toLowerCase().endsWith('.docx')
-      ? 'PDF skripsi disiapkan bersamaan dengan AI. ZIP lima file akan diunduh otomatis.'
+      ? 'PDF skripsi disiapkan bersamaan dengan penyusunan artikel. ZIP lima file akan diunduh otomatis.'
       : 'Untuk ZIP, pilih skripsi Word .docx asli sekali saja.');
     setIsLoading(true);
     setErrorMsg(null);
@@ -641,19 +641,19 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
                   <AlertCircle className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
                     <h3 className="font-bold text-base text-amber-950 mb-1">
-                      Batas Pengeluaran Bulanan Tercapai (Monthly Spending Cap Exceeded)
+                      Layanan Penyusunan Artikel Sementara Terkendala
                     </h3>
                     <p className="text-sm text-amber-800 leading-relaxed mb-3">
-                      Layanan pemrosesan naskah / API Anda telah mencapai limit kuota bulanan yang ditetapkan. Untuk melanjutkan pembuatan artikel:
+                      Kapasitas layanan penyusunan artikel sedang terbatas. Jangan melakukan pembayaran ulang untuk transaksi yang sama; silakan hubungi pengelola ZAIN.NET.
                     </p>
                     <div className="flex flex-wrap items-center gap-3">
                       <a
-                        href="https://ai.studio/spend"
+                        href="https://wa.me/6285231176597"
                         target="_blank"
                         rel="noreferrer"
                         className="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all"
                       >
-                        Buka https://ai.studio/spend &rarr;
+                        Hubungi Layanan ZAIN.NET &rarr;
                       </a>
                       <button
                         onClick={() => setErrorMsg(null)}
@@ -691,7 +691,7 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
               <button type="button" onClick={() => setArticleMode('normal')}
                 className="text-left rounded-xl p-5 border-2 border-blue-200 hover:bg-blue-50 focus-visible:outline-4 focus-visible:outline-blue-400">
                 <span className="block text-lg font-bold">1. Buat Artikel Biasa</span>
-                <span className="block text-sm mt-2 text-slate-600">Tetap menggunakan mesin AI Link 7 dan aturan artikel standar seperti sebelumnya.</span>
+                <span className="block text-sm mt-2 text-slate-600">Tetap menggunakan layanan penyusunan Link 7 dan aturan artikel standar seperti sebelumnya.</span>
               </button>
               <button type="button" onClick={() => setArticleMode('template')}
                 className="text-left rounded-xl p-5 border-2 border-emerald-300 hover:bg-emerald-50 focus-visible:outline-4 focus-visible:outline-emerald-400">
@@ -725,7 +725,7 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
                 </a>
               </div>
             )}
-            <p className="text-xs mt-3 text-amber-800">AI menulis isi berdasarkan skripsi. Master asli dipakai untuk format Word; hasil wajib diperiksa karena tidak semua format jurnal dapat dijamin identik.</p>
+            <p className="text-xs mt-3 text-amber-800">Naskah disusun otomatis berdasarkan skripsi. Master asli dipakai untuk format Word; hasil wajib diperiksa karena tidak semua format jurnal dapat dijamin identik.</p>
             {!selectedJournalId && <p className="text-sm mt-2 text-rose-700">Pilih jurnal terlebih dahulu agar menu unggah skripsi terbuka.</p>}
           </section>
         )}
@@ -793,7 +793,7 @@ export default function App({ onGenerationStarted, onArticleComplete, onDownload
       {/* Footer */}
       <footer className="border-t border-slate-200 bg-white py-6 text-center text-xs text-slate-500">
         <p>
-          ZAIN.NET • Aplikasi Pembuat Artikel Ilmiah Skripsi (IAIN Madura) + Cover CD Word • Sesuai Kaidah Jurnal (Times New Roman 12pt, Spasi 1.5, Margins 3cm & Footnote) • Didukung Google Gemini 3.1 Flash Lite
+          ZAIN.NET • Aplikasi Pembuat Artikel Ilmiah Skripsi (IAIN Madura) + Cover CD Word • Sesuai Kaidah Jurnal (Times New Roman 12pt, Spasi 1.5, Margins 3cm & Footnote) • Dikelola melalui sistem pemrosesan akademik ZAIN.NET
         </p>
       </footer>
     </div>

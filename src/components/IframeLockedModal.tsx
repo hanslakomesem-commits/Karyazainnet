@@ -65,8 +65,8 @@ export const IframeLockedModal: React.FC<IframeLockedModalProps> = ({
     },
     {
       id: 'art-6',
-      title: 'Menu 1 Link 6: Generator Artikel (Gemini 3.1 Flash Lite)',
-      badge: 'Gemini AI • Internal Native',
+      title: 'Menu 1 Link 6: Generator Artikel Akademik',
+      badge: 'Pemrosesan Dokumen • Terintegrasi',
     },
     {
       id: 'num-3',

@@ -40,15 +40,26 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
   const finishRef = useRef(onFinishCreation);
   finishRef.current = onFinishCreation;
   const iframeKey = tool?.id;
+  // ZAINNET_LINK7_DOWNLOAD_SYNC_FIX_20261112
+  const isLink7 = tool?.id === 'art-7' || tool?.url === 'internal://journal-converter' || tool?.url === '/journal-converter';
   const addLog = (_type: string,_message: string) => {};
   useEffect(() => {
     if (!tool) return;
     done.current=false; setCompleted(false);
-    recordSessionInProgress(tool,effectiveUserId,[],0,0,'Modul dibuka. Menunggu hasil proses.');
+    const previous = getSessionForTool(tool.id, effectiveUserId);
+    if (isLink7 && previous?.status === 'completed') {
+      // Merely reopening a link must NOT create a new transaction.
+      setStatus('Transaksi Link 7 terakhir sudah selesai. Proses artikel baru untuk memulai sesi baru.');
+    } else {
+      recordSessionInProgress(tool,effectiveUserId,[],0,0,'Modul dibuka. Menunggu hasil proses.');
+      setStatus('Proses belum selesai. Status dicatat setelah hasil tersedia.');
+    }
     const sync = (event: Event) => {
       const detail=(event as CustomEvent).detail;
-      if (!done.current) return;
-      setStatus(detail?.ok ? 'Selesai — status tersimpan di akun.' : `Hasil siap; penyimpanan akun tertunda. ${detail?.message || 'Akan dicoba ulang otomatis.'}`);
+      if (!done.current || (detail?.toolId && detail.toolId !== tool.id)) return;
+      const current = getSessionForTool(tool.id, effectiveUserId);
+      if (detail?.sessionId && current?.id !== detail.sessionId) return;
+      setStatus(detail?.ok ? 'Selesai — status tersimpan di akun Supabase.' : `Hasil siap; sinkronisasi akun tertunda. ${detail?.message || 'Akan dicoba ulang otomatis.'}`);
     };
     window.addEventListener('zain_sync_status',sync);
     return () => window.removeEventListener('zain_sync_status',sync);
@@ -67,6 +78,14 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
       onClose();
     }, delayMs);
   };
+  const handleLink7GenerationStarted = () => {
+    if (!tool) return;
+    if (link7ReturnTimer.current) clearTimeout(link7ReturnTimer.current);
+    done.current = false;
+    setCompleted(false);
+    recordSessionInProgress(tool, effectiveUserId, [], 0, 0, 'Pembuatan artikel Link 7 baru dimulai.');
+    setStatus('Artikel sedang diproses. Transaksi akan selesai setelah ZIP berhasil disiapkan dan unduhan diminta.');
+  };
   const handleLink7GenerationReady = (fileName: string) => {
     if (!tool || done.current) return;
     done.current = true;
@@ -76,14 +95,14 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
       setStatus('ZIP diminta; pencatatan akun tertunda: ' + (err?.message || 'Periksa akun.'));
     });
     // Allow Chrome a short window to start the download and user to retry.
-    returnToHomeAfterZip(5000);
+    // Give Firefox/Chrome time to display the download and offer a manual fallback.
+    returnToHomeAfterZip(8000);
   };
   const handleLink7DownloadsConfirmed = () => {
     if (!done.current) return;
     setStatus('Kembali ke menu utama...');
     returnToHomeAfterZip(150);
   };
-  const isLink7 = tool?.id === 'art-7' || tool?.url === 'internal://journal-converter' || tool?.url === '/journal-converter';
   const handleAutoFinishDownload = (fileName: string, reason: string) => {
     if (!tool || done.current) return;
     done.current = true;
@@ -216,6 +235,7 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
         ) : tool.id === 'art-7' || tool.url === 'internal://journal-converter' || tool.url === '/journal-converter' ? (
           <div key={iframeKey} className="w-full h-full overflow-y-auto bg-slate-100">
             <JournalConverterApp
+              onGenerationStarted={handleLink7GenerationStarted}
               onArticleComplete={(outFileName) => {
                 handleLink7GenerationReady(outFileName);
               }}

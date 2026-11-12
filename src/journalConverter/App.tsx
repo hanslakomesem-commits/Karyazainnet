@@ -14,11 +14,13 @@ import { JOURNAL_MASTER_CATALOG, findJournalMaster } from './data/journalTemplat
 import { buildTemplateArticleWord } from './utils/journalTemplateService';
 
 interface JournalConverterAppProps {
+  onGenerationStarted?: () => void;
   onArticleComplete?: (fileName: string) => void;
   onDownloadsConfirmed?: () => void;
 }
 
-export default function App({ onArticleComplete, onDownloadsConfirmed }: JournalConverterAppProps) {
+// ZAINNET_LINK7_DOWNLOAD_SYNC_FIX_20261112
+export default function App({ onGenerationStarted, onArticleComplete, onDownloadsConfirmed }: JournalConverterAppProps) {
   const [activeTab, setActiveTab] = useState<'upload' | 'preview' | 'footnotes'>('upload');
   const [article, setArticle] = useState<JournalArticle | null>(null);
   // ZAINNET_LINK7_DUA_MODE_TEMPLATE_V1
@@ -268,7 +270,10 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
 
   const retryZipDownload = async () => {
     if (!article || zipBusy.current) return;
-    await prepareAndDownloadZip(article, sourceThesis.word);
+    const requested = await prepareAndDownloadZip(article, sourceThesis.word);
+    // The cached ZIP is clicked synchronously in the user's gesture, which
+    // makes this path more reliable on Firefox/Chrome than background auto-save.
+    if (requested) onDownloadsConfirmed?.();
   };
 
   const confirmZipDownload = () => {
@@ -284,6 +289,9 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
     if (articleMode === 'template' && !findJournalMaster(templateId)) {
       setErrorMsg('Pilih master jurnal yang tersedia terlebih dahulu.'); return;
     }
+    // Starting a genuinely new generation opens a new transaction. Merely
+    // opening the module or retrying the existing ZIP does not.
+    onGenerationStarted?.();
     setSourceThesis({
       word: original?.name.toLowerCase().endsWith('.docx') ? original : null,
       pdf: original?.name.toLowerCase().endsWith('.pdf') ? original : null,
@@ -544,7 +552,7 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
               <span aria-hidden="true" className="text-emerald-300 text-xl shrink-0">{wordPairPhase === 'requested' ? '✓' : '📦'}</span>
               <div className="min-w-0 flex-1">
                 <h2 className="text-sm sm:text-base font-bold leading-snug break-words">{wordPairPhase === 'requested' ? 'ZIP 5 File Siap' : wordPairPhase === 'error' ? 'ZIP Belum Berhasil' : 'Menyiapkan ZIP 5 File'}</h2>
-                <p className="text-xs sm:text-sm text-slate-200 mt-1 break-words">{wordPairPhase === 'requested' ? 'Unduhan ZIP sudah diminta ke browser. Kembali otomatis ke beranda dalam beberapa detik.' : wordPairMessage}</p>
+                <p className="text-xs sm:text-sm text-slate-200 mt-1 break-words">{wordPairPhase === 'requested' ? 'Unduhan otomatis sudah dicoba. Periksa folder Download. Bila terblokir, tekan Unduh Ulang ZIP sebelum kembali otomatis.' : wordPairMessage}</p>
               </div>
             </div>
             <div className="mt-3 flex flex-col sm:flex-row gap-2">
@@ -554,7 +562,7 @@ export default function App({ onArticleComplete, onDownloadsConfirmed }: Journal
               </button>
               {wordPairPhase === 'requested' && (
                 <button type="button" onClick={confirmZipDownload} className="w-full sm:w-auto min-h-11 rounded-lg border border-slate-500 px-4 py-2 text-sm font-semibold">
-                  Kembali Sekarang
+                   ZIP Sudah Tersimpan — Kembali
                 </button>
               )}
             </div>

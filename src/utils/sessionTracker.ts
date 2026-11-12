@@ -43,9 +43,17 @@ export const hydrateUserSessions = async (userId: string): Promise<void> => {
     const key = getStorageKey(userId);
     const existing = getAllUserSessions(userId);
 
+    // ZAINNET_LINK7_DOWNLOAD_SYNC_FIX_20261112: do not overwrite a newer
+    // local completion with an older remote in-progress snapshot.
     data.forEach((row: any) => {
-      if (row.payload && row.payload.toolId) {
-        existing[row.payload.toolId] = row.payload as UserSessionRecord;
+      if (!row.payload?.toolId) return;
+      const incoming = row.payload as UserSessionRecord;
+      const local = existing[incoming.toolId];
+      const remoteTime = Number(incoming.completedAt || incoming.lastActiveAt || 0);
+      const localTime = Number(local?.completedAt || local?.lastActiveAt || 0);
+      if (!local || remoteTime > localTime ||
+          (remoteTime === localTime && local.status !== 'completed')) {
+        existing[incoming.toolId] = incoming;
       }
     });
 
@@ -204,8 +212,15 @@ export const flushSessionOutbox = async (): Promise<void> => {
 
   if (!client) return;
 
+  // Verify the CURRENT Supabase Auth account. Outbox entries from a guest,
+  // another account or a legacy login must not trigger 'Invalid session'.
+  const { data: identity, error: identityError } = await client.auth.getUser();
+  const authenticatedUid = identityError ? null : identity?.user?.id;
+  if (!authenticatedUid) return;
+
   for (const sid of sessionIds) {
     const sess = outbox[sid];
+    if (!sess || sess.userId !== authenticatedUid || sess.status !== 'completed') continue;
     try {
       const { data, error } = await client.rpc('academic_complete_session', {
         p_session: sess,
@@ -215,7 +230,7 @@ export const flushSessionOutbox = async (): Promise<void> => {
       if (error) {
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('zain_sync_status', {
-            detail: { ok: false, message: error.message || 'Gagal menyimpan status ke Supabase.' }
+            detail: { ok: false, toolId: sess.toolId, sessionId: sid, message: error.message || 'Gagal menyimpan status ke Supabase.' }
           }));
         }
         break;
@@ -228,13 +243,13 @@ export const flushSessionOutbox = async (): Promise<void> => {
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('zain_sync_status', {
-          detail: { ok: true }
+          detail: { ok: true, toolId: sess.toolId, sessionId: sid }
         }));
       }
     } catch (e: any) {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('zain_sync_status', {
-          detail: { ok: false, message: e?.message || 'Koneksi database terputus.' }
+          detail: { ok: false, toolId: sess.toolId, sessionId: sid, message: e?.message || 'Koneksi database terputus.' }
         }));
       }
       break;

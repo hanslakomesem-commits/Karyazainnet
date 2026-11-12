@@ -1371,6 +1371,30 @@ function AcademicHubMainApp({ onNavigateToPath, initialToolId }: { onNavigateToP
 
   // Consume 1 creation quota when session finishes (Admin has unlimited free sessions)
   const handleConsumeQuota = async (tool: ToolItem, details?: string) => {
+    // ZAINNET_LINK7_DOWNLOAD_SYNC_FIX_20261112: Supabase RPC is atomic and
+    // idempotent per session ID. Never write a decremented local quota first:
+    // that caused a second charge when academic_complete_session also debited.
+    if (tool.id === 'art-7') {
+      if (!user?.uid) throw new Error('Masuk ke akun Supabase untuk menyelesaikan transaksi Link 7.');
+      const finished = getSessionForTool(tool.id, user.uid);
+      if (!finished || finished.status !== 'completed' || finished.userId !== user.uid) {
+        throw new Error('Identitas sesi Link 7 tidak sesuai dengan akun Supabase.');
+      }
+      const { data, error } = await database().rpc('academic_complete_session', {
+        p_session: finished,
+        p_details: details || 'Paket artikel Link 7 siap; unduhan ZIP diminta'
+      });
+      if (error) throw error;
+      if (data?.quotas) {
+        setUserQuotas(data.quotas);
+        localStorage.setItem(`zain_quotas_${user.uid}`, JSON.stringify(data.quotas));
+      }
+      if (data?.trials) {
+        setResellerTrials(data.trials);
+        localStorage.setItem(`zain_reseller_trials_${user.uid}`, JSON.stringify(data.trials));
+      }
+      return;
+    }
     if (userRole === 'admin') {
       return; // Admins have unlimited free access
     }

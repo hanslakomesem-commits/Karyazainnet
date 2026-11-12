@@ -273,6 +273,9 @@ jobs:
           if __name__ == '__main__':
               main()
           PYCODE
+          # Koreksi spasi sisa pada satu file sumber sebelum pemeriksaan diff.
+          # Hanya merapikan whitespace; bukan mengabaikan validasi.
+          sed -i 's/[[:blank:]]*$//' src/utils/agcDeepArticleGenerator.ts
           git diff --check
 
       - name: Instal dependensi

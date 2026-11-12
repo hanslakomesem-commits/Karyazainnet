@@ -1,0 +1,185 @@
+name: ZAIN.NET - Admin Login Supabase Auth Hanslakomesem
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/zainnet-admin-supabase-auth-login.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update-admin-login:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply secure admin auth login patch
+        shell: bash
+        run: |
+          python3 - <<'PY_PATCH'
+          from pathlib import Path
+          
+          AUTH = Path('src/utils/authService.ts')
+          APP = Path('src/App.tsx')
+          LOGIN = Path('src/components/LoginView.tsx')
+          MARK = 'ZAINNET_SUPABASE_ADMIN_AUTH_V1'
+          files = {p: p.read_text(encoding='utf-8') for p in [AUTH, APP, LOGIN]}
+          if all(MARK in c for c in files.values()):
+              print('Admin Supabase Auth patch already applied.'); raise SystemExit(0)
+          if any(MARK in c for c in files.values()):
+              raise SystemExit('Partial patch exists; abort to avoid mixed login code.')
+          
+          def swap(s, old, new, label):
+              n = s.count(old)
+              if n != 1: raise RuntimeError(f'{label}: expected one anchor, found {n}. Source changed; no files written.')
+              return s.replace(old, new)
+          
+          x = files[AUTH]
+          anchor = '''  if (!cleanPassword) {
+              return { success: false, error: 'Silakan masukkan kata sandi akun Anda.' };
+            }
+          '''
+          replacement = anchor + '''
+            // ZAINNET_SUPABASE_ADMIN_AUTH_V1: only the verified Auth session may grant admin.
+            // Password is validated by Supabase Auth; it is NEVER read from legacy auth_accounts.
+            const authorizedAdminEmail = 'hanslakomesem@gmail.com';
+            if (cleanEmail === authorizedAdminEmail) {
+              try {
+                const { data, error } = await database().auth.signInWithPassword({
+                  email: cleanEmail, password: cleanPassword
+                });
+                if (error || !data.user) {
+                  return { success: false, error: 'Login Supabase gagal: ' + (error?.message || 'Email atau password tidak cocok.') };
+                }
+                if (data.user.app_metadata?.academic_role !== 'admin' ||
+                    data.user.email?.trim().toLowerCase() !== authorizedAdminEmail) {
+                  await database().auth.signOut();
+                  return { success: false, error: 'Akun belum memiliki izin administrator di Supabase Auth.' };
+                }
+                clearActiveSession(); // avoid reviving the insecure local admin profile
+                return { success: true, user: {
+                  uid: data.user.id,
+                  email: authorizedAdminEmail,
+                  displayName: data.user.user_metadata?.full_name || data.user.user_metadata?.name || 'Administrator ZAIN.NET',
+                  photoURL: null,
+                  isCustomAuth: false,
+                  role: 'admin',
+                  createdAt: Date.now()
+                } };
+              } catch (error: any) {
+                return { success: false, error: 'Tidak dapat terhubung ke Supabase Auth: ' + (error?.message || 'Coba ulang.') };
+              }
+            }
+            // Legacy PIN and password hashes must never grant an administrative role.
+            if (payload.rolesConfig.adminEmails.some(e => e.trim().toLowerCase() === cleanEmail) ||
+                cleanEmail === 'fastprint2026@gmail.com') {
+              return { success: false, error: 'Login admin lama sudah dinonaktifkan. Gunakan akun admin Supabase Auth yang telah diverifikasi.' };
+            }
+          '''
+          x=swap(x,anchor,replacement,'admin sign in')
+          anchor='''  const role: UserRole = resolveUserRole(cleanEmail, payload.rolesConfig);
+            const passwordHash = await hashPassword(cleanPassword);'''
+          replacement='''  // ZAINNET_SUPABASE_ADMIN_AUTH_V1: do not mint an admin through public registration.
+            if (cleanEmail === 'hanslakomesem@gmail.com' ||
+                payload.rolesConfig.adminEmails.some(e => e.trim().toLowerCase() === cleanEmail)) {
+              return { success: false, error: 'Email administrator harus masuk melalui Supabase Auth, bukan pendaftaran akun biasa.' };
+            }
+            const role: UserRole = resolveUserRole(cleanEmail, payload.rolesConfig);
+            const passwordHash = await hashPassword(cleanPassword);'''
+          x=swap(x,anchor,replacement,'register admin guard')
+          start=x.index('export const loginWithAdminMasterPin = (')
+          end=x.index('\nexport interface AdminCreateResellerPayload',start)
+          x=x[:start]+'''// ZAINNET_SUPABASE_ADMIN_AUTH_V1: legacy master PIN cannot create an admin session.
+          export const loginWithAdminMasterPin = (_pin: string, _adminEmail: string, _rolesConfig: RolesConfig): RegisterResult => ({
+            success: false, error: 'Akses admin melalui PIN ditutup. Masuk menggunakan email dan password Supabase Auth.'
+          });
+          '''+x[end:]
+          files[AUTH]=x
+          
+          x=files[APP]
+          x=swap(x,'  const userRole: UserRole = (user as any)?.role === \'admin\' ',
+          '''  // ZAINNET_SUPABASE_ADMIN_AUTH_V1: admin must come from an authenticated Supabase event.
+            const [verifiedAdminUid, setVerifiedAdminUid] = useState<string | null>(null);
+            const userRole: UserRole = (user?.uid && user.uid === verifiedAdminUid) ''','role source')
+          x=swap(x,'''    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+          
+                setUser(currentUser);''', '''    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+                // ZAINNET_SUPABASE_ADMIN_AUTH_V1: trust only Supabase Auth's app_metadata claim.
+                const validAdmin = !!currentUser && !!currentUser.uid &&
+                  currentUser.email?.trim().toLowerCase() === 'hanslakomesem@gmail.com' &&
+                  (currentUser as any).role === 'admin' && !(currentUser as any).isCustomAuth;
+                setVerifiedAdminUid(validAdmin ? currentUser.uid : null);
+                setUser(currentUser);''','supabase auth event')
+          old='''            const parsedUser: AppUser = JSON.parse(savedCustom);
+                      auth.currentUser = parsedUser as any;'''
+          new='''            const parsedUser: AppUser = JSON.parse(savedCustom);
+                      // ZAINNET_SUPABASE_ADMIN_AUTH_V1: never restore an admin from localStorage.
+                      if (parsedUser.role === 'admin' ||
+                          parsedUser.email?.trim().toLowerCase() === 'hanslakomesem@gmail.com') {
+                        localStorage.removeItem('zain_custom_auth_user');
+                        localStorage.removeItem('admin_logged_in');
+                        localStorage.removeItem('zain_admin_logged_in');
+                        return;
+                      }
+                      auth.currentUser = parsedUser as any;'''
+          x=swap(x,old,new,'local admin restore')
+          old='''    const isAdmin = customUser.role === 'admin' || rolesConfig.adminEmails.map(e => e.toLowerCase()).includes((customUser.email || '').toLowerCase());
+              if (isAdmin) {
+                customUser.role = 'admin';
+              }
+          '''
+          new='''    // ZAINNET_SUPABASE_ADMIN_AUTH_V1: email and PIN are not admin credentials.
+              const isAdmin = customUser.role === 'admin' && customUser.isCustomAuth === false &&
+                customUser.email?.trim().toLowerCase() === 'hanslakomesem@gmail.com';
+              if (!isAdmin && customUser.role === 'admin') customUser.role = 'public';
+          '''
+          x=swap(x,old,new,'custom login privilege')
+          old='''      localStorage.setItem('zain_custom_auth_user', JSON.stringify(customUser));
+                if (isAdmin) {'''
+          new='''      if (isAdmin) localStorage.removeItem('zain_custom_auth_user');
+                else localStorage.setItem('zain_custom_auth_user', JSON.stringify(customUser));
+                if (isAdmin) {'''
+          x=swap(x,old,new,'custom login storage')
+          files[APP]=x
+          
+          x=files[LOGIN]
+          old='''                  <button
+                              type="button"
+                              onClick={() => setActiveTab('admin_pin')}
+                              className="text-[11px] text-amber-400 hover:text-amber-300 transition-colors cursor-pointer flex items-center gap-1"
+                            >
+                              <Crown className="w-3 h-3" />
+                              <span>Login Kunci PIN Admin</span>
+                            </button>'''
+          new='''                  {/* ZAINNET_SUPABASE_ADMIN_AUTH_V1: Admin uses the regular email/password form. */}
+                            <span className="text-[11px] text-emerald-400">Admin: password Supabase</span>'''
+          x=swap(x,old,new,'admin pin link')
+          files[LOGIN]=x
+          for path,data in files.items(): path.write_text(data,encoding='utf-8')
+          print('Patched Supabase admin-only auth for: '+', '.join(str(p) for p in files))
+          PY_PATCH
+      - name: Check TypeScript and Vite build
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Commit changes after successful build
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/utils/authService.ts src/App.tsx src/components/LoginView.tsx
+          if git diff --cached --quiet; then
+            echo "No source changes needed."
+          else
+            git commit -m "fix(auth): use verified Supabase admin login, disable PIN privilege"
+            git push origin HEAD:main
+          fi

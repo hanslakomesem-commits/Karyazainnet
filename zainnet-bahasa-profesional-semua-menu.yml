@@ -1,0 +1,296 @@
+name: ZAIN.NET - Bahasa Profesional Seluruh Website
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zainnet-professional-public-copy
+  cancel-in-progress: false
+
+jobs:
+  update-copy:
+    name: Perapian bahasa publik ZAIN.NET
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Siapkan Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Perbarui teks publik tanpa mengubah API atau identitas teknis
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          #!/usr/bin/env python3
+          """ZAIN.NET customer-facing terminology cleanup.
+          
+          Preserves source identifiers, provider URLs, API config, schema keys, model IDs,
+          and original academic documents. Changes only reviewed UI phrases and public
+          server-facing messages. Safe to re-run: previously updated files are skipped.
+          """
+          from pathlib import Path
+          import re
+          import sys
+          
+          ROOT = Path.cwd()
+          RULES = {
+              'src/data/toolsData.ts': [
+                  ('Link 5: ZAIN.NET Scrib Article AI Lokal V1.4 — ubah skripsi DOCX menjadi artikel dengan Abstract bilingual, sinkron footnote–daftar pustaka & AI lokal.',
+                   'Link 5: ZAIN.NET Penyusunan Artikel Akademik — konversi skripsi DOCX ke artikel dengan abstrak dua bahasa, catatan kaki dan daftar pustaka tersinkronisasi.'),
+                  ('Link 5 • Scrib AI V1.4', 'Link 5 • Penyusunan Akademik'),
+                  ('Link 6: ZAIN.NET Skripsi Jadi Artikel • Gemini 3.1 Flash Lite — konversi skripsi DOCX jadi artikel ilmiah terstruktur otomatis dengan perapian AI & abstrak bilingual super cepat.',
+                   'Link 6: ZAIN.NET Skripsi Jadi Artikel — konversi skripsi DOCX menjadi artikel ilmiah terstruktur, dengan perapian naskah dan abstrak dua bahasa.'),
+                  ('Link 6 • Gemini 3.1 Flash Lite', 'Link 6 • Perapian Naskah'),
+                  ('Link 7: Generator Artikel Jurnal Ilmiah (IAIN Madura) + Cover CD Otomatis • Gemini 3.1 Flash Lite — ubah skripsi DOCX menjadi artikel jurnal ilmiah terstruktur, footnote rapi, dan cover CD siap cetak.',
+                   'Link 7: Generator Artikel Jurnal Ilmiah + Cover CD — susun artikel dari skripsi DOCX sesuai template jurnal, dengan catatan kaki dan cover CD siap cetak.'),
+                  ('Link 7 • Gemini 3.1 Flash Lite', 'Link 7 • Artikel Jurnal & Cover CD'),
+              ],
+              'src/components/IframeLockedModal.tsx': [
+                  ('Menu 1 Link 6: Generator Artikel (Gemini 3.1 Flash Lite)', 'Menu 1 Link 6: Generator Artikel Akademik'),
+                  ('Gemini AI • Internal Native', 'Pemrosesan Dokumen • Terintegrasi'),
+              ],
+              'src/components/ToolViewerModal.tsx': [
+                  ('Penyusunan naskah artikel ilmiah .DOCX + Gemini 3.1 Flash Lite selesai',
+                   'Penyusunan dan perapian artikel ilmiah .DOCX selesai'),
+              ],
+              'src/components/HardCoverView.tsx': [
+                  ('ZAIN.NET AI Cover Skripsi V4.2', 'ZAIN.NET Cover Skripsi Presisi V4.2'),
+              ],
+              'src/components/MaintenanceNoticeModal.tsx': [
+                  ('Kuota Token AI Habis Terpakai', 'Kapasitas Pemrosesan Sedang Terbatas'),
+              ],
+              'src/components/ToolMaintenanceModal.tsx': [
+                  ('Kuota token AI habis terpakai, sedang isi ulang', 'Kapasitas pemrosesan sementara terbatas; sedang ditangani'),
+                  ('token AI habis agar tidak dapat diklik', 'kapasitas pemrosesan terbatas agar tidak dapat diklik'),
+                  ('Beberapa server AI sedang proses isi ulang kuota token & update sistem. Mohon bersabar.',
+                   'Sebagian layanan pemrosesan dokumen sedang dalam pemeliharaan. Silakan mencoba kembali.'),
+              ],
+              'src/components/AgcAutoPostModal.tsx': [
+                  ('Mesin AI AGC ZAIN.NET', 'Sistem publikasi otomatis ZAIN.NET'),
+              ],
+              'src/components/MakalahBatchUploadModal.tsx': [
+                  ('AI mendeteksi jenis dokumen & menyusun keterangan otomatis...',
+                   'Menganalisis jenis dokumen dan menyusun keterangannya...'),
+                  ('Mulai Deteksi Otomatis & Ekstrak AI', 'Mulai Analisis & Ekstraksi Dokumen'),
+                  ('Multi-Document AI Engine', 'Sistem Analisis Multi-Dokumen'),
+                  ('Sedang Deteksi Otomatis & Analisis AI...', 'Sedang Menganalisis dan Mengekstrak Dokumen...'),
+              ],
+              'src/components/MakalahBlogView.tsx': [
+                  ('Tools AI Akademik', 'Layanan Pengolahan Akademik'),
+                  ('Gunakan Generator AI Skripsi', 'Gunakan Penyusun Artikel Skripsi'),
+                  ('Layanan Akademik AI', 'Layanan Akademik Digital'),
+                  ('alat bantu AI penyusun makalah', 'alat bantu otomatis penyusun makalah'),
+                  ('Buka Tools AI Generator', 'Buka Layanan Penyusunan Akademik'),
+              ],
+              'src/components/MakalahDetailModal.tsx': [
+                  ('Bukan Buatan AI', 'Berkas Asli Pengunggah'),
+                  ('tanpa manipulasi teks oleh AI', 'tanpa penyuntingan teks otomatis'),
+              ],
+              'src/components/ArtikelGeminiView.tsx': [
+                  ('ZAIN.NET — LAPORAN SCRIB ARTICLE AI • GEMINI 3.1 FLASH LITE',
+                   'ZAIN.NET — LAPORAN PENYUSUNAN ARTIKEL AKADEMIK'),
+                  ('Model AI: gemini-3.1-flash-lite (Ultra Cepat & Rapi)',
+                   'Layanan Pengolahan Dokumen: ZAIN.NET Akademik'),
+                  ('Hasil Scrib Article AI', 'Hasil Penyusunan Artikel Akademik'),
+                  ('Cara Kerja Footnote & AI', 'Cara Kerja Catatan Kaki & Perapian Naskah'),
+                  ('model AI lokal yang lemot', 'pemrosesan lokal sebelumnya'),
+                  ('dalam hitungan 1 detik', 'secara otomatis'),
+                  ('Gemini 3.1 Flash Lite', 'Layanan Akademik ZAIN.NET'),
+                  ('Rapikan Seluruh Bab Sekaligus (Gemini)', 'Rapikan Seluruh Bab Sekaligus'),
+                  ('Rapikan Paragraf (Gemini)', 'Rapikan Paragraf'),
+                  ('Dirapikan Gemini', 'Dirapikan Otomatis'),
+                  ('Peran Gemini:', 'Cara Kerja Perapian Otomatis:'),
+                  ('(Gemini)', ''),
+              ],
+              'src/journalConverter/App.tsx': [
+                  ('bersamaan dengan proses AI.', 'bersamaan dengan penyusunan artikel.'),
+                  ('Endpoint AI untuk', 'Layanan penyusunan untuk'),
+                  ('AI tidak perlu diulang.', 'proses penyusunan tidak perlu diulang.'),
+                  ('AI selesai. Membuat Word artikel dan Cover CD secara bersamaan...',
+                   'Penyusunan artikel selesai. Menyiapkan Word artikel dan Cover CD...'),
+                  ('bersamaan dengan AI...', 'bersamaan dengan penyusunan artikel...'),
+                  ('tanpa menjalankan AI kembali.', 'tanpa memulai penyusunan ulang.'),
+                  ('Artikel AI tetap tersedia.', 'Artikel yang sudah dibuat tetap tersedia.'),
+                  ('bersamaan dengan AI.', 'bersamaan dengan penyusunan artikel.'),
+                  ('mesin AI Link 7', 'layanan penyusunan Link 7'),
+                  ('AI menulis isi berdasarkan skripsi.', 'Naskah disusun otomatis berdasarkan skripsi.'),
+                  ('Didukung Google Gemini 3.1 Flash Lite', 'Dikelola melalui sistem pemrosesan akademik ZAIN.NET'),
+                  ('Batas Pengeluaran Bulanan Tercapai (Monthly Spending Cap Exceeded)',
+                   'Layanan Penyusunan Artikel Sementara Terkendala'),
+                  ('Layanan pemrosesan naskah / API Anda telah mencapai limit kuota bulanan yang ditetapkan. Untuk melanjutkan pembuatan artikel:',
+                   'Kapasitas layanan penyusunan artikel sedang terbatas. Jangan melakukan pembayaran ulang untuk transaksi yang sama; silakan hubungi pengelola ZAIN.NET.'),
+                  ('href="https://ai.studio/spend"', 'href="https://wa.me/6285231176597"'),
+                  ('Buka https://ai.studio/spend &rarr;', 'Hubungi Layanan ZAIN.NET &rarr;'),
+              ],
+              'src/journalConverter/components/SkripsiUploader.tsx': [
+                  ('Otomatis Diekstrak AI dari Naskah', 'Judul Dibaca Otomatis dari Naskah'),
+                  ('Otomatis diekstrak AI dari cover skripsi', 'Dibaca otomatis dari halaman judul skripsi'),
+                  ('AI akan mengekstrak judul asli langsung dari cover skripsi.', 'sistem akan membaca judul asli dari halaman depan skripsi.'),
+                  ('selagi AI menyusun artikel', 'selagi artikel disusun'),
+              ],
+              'src/lib/gemini-service.ts': [
+                  ('Gagal menerjemahkan abstrak dengan Gemini 3.1 Flash Lite.',
+                   'Layanan penerjemahan abstrak belum berhasil. Silakan coba kembali.'),
+                  ('Gagal merapikan bagian dengan Gemini 3.1 Flash Lite.',
+                   'Perapian bagian naskah belum berhasil. Silakan coba kembali.'),
+                  ('Gagal merapikan draf artikel dengan Gemini 3.1 Flash Lite.',
+                   'Perapian draf artikel belum berhasil. Silakan coba kembali.'),
+              ],
+              'public/hardcover/index.html': [
+                  ('ZAIN.NET AI Cover Skripsi', 'ZAIN.NET Cover Skripsi Presisi'),
+                  ('AI COVER', 'COVER PRESISI'),
+                  ('OCR Gemini', 'pembacaan teks otomatis'),
+                  ('Gemini OCR hanya untuk gambar', 'Pengenalan teks otomatis untuk gambar'),
+                  ('cek hasil AI', 'periksa hasil pembacaan otomatis'),
+                  ('tanpa Gemini', 'tanpa pemrosesan eksternal'),
+                  ('Foto memakai Gemini.', 'Foto menggunakan pembacaan teks otomatis.'),
+              ],
+              'public/hardcover/app.js': [
+                  ("'PDF & Gemini siap'", "'Pemrosesan PDF dan foto siap'"),
+                  ("'PDF / Word lokal siap · Foto Gemini belum diatur'", "'PDF / Word siap · Analisis foto belum dikonfigurasi'"),
+              ],
+              'src/data/agcDeepArticlesData.ts': [
+                  ('Foto AI SEO:', 'Ilustrasi Analisis SEO:'),
+              ],
+              'src/utils/agcDeepArticleGenerator.ts': [
+                  ('Foto AI SEO:', 'Ilustrasi Analisis SEO:'),
+              ],
+              'server.ts': [
+                  ('Server AI sedang sibuk. Silakan coba beberapa saat lagi.', 'Layanan pembacaan dokumen sedang sibuk. Silakan coba beberapa saat lagi.'),
+                  ('Layanan AI belum terkonfigurasi di server', 'Layanan analisis dokumen belum tersedia. Hubungi pengelola ZAIN.NET.'),
+                  ('Server AI sedang mengalami lonjakan trafik tinggi (503). Silakan klik Pindai sekali lagi dalam beberapa detik.',
+                   'Layanan pemindaian dokumen sedang sibuk (503). Silakan coba kembali beberapa saat lagi.'),
+                  ("error: lastError?.message || 'Gagal memproses OCR dengan model Gemini.'",
+                   "error: 'Pembacaan teks dokumen belum berhasil. Silakan coba kembali.'"),
+                  ('Gemini tidak mengembalikan paragraf terjemahan yang valid.',
+                   'Hasil terjemahan abstrak belum sesuai format. Silakan coba kembali.'),
+                  ("error: error.message || 'Gagal menerjemahkan abstrak dengan Gemini 3.1 Flash Lite.'",
+                   "error: 'Layanan penerjemahan abstrak belum berhasil. Silakan coba kembali.'"),
+                  ("error: error.message || 'Gagal merapikan bagian dengan Gemini 3.1 Flash Lite.'",
+                   "error: 'Layanan perapian bagian naskah belum berhasil. Silakan coba kembali.'"),
+                  ("error: error.message || 'Gagal merapikan artikel dengan Gemini 3.1 Flash Lite.'",
+                   "error: 'Layanan perapian artikel belum berhasil. Silakan coba kembali.'"),
+              ],
+              'server/journal7/router.ts': [
+                  ('Respon AI tidak dapat diuraikan sebagai format JSON yang valid.',
+                   'Hasil pemrosesan naskah belum dapat dibaca. Silakan coba kembali.'),
+                  ('Proyek Google AI Studio / Gemini API Anda telah mencapai batas pengeluaran bulanan (Monthly Spending Cap Exceeded). Silakan buka https://ai.studio/spend untuk mengatur batas penggunaan.',
+                   'Layanan penyusunan artikel sedang mencapai batas penggunaan bulanan. Silakan hubungi pengelola ZAIN.NET.'),
+                  ('Batas pengeluaran bulanan Gemini API tercapai. Periksa proyek API terkait di https://ai.studio/spend.',
+                   'Batas penggunaan layanan penyusunan artikel bulanan tercapai. Silakan hubungi pengelola ZAIN.NET.'),
+                  ('Layanan Gemini sedang sibuk atau timeout (503/504). ',
+                   'Layanan penyusunan artikel sedang sibuk atau melewati batas waktu (503/504). '),
+                  ('Model Pro cadangan juga tidak memiliki kuota Free Tier (429, limit 0). ',
+                   'Kapasitas pemrosesan cadangan belum tersedia (429). '),
+                  ('Kuota Free Tier model Gemini tidak tersedia (429, limit 0). Periksa Rate Limits atau pilih model yang memiliki kuota pada proyek Anda.',
+                   'Kapasitas penyusunan artikel belum tersedia saat ini (429). Silakan hubungi pengelola ZAIN.NET.'),
+                  ('Batas permintaan atau kuota Gemini API tercapai (429). Periksa Rate Limits Google AI Studio; ini tidak otomatis berarti batas pengeluaran bulanan.',
+                   'Kapasitas penyusunan artikel sedang terbatas (429). Silakan coba lagi atau hubungi pengelola ZAIN.NET.'),
+                  ('`Layanan AI sedang mengalami kendala sementara (${finalErrMsg.slice(0, 150)}...). Silakan klik tombol Generate kembali.`',
+                   "'Layanan penyusunan artikel sedang mengalami kendala sementara. Silakan coba kembali atau hubungi pengelola ZAIN.NET.'"),
+              ],
+          }
+          
+          # This is a display-only mapping; keep categories in Supabase intact so historic blog
+          # posts and filters continue to work. Never rewrite post data or category IDs.
+          BLOG = 'src/components/AgcBlogView.tsx'
+          BLOG_REPLACEMENTS = [
+              ('<span>{cat}</span>', '<span>{cat === \'Teknologi & AI\' ? \'Teknologi Digital\' : cat}</span>'),
+              ('{post.category}', "{post.category === 'Teknologi & AI' ? 'Teknologi Digital' : post.category}"),
+              ('{selectedPost.category}', "{selectedPost.category === 'Teknologi & AI' ? 'Teknologi Digital' : selectedPost.category}"),
+              ('{top.category}', "{top.category === 'Teknologi & AI' ? 'Teknologi Digital' : top.category}"),
+              ('`Label: ${selectedCategory}`', "`Label: ${selectedCategory === 'Teknologi & AI' ? 'Teknologi Digital' : selectedCategory}`"),
+          ]
+          
+          
+          def replace_many(path: str, replacements: list[tuple[str,str]]) -> tuple[int, list[str]]:
+              f = ROOT / path
+              if not f.is_file():
+                  raise RuntimeError(f'Missing source file: {path}')
+              source = f.read_text(encoding='utf-8')
+              original = source
+              changed = 0
+              missing = []
+              for old, new in replacements:
+                  if old == new:
+                      continue
+                  n = source.count(old)
+                  if n:
+                      source = source.replace(old, new)
+                      changed += n
+                  elif new not in source:
+                      missing.append(old[:90])
+              # No code identifiers, URLs, provider integrations, or auth settings are edited
+              if source != original:
+                  f.write_text(source, encoding='utf-8')
+              return changed, missing
+          
+          
+          def main() -> None:
+              total = 0
+              missing_all = []
+              for path, changes in RULES.items():
+                  updated, missing = replace_many(path, changes)
+                  total += updated
+                  print(f'{path}: {updated} occurrences updated')
+                  if missing:
+                      missing_all.append((path, missing))
+              blog_count, blog_missing = replace_many(BLOG, BLOG_REPLACEMENTS)
+              total += blog_count
+              print(f'{BLOG}: {blog_count} display-only category labels updated')
+              if blog_missing:
+                  missing_all.append((BLOG, blog_missing))
+          
+              # Consistency: no lingering branding in reviewed customer-facing UI strings.
+              ui_files = [ROOT / x for x in RULES if x.startswith('src/components/') or x.startswith('src/journalConverter/')]
+              important_phrases = ['Gemini 3.1 Flash Lite', 'SCRIB ARTICLE AI', 'Tools AI Akademik', 'Bukan Buatan AI', 'AI COVER']
+              remainders = []
+              for f in ui_files:
+                  content = f.read_text(encoding='utf-8')
+                  for phrase in important_phrases:
+                      if phrase in content:
+                          remainders.append((str(f.relative_to(ROOT)),phrase))
+              if remainders:
+                  print('Remaining reviewed UI terms:', remainders)
+                  sys.exit(2)
+              print(f'Public copy rebranding: {total} string occurrences updated.')
+              if missing_all:
+                  print('Optional old phrases already absent/changed:')
+                  for file, missing in missing_all:
+                      print(' ', file, ':', '; '.join(missing))
+              print('Internal IDs and model identifiers remain unchanged.')
+          
+          if __name__ == '__main__':
+              main()
+          PYCODE
+          git diff --check
+
+      - name: Instal dependensi
+        run: npm ci --no-audit --no-fund
+
+      - name: Uji build produksi
+        run: npm run build
+
+      - name: Simpan perubahan yang lolos pengujian
+        shell: bash
+        run: |
+          git add -u -- src server.ts public/hardcover
+          if git diff --cached --quiet; then
+            echo "Tidak ada perubahan baru; seluruh istilah sudah diperbarui."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git diff --cached --check
+          git commit -m "style(copy): professional ZAIN.NET customer-facing terminology"
+          git push origin HEAD:main

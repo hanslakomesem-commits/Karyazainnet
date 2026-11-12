@@ -1,0 +1,380 @@
+name: ZAIN.NET - Optimasi Link 7 Gemini Cepat
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  optimize-link7:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Apply safe Link 7 optimization
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          #!/usr/bin/env python3
+          """Optimizes Link 7 for Gemini 503/timeouts without changing article content rules.
+          
+          Use at the root of hanslakomesem-commits/Karyazainnet.
+          Intentionally fails if expected code differs, rather than making ambiguous edits.
+          """
+          from pathlib import Path
+          import sys
+          
+          MARKER = 'ZAINNET_LINK7_GEMINI_FAST_FALLBACK_20261112'
+          
+          
+          def exact(source: str, old: str, new: str, label: str) -> str:
+              count = source.count(old)
+              if count != 1:
+                  raise RuntimeError(f'{label}: expected exactly one anchor, found {count}')
+              return source.replace(old, new, 1)
+          
+          
+          def patch_router(source: str) -> str:
+              source = exact(source, '// Robust wrapper with automatic exponential backoff retry and multi-model fallback',
+                  '''// ZAINNET_LINK7_GEMINI_FAST_FALLBACK_20261112
+          // A short-lived per-instance health circuit: when Gemini reports 503 or times out,
+          // prefer another configured model on subsequent stages instead of waiting twice.
+          // No request content, student information or API tokens are cached here.
+          const geminiCooldownUntil = new Map<string, number>();
+          
+          // Robust wrapper with fast fallback and bounded timeouts''', 'router marker')
+          
+              source = exact(source,
+                  '''  for (const modelName of targetModels) {
+              for (let attempt = 1; attempt <= maxRetriesPerModel; attempt++) {
+                try {
+                  console.log(`[Gemini API] Trying model "${modelName}" (attempt ${attempt}/${maxRetriesPerModel})...`);''',
+                  '''  for (const modelName of targetModels) {
+              // A temporarily unhealthy model is skipped, never endlessly re-tried.
+              const cooldown = geminiCooldownUntil.get(modelName) || 0;
+              if (cooldown > Date.now()) {
+                console.log(`[Gemini API] Skipping busy model "${modelName}" for another ${Math.ceil((cooldown - Date.now()) / 1000)}s.`);
+                continue;
+              }
+              for (let attempt = 1; attempt <= maxRetriesPerModel; attempt++) {
+                const modelStartedAt = Date.now();
+                try {
+                  console.log(`[Gemini API] Trying model "${modelName}" (attempt ${attempt}/${maxRetriesPerModel})...`);''', 'router cooldown loop')
+          
+              source = exact(source,
+                  '''        const callPromise = ai.models.generateContent({
+                    model: modelName,
+                    contents,
+                    config,
+                  });''',
+                  '''        // Disable SDK internal repeated HTTP requests; cross-model fallback
+                  // handles 503/timeouts so retries do not multiply unintentionally.
+                  const callTimeoutMs = modelName === targetModels[0] ? 90000 : 75000;
+                  const callPromise = ai.models.generateContent({
+                    model: modelName,
+                    contents,
+                    config: {
+                      ...(config || {}),
+                      httpOptions: {
+                        ...(config?.httpOptions || {}),
+                        timeout: callTimeoutMs,
+                        retryOptions: { attempts: 1 },
+                      },
+                    },
+                  });''', 'router SDK native retry disable')
+          
+              source = exact(source,
+                  '''        // Model pilihan utama tetap memiliki batas 120 detik untuk artikel panjang.
+                  // Batas model CADANGAN lebih singkat agar fallback yang menggantung tidak menahan seluruh proses.
+                  const timeoutMs = modelName === targetModels[0] ? 120000 : 75000;
+                  const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Koneksi model Gemini melebihi batas waktu (timeout).')), timeoutMs)
+                  );
+          
+                  const response: any = await Promise.race([callPromise, timeoutPromise]);''',
+                  '''        // 90s for first choice, 75s for a backup. Previously 120s / 75s.
+                  // Always clear the deadline timer after the call, including failures.
+                  const timeoutMs = modelName === targetModels[0] ? 90000 : 75000;
+                  let deadline: ReturnType<typeof setTimeout> | undefined;
+                  const timeoutPromise = new Promise<never>((_, reject) => {
+                    deadline = setTimeout(() => reject(new Error('Koneksi model Gemini melebihi batas waktu (timeout).')), timeoutMs);
+                  });
+                  let response: any;
+                  try {
+                    response = await Promise.race([callPromise, timeoutPromise]);
+                  } finally {
+                    if (deadline !== undefined) clearTimeout(deadline);
+                  }''', 'router timeout')
+          
+              source = exact(source,
+                  '''          console.log(`[Gemini API] Success using model "${modelName}".`);
+                    return response;''',
+                  '''          geminiCooldownUntil.delete(modelName);
+                    console.log(`[Gemini API] Success using model "${modelName}" in ${Date.now() - modelStartedAt}ms.`);
+                    return response;''', 'router success timing')
+          
+              source = exact(source,
+                  '''        // If model is experiencing temporary high-demand (503 UNAVAILABLE), immediately try next candidate model
+                  if (
+                    errMessage.includes('503') ||
+                    errMessage.includes('high demand') ||
+                    errMessage.includes('UNAVAILABLE') ||
+                    errMessage.includes('overloaded')
+                  ) {
+                    if (attempt < maxRetriesPerModel) {
+                      const delayMs = 1200 * attempt;
+                      console.log(`[Gemini API] 503 pada "${modelName}", coba ulang model yang sama dalam ${delayMs}ms sebelum pindah model.`);
+                      await new Promise(resolve => setTimeout(resolve, delayMs));
+                      continue;
+                    }
+                    console.log(`[Gemini API] Model "${modelName}" tetap sibuk; gunakan model cadangan.`);
+                    break;
+                  }''',
+                  '''        // A 503 is a capacity failure, not an article-content error.
+                  // Skip same-model retries immediately and cool it down for 90 seconds.
+                  if (
+                    errMessage.includes('503') ||
+                    errMessage.includes('high demand') ||
+                    errMessage.includes('UNAVAILABLE') ||
+                    errMessage.includes('overloaded')
+                  ) {
+                    geminiCooldownUntil.set(modelName, Date.now() + 90_000);
+                    console.log(`[Gemini API] Model "${modelName}" sibuk; langsung pindah model cadangan (cooldown 90 detik).`);
+                    break;
+                  }
+          
+                  // After a long timeout, do not wait on the same unresponsive model again.
+                  if (/melebihi batas waktu|timeout/i.test(errMessage)) {
+                    geminiCooldownUntil.set(modelName, Date.now() + 60_000);
+                    console.log(`[Gemini API] Model "${modelName}" timeout; pindah model cadangan.`);
+                    break;
+                  }''', 'router 503 fast fail')
+          
+              # Add stage-specific durations for future troubleshooting.
+              for stage in (1, 2, 3):
+                  path = f"// Stage {stage} Endpoint"
+                  handler_start = f"{path}\nrouter.post(['/generate-journal/stage{stage}', '/api/generate-journal/stage{stage}'], authorizeJournal7, async (req, res) => {{\n  try {{"
+                  handler_new = f"{path}\nrouter.post(['/generate-journal/stage{stage}', '/api/generate-journal/stage{stage}'], authorizeJournal7, async (req, res) => {{\n  const startedAt = Date.now();\n  try {{"
+                  source = exact(source, handler_start, handler_new, f'router stage {stage} start')
+                  source = exact(source, f'    res.json(data{stage});\n  }} catch (error: any) {{',
+                                 f'    console.log(`[Link7] Stage {stage} AI completed in ${{Date.now() - startedAt}}ms.`);\n    res.json(data{stage});\n  }} catch (error: any) {{', f'router stage {stage} completion')
+              return source
+          
+          
+          def patch_front(source: str) -> str:
+              source = exact(source,"import React, { useState, useRef } from 'react';",
+                            "import React, { useState, useRef, useEffect } from 'react'; // " + MARKER, 'frontend effect import')
+              source = exact(source,
+                "  const [isLoading, setIsLoading] = useState(false);",
+                '''  // ZAINNET_LINK7_GEMINI_FAST_FALLBACK_20261112
+            // In-memory progress cache; never saved to localStorage or to a third-party service.
+            // Completed stages can be reused if the next stage fails and the same input is re-submitted.
+            const stageCache = useRef<{
+              rawText: string; settings: string; stage1?: any; stage2?: any; stage3?: any;
+            } | null>(null);
+            const generationBusy = useRef(false);
+            const [elapsedSeconds, setElapsedSeconds] = useState(0);
+            const [isLoading, setIsLoading] = useState(false);
+            useEffect(() => {
+              if (!isLoading) { setElapsedSeconds(0); return; }
+              const startedAt = Date.now();
+              const tick = () => setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+              const timer = setInterval(tick, 1000);
+              return () => clearInterval(timer);
+            }, [isLoading]);''', 'frontend in-memory cache')
+              source = exact(source,'    maxRetries = 2\n',
+                  '    maxRetries = 1 // Never duplicate expensive POST stage requests on uncertain network errors.\n', 'frontend safe fetch retry')
+              source = exact(source,
+                '''    if (articleMode === 'template' && !findJournalMaster(templateId)) {
+                setErrorMsg('Pilih master jurnal yang tersedia terlebih dahulu.'); return;
+              }
+              // Starting a genuinely new generation opens a new transaction.''',
+                '''    if (articleMode === 'template' && !findJournalMaster(templateId)) {
+                setErrorMsg('Pilih master jurnal yang tersedia terlebih dahulu.'); return;
+              }
+              if (generationBusy.current) return; // Prevent double-click / duplicate charge.
+              generationBusy.current = true;
+              const settings = JSON.stringify({
+                metadata: input.metadata, footnoteStyle: input.footnoteStyle,
+                pages: input.targetLengthPages, model: input.selectedModel,
+                methodology: input.methodologyType, templateId,
+                file: original ? [original.name, original.size, original.lastModified] : null,
+              });
+              if (!stageCache.current || stageCache.current.rawText !== input.rawText || stageCache.current.settings !== settings) {
+                stageCache.current = { rawText: input.rawText, settings };
+              }
+              const cached = stageCache.current;
+              const totalStartedAt = Date.now();
+              // Starting a genuinely new generation opens a new transaction.''', 'frontend generate lock')
+              source = exact(source,
+                '''      const stage1Data = await safeFetchJson(
+                  '/api/journal7/generate-journal/stage1',
+                  {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...input, templateId }),
+                  },
+                  'Tahap 1 (Pendahuluan & Metode)'
+                );''',
+                '''      const stage1Data = cached.stage1 ?? await safeFetchJson(
+                  '/api/journal7/generate-journal/stage1',
+                  {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...input, templateId }),
+                  },
+                  'Tahap 1 (Pendahuluan & Metode)'
+                );
+                cached.stage1 = stage1Data;
+                console.info(`[Link7] Tahap 1 selesai/dipulihkan pada detik ${Math.round((Date.now() - totalStartedAt) / 1000)}.`);''', 'frontend stage1 cache')
+              source = exact(source,
+                '''      const stage2Data = await safeFetchJson(
+                  '/api/journal7/generate-journal/stage2',
+                  {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      rawText: input.rawText,
+                      stage1Data,
+                      targetLengthPages: input.targetLengthPages,
+                      selectedModel: input.selectedModel,
+                      methodologyType: input.methodologyType,
+                      templateId,
+                    }),
+                  },
+                  'Tahap 2 (Hasil & Pembahasan)'
+                );''',
+                '''      const stage2Data = cached.stage2 ?? await safeFetchJson(
+                  '/api/journal7/generate-journal/stage2',
+                  {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      rawText: input.rawText,
+                      stage1Data,
+                      targetLengthPages: input.targetLengthPages,
+                      selectedModel: input.selectedModel,
+                      methodologyType: input.methodologyType,
+                      templateId,
+                    }),
+                  },
+                  'Tahap 2 (Hasil & Pembahasan)'
+                );
+                cached.stage2 = stage2Data;
+                console.info(`[Link7] Tahap 2 selesai/dipulihkan pada detik ${Math.round((Date.now() - totalStartedAt) / 1000)}.`);''','frontend stage2 cache')
+              source = exact(source,
+                '''      const stage3Data = await safeFetchJson(
+                  '/api/journal7/generate-journal/stage3',
+                  {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      rawText: input.rawText,
+                      stage1Data,
+                      stage2Data,
+                      footnoteStyle: input.footnoteStyle,
+                      selectedModel: input.selectedModel,
+                      methodologyType: input.methodologyType,
+                      templateId,
+                    }),
+                  },
+                  'Tahap 3 (Kesimpulan & Referensi)'
+                );''',
+                '''      const stage3Data = cached.stage3 ?? await safeFetchJson(
+                  '/api/journal7/generate-journal/stage3',
+                  {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      rawText: input.rawText,
+                      stage1Data,
+                      stage2Data,
+                      footnoteStyle: input.footnoteStyle,
+                      selectedModel: input.selectedModel,
+                      methodologyType: input.methodologyType,
+                      templateId,
+                    }),
+                  },
+                  'Tahap 3 (Kesimpulan & Referensi)'
+                );
+                cached.stage3 = stage3Data;
+                console.info(`[Link7] Tahap 3 selesai/dipulihkan pada detik ${Math.round((Date.now() - totalStartedAt) / 1000)}.`);''','frontend stage3 cache')
+              source = exact(source,
+                '''      await prepareAndDownloadZip(fullArticle, thesisWord);''',
+                '''      const zipRequested = await prepareAndDownloadZip(fullArticle, thesisWord);
+                if (zipRequested) stageCache.current = null; // New purchase => fresh content.''', 'frontend clear success cache')
+              source = exact(source,
+                '''    } finally {
+                setIsLoading(false);
+                setGenerationStatus({ stage: 0, message: '', percent: 0 });
+              }
+            };''',
+                '''    } finally {
+                generationBusy.current = false;
+                console.info(`[Link7] Durasi total proses yang diamati: ${Math.round((Date.now() - totalStartedAt) / 1000)} detik.`);
+                setIsLoading(false);
+                setGenerationStatus({ stage: 0, message: '', percent: 0 });
+              }
+            };''', 'frontend generation unlock')
+              source = exact(source,
+                '''            generationStatus={generationStatus}
+                      thesisPdfStatus={thesisPdfStatus}''',
+                '''            generationStatus={{
+                        ...generationStatus,
+                        message: isLoading ? `${generationStatus.message} (${elapsedSeconds} detik berjalan)` : generationStatus.message,
+                      }}
+                      thesisPdfStatus={thesisPdfStatus}''', 'frontend elapsed display')
+              return source
+          
+          
+          def main():
+              files = [
+                  (Path('server/journal7/router.ts'), patch_router),
+                  (Path('src/journalConverter/App.tsx'), patch_front),
+              ]
+              if not all(f.is_file() for f,_ in files):
+                  raise RuntimeError('Jalankan dari root repository Karyazainnet (src + server harus ada).')
+              changes = []
+              for f, apply in files:
+                  content = f.read_text(encoding='utf-8')
+                  if MARKER in content:
+                      print('Already optimized:', f)
+                      continue
+                  updated = apply(content)
+                  if updated == content:
+                      raise RuntimeError(f'{f}: no changes generated')
+                  changes.append((f,updated))
+              # Both files are validated before any file is modified.
+              for f,updated in changes:
+                  f.write_text(updated, encoding='utf-8')
+                  print('Optimized:', f)
+              if not changes: print('Everything already patched; nothing to commit.')
+          
+          
+          if __name__ == '__main__':
+              main()
+          PYCODE
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Verify production build
+        run: npm run build
+      - name: Commit tested changes
+        shell: bash
+        run: |
+          if git diff --quiet -- server/journal7/router.ts src/journalConverter/App.tsx; then
+            echo 'No new changes; already applied.'
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/journal7/router.ts src/journalConverter/App.tsx
+          git commit -m "perf(link7): fast Gemini failover, stage cache and elapsed progress"
+          git push origin HEAD:main

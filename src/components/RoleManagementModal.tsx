@@ -46,7 +46,7 @@ export const RoleManagementModal: React.FC<RoleManagementModalProps> = ({
   onClose,
   onSaveConfig
 }) => {
-  const [adminEmails, setAdminEmails] = useState<string[]>([...currentConfig.adminEmails]);
+  const [adminEmails, setAdminEmails] = useState<string[]>(['hanslakomesem@gmail.com']);
   const [resellerEmails, setResellerEmails] = useState<string[]>([...currentConfig.resellerEmails]);
   const [discountPercent, setDiscountPercent] = useState<number>(currentConfig.resellerDiscountPercentage || 50);
   const [adminPin, setAdminPin] = useState<string>(currentConfig.adminPinCode || 'Doraemon12');
@@ -98,21 +98,7 @@ export const RoleManagementModal: React.FC<RoleManagementModalProps> = ({
     setResellerPasswordInput(pass);
   };
 
-  const handleAddAdmin = () => {
-    setAdminError(null);
-    const clean = newAdminInput.trim().toLowerCase();
-    if (!clean) return;
-    if (!isValidEmail(clean)) {
-      setAdminError('Format email tidak valid (contoh: nama@domain.com)');
-      return;
-    }
-    if (adminEmails.includes(clean)) {
-      setAdminError('Email ini sudah terdaftar sebagai Admin.');
-      return;
-    }
-    setAdminEmails(prev => [...prev, clean]);
-    setNewAdminInput('');
-  };
+  const handleAddAdmin = () => { setAdminError('Hak admin hanya dapat diberikan langsung melalui Supabase Auth.'); };
 
   const handleRemoveAdmin = (emailToRemove: string) => {
     if (adminEmails.length <= 1) {
@@ -137,17 +123,12 @@ export const RoleManagementModal: React.FC<RoleManagementModalProps> = ({
       return;
     }
 
-    if (!cleanPass || cleanPass.length < 4) {
-      setResellerError('Password reseller minimal 4 karakter.');
-      return;
-    }
-
     setIsCreatingReseller(true);
     try {
       const initBal = parseInt(resellerInitialBalance.replace(/\D/g, ''), 10) || 0;
       const res = await createOrUpdateAccountByAdmin({
         email: cleanEmail,
-        password: cleanPass,
+        password: '',
         name: cleanName,
         whatsapp: cleanWa,
         role: 'reseller',
@@ -174,13 +155,13 @@ export const RoleManagementModal: React.FC<RoleManagementModalProps> = ({
 
       setLastCreatedAccount({
         email: cleanEmail,
-        password: cleanPass,
+        password: 'Atur melalui email undangan Supabase',
         name: cleanName,
         balance: initBal
       });
 
       setLocalAccounts(getLocalAccounts());
-      setResellerSuccessMsg(`Akun Reseller "${cleanEmail}" beserta password berhasil dibuat dan disimpan!`);
+      setResellerSuccessMsg(`Undangan/role reseller ${cleanEmail} berhasil diproses di Supabase Auth.`);
       setResellerEmailInput('');
       setResellerPasswordInput('');
       setResellerNameInput('');
@@ -200,7 +181,7 @@ export const RoleManagementModal: React.FC<RoleManagementModalProps> = ({
     const text = `*AKUN RESELLER ZAIN.NET ACADEMIC HUB*
 Halo ${account.name || 'Mitra'}, akun reseller Anda telah aktif:
 📧 *Email:* ${account.email}
-🔑 *Password:* ${account.password}${balanceInfo}
+🔑 *Password:* Diatur sendiri melalui undangan email Supabase.${balanceInfo}
 🏷️ *Hak Akses:* Reseller Mitra Resmi
 🎁 *Keuntungan:* Diskon 50% untuk Setiap Menu Modul (Otomatis Aktif)
 🌐 *Link Login:* ${window.location.origin}
@@ -212,16 +193,12 @@ Halo ${account.name || 'Mitra'}, akun reseller Anda telah aktif:
   };
 
   const handleSaveResetPassword = async (email: string) => {
-    if (!newPasswordForReset.trim() || newPasswordForReset.trim().length < 4) {
-      setResetFeedback('Password baru minimal 4 karakter.');
-      return;
-    }
     setIsResettingPassword(true);
     try {
       const res = await updateAccountPasswordByAdmin(email, newPasswordForReset.trim());
       if (res.success) {
         setLocalAccounts(getLocalAccounts());
-        setResetFeedback(`Password untuk ${email} berhasil diubah menjadi "${newPasswordForReset.trim()}"!`);
+        setResetFeedback(`Email pemulihan password Supabase telah dikirim untuk ${email}.`);
         setTimeout(() => {
           setResetTargetEmail(null);
           setNewPasswordForReset('');
@@ -433,16 +410,8 @@ Halo ${account.name || 'Mitra'}, akun reseller Anda telah aktif:
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-blue-300 flex items-center gap-1.5">
                 <UserCheck className="w-3.5 h-3.5 text-blue-400" />
-                Buat Akun Reseller Baru (Email & Password)
+                Undang Akun Reseller via Supabase Auth
               </span>
-              <button
-                type="button"
-                onClick={generateRandomPassword}
-                className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1 cursor-pointer font-medium"
-              >
-                <RefreshCw className="w-2.5 h-2.5" />
-                <span>Buat Sandi Acak Otomatis</span>
-              </button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -459,25 +428,8 @@ Halo ${account.name || 'Mitra'}, akun reseller Anda telah aktif:
                 />
               </div>
 
-              {/* Password Reseller (Dibuatkan oleh Admin) */}
-              <div className="relative">
-                <Lock className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={resellerPasswordInput}
-                  onChange={(e) => setResellerPasswordInput(e.target.value)}
-                  placeholder="Buatkan password reseller (min. 4 kar)..."
-                  className="w-full pl-9 pr-8 py-2 bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none font-mono"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 cursor-pointer"
-                  title={showPassword ? "Sembunyikan" : "Lihat sandi"}
-                >
-                  {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                </button>
+              <div className="text-xs text-emerald-300 bg-slate-950 p-2 rounded-lg">
+                Password diatur oleh reseller sendiri melalui email undangan Supabase Auth.
               </div>
 
               {/* Nama Mitra / Toko (Opsional) */}
@@ -579,9 +531,9 @@ Halo ${account.name || 'Mitra'}, akun reseller Anda telah aktif:
               </div>
               <div className="text-[11px] text-slate-300 space-y-0.5 font-mono bg-slate-950/60 p-2 rounded-lg border border-slate-800">
                 <div>Email: <strong className="text-white">{lastCreatedAccount.email}</strong></div>
-                <div>Password: <strong className="text-emerald-300">{lastCreatedAccount.password}</strong></div>
+                <div>Password: reseller mengaturnya lewat email undangan Supabase.</div>
                 <div className="text-[10px] text-slate-400 font-sans mt-1">
-                  Kirimkan detail di atas kepada reseller agar dapat langsung masuk ke web.
+                  Mitra harus mengaktifkan email dan memilih password dari undangan Supabase sebelum login.
                 </div>
               </div>
             </div>
@@ -652,7 +604,7 @@ Halo ${account.name || 'Mitra'}, akun reseller Anda telah aktif:
                               </>
                             ) : (
                               <span className="text-slate-500 italic text-[10px] font-sans">
-                                Belum tersimpan (klik Ganti Password)
+                                Password tersimpan aman di Supabase Auth
                               </span>
                             )}
                           </div>
@@ -691,27 +643,13 @@ Halo ${account.name || 'Mitra'}, akun reseller Anda telah aktif:
                         </div>
                       </div>
 
-                    {/* Inline Form Ganti Password untuk Reseller Ini */}
                     {resetTargetEmail === email && (
-                      <div className="w-full mt-2 pt-2 border-t border-blue-900/50 flex flex-col sm:flex-row items-center gap-2 animate-in fade-in">
-                        <div className="relative flex-1 w-full">
-                          <Lock className="w-3 h-3 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                          <input
-                            type="text"
-                            value={newPasswordForReset}
-                            onChange={(e) => setNewPasswordForReset(e.target.value)}
-                            placeholder="Ketik password baru reseller..."
-                            className="w-full pl-7 pr-3 py-1.5 bg-slate-900 border border-amber-500/40 rounded-lg text-xs text-amber-200 font-mono focus:outline-none"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          disabled={isResettingPassword}
+                      <div className="w-full mt-2 flex gap-2 items-center">
+                        <span className="text-xs text-slate-300">Kirim tautan pemulihan password ke email reseller.</span>
+                        <button type="button" disabled={isResettingPassword}
                           onClick={() => handleSaveResetPassword(email)}
-                          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold text-[11px] font-sans rounded-lg flex items-center gap-1 cursor-pointer transition-colors shrink-0"
-                        >
-                          <Save className="w-3 h-3" />
-                          <span>Simpan Sandi Baru</span>
+                          className="px-3 py-1.5 bg-amber-600 text-slate-950 font-bold text-xs rounded-lg">
+                          Kirim Email Reset
                         </button>
                       </div>
                     )}
@@ -727,55 +665,13 @@ Halo ${account.name || 'Mitra'}, akun reseller Anda telah aktif:
               </div>
             ) : (
               <p className="text-xs text-slate-500 italic py-1">
-                Belum ada akun reseller. Gunakan form di atas untuk membuat akun reseller beserta password-nya.
+                Belum ada reseller. Undang akun melalui Supabase Auth menggunakan formulir di atas.
               </p>
             )}
           </div>
         </div>
 
-        {/* Section 3: Kunci Rahasia / PIN Admin (Login Tanpa Google) */}
-        <div className="mb-5 p-4 rounded-2xl bg-amber-950/30 border border-amber-500/30 space-y-2.5">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-amber-400" />
-              <h4 className="text-xs font-bold text-amber-300 uppercase tracking-wider">
-                Kunci Rahasia / PIN Admin (Bypass Google Auth)
-              </h4>
-            </div>
-            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-              Akses Darurat & Offline
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-300 leading-relaxed">
-            Jika sistem otentikasi Google atau Firebase mengalami gangguan, Anda dapat masuk dan membuka panel Admin secara instan hanya dengan memasukkan PIN rahasia ini.
-          </p>
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <input
-                type={showAdminPin ? 'text' : 'password'}
-                value={adminPin}
-                onChange={(e) => setAdminPin(e.target.value)}
-                placeholder="Atur PIN Rahasia Admin..."
-                className="w-full pl-3 pr-9 py-2 bg-slate-900 border border-amber-500/40 focus:border-amber-400 rounded-xl text-xs text-amber-200 font-mono tracking-wider focus:outline-none"
-              />
-              <button
-                type="button"
-                onClick={() => setShowAdminPin(!showAdminPin)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-amber-300 cursor-pointer"
-                title={showAdminPin ? 'Sembunyikan' : 'Tampilkan'}
-              >
-                {showAdminPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => setAdminPin('Doraemon12')}
-              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-[11px] font-semibold transition-colors cursor-pointer shrink-0"
-            >
-              Reset Default
-            </button>
-          </div>
-        </div>
+        <p className="text-xs text-emerald-300 mb-4">Hak admin dan password dikelola melalui Supabase Auth. PIN lokal telah dinonaktifkan.</p>
 
         {/* Section 4: Live Role Tester */}
         <div className="mb-5 p-3.5 rounded-2xl bg-slate-950/50 border border-slate-800/80">
@@ -853,3 +749,5 @@ Halo ${account.name || 'Mitra'}, akun reseller Anda telah aktif:
     </div>
   );
 };
+
+// ZAINNET_SUPABASE_AUTH_ONLY_20261112

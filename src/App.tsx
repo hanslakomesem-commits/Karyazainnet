@@ -297,8 +297,8 @@ function AcademicHubMainApp({ onNavigateToPath, initialToolId }: { onNavigateToP
   const [verifiedAdminUid, setVerifiedAdminUid] = useState<string | null>(null);
   const userRole: UserRole = (user?.uid && user.uid === verifiedAdminUid) 
     ? 'admin' 
-    : ((user as any)?.role === 'reseller' || (user?.email && rolesConfig.resellerEmails?.some(e => e.trim().toLowerCase() === user.email?.trim().toLowerCase())))
-    ? 'reseller' 
+    : (user?.uid && (user as any)?.role === 'reseller' && (user as any)?.isCustomAuth === false)
+    ? 'reseller'
     : 'public';
 
   // Apply custom prices dynamically to categories
@@ -895,94 +895,10 @@ function AcademicHubMainApp({ onNavigateToPath, initialToolId }: { onNavigateToP
         setAuthLoading(false);
       } else {
         setAuthLoading(false);
-        // Check if user is logged in via Custom Auth (PIN / Email Mandiri without Google)
-        const savedCustom = typeof window !== 'undefined' ? localStorage.getItem('zain_custom_auth_user') : null;
-        if (savedCustom) {
-          try {
-            const parsedUser: AppUser = JSON.parse(savedCustom);
-            // ZAINNET_SUPABASE_ADMIN_AUTH_V1: never restore an admin from localStorage.
-            if (parsedUser.role === 'admin' ||
-                parsedUser.email?.trim().toLowerCase() === 'hanslakomesem@gmail.com') {
-              localStorage.removeItem('zain_custom_auth_user');
-              localStorage.removeItem('admin_logged_in');
-              localStorage.removeItem('zain_admin_logged_in');
-              return;
-            }
-            auth.currentUser = parsedUser as any;
-            setUser(parsedUser);
-            setIsGuest(false);
-            setShowLoginModal(false);
-
-            // 1. Initial fast local cache load
-            const localQuotas = localStorage.getItem(`zain_quotas_${parsedUser.uid}`);
-            if (localQuotas) {
-              try { setUserQuotas(JSON.parse(localQuotas)); } catch (e) {}
-            }
-            const localWallet = localStorage.getItem(`zain_wallet_${parsedUser.uid}`);
-            if (localWallet) {
-              setUserWalletBalance(Number(localWallet) || 0);
-            }
-            const localLoyalty = localStorage.getItem(`zain_loyalty_${parsedUser.uid}`);
-            if (localLoyalty) {
-              try { setLoyalty({ ...defaultLoyalty, ...JSON.parse(localLoyalty) }); } catch (e) {}
-            }
-
-            // 2. Multi-browser cloud sync: Query Supabase directly for latest wallet, quotas, loyalty, and purchases
-            (async () => {
-              try {
-                // Wallet from Supabase (multi-path resilience)
-                let cloudBal: number | null = null;
-                const walletSnap = await getDoc(doc(db, 'users', parsedUser.uid, 'data', 'wallet'));
-                if (walletSnap.exists()) {
-                  const d = walletSnap.data();
-                  if (typeof d?.balance === 'number') cloudBal = d.balance;
-                  else if (d?.balance && typeof d.balance.__academic_increment === 'number') cloudBal = d.balance.__academic_increment;
-                }
-                if (cloudBal === null) {
-                  const userSnap = await getDoc(doc(db, 'users', parsedUser.uid));
-                  if (userSnap.exists() && typeof userSnap.data()?.walletBalance === 'number') {
-                    cloudBal = userSnap.data().walletBalance;
-                  }
-                }
-                if (cloudBal === null && parsedUser.email) {
-                  const emailDocId = parsedUser.email.trim().toLowerCase().replace(/[^a-zA-Z0-9]/g, '_');
-                  const eSnap = await getDoc(doc(db, 'wallets_by_email', emailDocId));
-                  if (eSnap.exists() && typeof eSnap.data()?.balance === 'number') {
-                    cloudBal = eSnap.data().balance;
-                  }
-                }
-                if (cloudBal !== null) {
-                  setUserWalletBalance((prev) => Math.max(prev, cloudBal!));
-                  localStorage.setItem(`zain_wallet_${parsedUser.uid}`, cloudBal.toString());
-                  if (parsedUser.email) {
-                    localStorage.setItem(`zain_wallet_${parsedUser.email}`, cloudBal.toString());
-                  }
-                }
-                // Quotas from Supabase
-                const quotaSnap = await getDoc(doc(db, 'users', parsedUser.uid, 'data', 'quotas'));
-                if (quotaSnap.exists() && quotaSnap.data()) {
-                  const cloudQuotas = quotaSnap.data() as UserQuotas;
-                  setUserQuotas(cloudQuotas);
-                  localStorage.setItem(`zain_quotas_${parsedUser.uid}`, JSON.stringify(cloudQuotas));
-                }
-                // Loyalty from Supabase
-                const loyaltySnap = await getDoc(doc(db, 'users', parsedUser.uid, 'data', 'loyalty'));
-                if (loyaltySnap.exists() && loyaltySnap.data()) {
-                  setLoyalty({ ...defaultLoyalty, ...(loyaltySnap.data() as UserLoyalty) });
-                }
-                // Purchases from Supabase
-                const purchSnap = await getDocs(collection(db, 'users', parsedUser.uid, 'purchases'));
-                const pList: UserPurchase[] = [];
-                purchSnap.forEach((d) => pList.push(d.data() as UserPurchase));
-                pList.sort((a, b) => b.purchasedAt - a.purchasedAt);
-                if (pList.length > 0) setPurchases(pList);
-              } catch (cloudErr) {
-                console.warn('Notice syncing custom user cloud data:', cloudErr);
-              }
-            })();
-            return;
-          } catch (e) {}
-        }
+        // Legacy browser-only sessions can never sign anyone in.
+        localStorage.removeItem('zain_custom_auth_user');
+        localStorage.removeItem('admin_logged_in');
+        localStorage.removeItem('zain_admin_logged_in');
 
         // Guest mode fallback
         const guestPurch = localStorage.getItem('zain_guest_purch');
@@ -1315,139 +1231,22 @@ function AcademicHubMainApp({ onNavigateToPath, initialToolId }: { onNavigateToP
     }
   };
 
-  // Handle direct web login (Mahasiswa Registration, Email & Password, or Admin PIN)
-  const handleCustomLogin = async (userOrEmail: string | AppUser, displayName?: string) => {
-    let customUser: AppUser;
-    if (typeof userOrEmail === 'string') {
-      const email = userOrEmail.trim().toLowerCase();
-      const isAdmin = rolesConfig.adminEmails.map(e => e.toLowerCase()).includes(email) || email === 'fastprint2026@gmail.com';
-      customUser = {
-        uid: `admin_${email.replace(/[^a-zA-Z0-9]/g, '_')}`,
-        email: userOrEmail,
-        displayName: displayName || (isAdmin ? 'Administrator ZAIN.NET' : userOrEmail.split('@')[0]),
-        photoURL: null,
-        isCustomAuth: true,
-        role: isAdmin ? 'admin' : 'public',
-        createdAt: Date.now()
-      };
-    } else {
-      customUser = userOrEmail;
+  // Only the live Supabase Auth session may open a user dashboard.
+  const handleCustomLogin = async (candidate: string | AppUser) => {
+    const {data:{user:verified},error}=await database().auth.getUser();
+    if(error||!verified||typeof candidate==='string'||candidate.uid!==verified.id){
+      console.warn('Login lokal ditolak: sesi Supabase Auth tidak cocok.');
+      setUser(null);setShowLoginModal(true);return;
     }
-
-    // ZAINNET_SUPABASE_ADMIN_AUTH_V1: email and PIN are not admin credentials.
-    const isAdmin = customUser.role === 'admin' && customUser.isCustomAuth === false &&
-      customUser.email?.trim().toLowerCase() === 'hanslakomesem@gmail.com';
-    if (!isAdmin && customUser.role === 'admin') customUser.role = 'public';
-
-    auth.currentUser = customUser as any;
-    setUser(customUser);
-    setIsGuest(false);
-    setShowLoginModal(false);
-    setShowPinLoginModal(false);
-    setAuthLoading(false);
-
-    try {
-      if (isAdmin) localStorage.removeItem('zain_custom_auth_user');
-      else localStorage.setItem('zain_custom_auth_user', JSON.stringify(customUser));
-      if (isAdmin) {
-        localStorage.setItem('admin_logged_in', 'true');
-        localStorage.setItem('zain_admin_logged_in', 'true');
-      }
-    } catch (e) {}
-
-    try {
-      const userDocRef = doc(db, 'users', customUser.uid);
-      await setDoc(userDocRef, {
-        uid: customUser.uid,
-        email: customUser.email,
-        displayName: customUser.displayName,
-        university: customUser.university || '',
-        major: customUser.major || '',
-        whatsapp: customUser.whatsapp || '',
-        lastLoginAt: new Date().toISOString(),
-        authProvider: 'web_auth_native'
-      }, { merge: true });
-
-      // Load favorites
-      const favsCol = collection(db, 'users', customUser.uid, 'favorites');
-      const favsSnap = await getDocs(favsCol);
-      const favSet = new Set<string>();
-      favsSnap.forEach((d) => favSet.add(d.id));
-      if (favSet.size > 0) setFavorites(favSet);
-
-      // Load documents
-      const docsCol = collection(db, 'users', customUser.uid, 'documents');
-      const docsSnap = await getDocs(docsCol);
-      const userDocsList: UserDocumentItem[] = [];
-      docsSnap.forEach((d) => userDocsList.push(d.data() as UserDocumentItem));
-      if (userDocsList.length > 0) {
-        setDocuments(userDocsList);
-        localStorage.setItem(`zain_docs_${customUser.uid}`, JSON.stringify(userDocsList));
-      }
-
-      // Load quotas
-      const quotaDocRef = doc(db, 'users', customUser.uid, 'data', 'quotas');
-      const quotaSnap = await getDoc(quotaDocRef);
-      if (quotaSnap.exists()) {
-        const qData = quotaSnap.data() as UserQuotas;
-        setUserQuotas(qData);
-        localStorage.setItem(`zain_quotas_${customUser.uid}`, JSON.stringify(qData));
-      } else {
-        const localQuotas = localStorage.getItem(`zain_quotas_${customUser.uid}`);
-        if (localQuotas) {
-          try {
-            setUserQuotas(JSON.parse(localQuotas));
-          } catch (e) {}
-        }
-      }
-
-      // Load wallet balance (multi-path resilience)
-      let customBal: number | null = null;
-      const walletSnap = await getDoc(doc(db, 'users', customUser.uid, 'data', 'wallet'));
-      if (walletSnap.exists()) {
-        const d = walletSnap.data();
-        if (typeof d?.balance === 'number') customBal = d.balance;
-        else if (d?.balance && typeof d.balance.__academic_increment === 'number') customBal = d.balance.__academic_increment;
-      }
-      if (customBal === null) {
-        const uSnap = await getDoc(doc(db, 'users', customUser.uid));
-        if (uSnap.exists() && typeof uSnap.data()?.walletBalance === 'number') {
-          customBal = uSnap.data().walletBalance;
-        }
-      }
-      if (customBal === null && customUser.email) {
-        const emailDocId = customUser.email.trim().toLowerCase().replace(/[^a-zA-Z0-9]/g, '_');
-        const eSnap = await getDoc(doc(db, 'wallets_by_email', emailDocId));
-        if (eSnap.exists() && typeof eSnap.data()?.balance === 'number') {
-          customBal = eSnap.data().balance;
-        }
-      }
-      if (customBal !== null) {
-        setUserWalletBalance((prev) => Math.max(prev, customBal!));
-        localStorage.setItem(`zain_wallet_${customUser.uid}`, customBal.toString());
-        if (customUser.email) {
-          localStorage.setItem(`zain_wallet_${customUser.email}`, customBal.toString());
-        }
-      }
-
-      // If admin, load global transactions
-      if (isAdmin) {
-        try {
-          const allTrxCol = collection(db, 'transactions');
-          const allTrxSnap = await getDocs(allTrxCol);
-          const globalPurchList: UserPurchase[] = [];
-          allTrxSnap.forEach((d) => {
-            globalPurchList.push(d.data() as UserPurchase);
-          });
-          if (globalPurchList.length > 0) {
-            globalPurchList.sort((a, b) => b.purchasedAt - a.purchasedAt);
-            setAllPurchasesForAdmin(globalPurchList);
-          }
-        } catch (e) {}
-      }
-    } catch (err) {
-      console.warn('Custom login Firestore sync warning:', err);
-    }
+    const role=verified.app_metadata?.academic_role==='admin'?'admin':
+      verified.app_metadata?.academic_role==='reseller'?'reseller':'public';
+    setUser({uid:verified.id,email:verified.email||candidate.email,
+      displayName:verified.user_metadata?.full_name||verified.email,
+      role,photoURL:null,isCustomAuth:false,createdAt:Date.now()} as AppUser);
+    setIsGuest(false);setShowLoginModal(false);setShowPinLoginModal(false);
+    localStorage.removeItem('zain_custom_auth_user');
+    localStorage.removeItem('admin_logged_in');
+    localStorage.removeItem('zain_admin_logged_in');
   };
 
   // Quick correction for abnormal quota (e.g. if previous loop inflated quota to 384x)
@@ -1930,7 +1729,7 @@ function AcademicHubMainApp({ onNavigateToPath, initialToolId }: { onNavigateToP
               className="px-2.5 py-1 bg-amber-500 text-slate-950 rounded-lg font-black hover:bg-amber-400 transition-colors cursor-pointer text-[11px] flex items-center gap-1 shadow-sm"
             >
               <KeyRound className="w-3.5 h-3.5" />
-              <span>Masuk PIN Admin</span>
+              <span>Login Admin Supabase</span>
             </button>
             <button
               onClick={() => setIsGuest(false)}
@@ -2666,17 +2465,7 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        return (
-          localStorage.getItem('admin_logged_in') === 'true' ||
-          localStorage.getItem('zain_admin_logged_in') === 'true'
-        );
-      } catch (e) {}
-    }
-    return false;
-  });
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(false);
 
   const isAdmin = (currentUser as any)?.role === 'admin';
 
@@ -2784,3 +2573,5 @@ export default function App() {
   );
 }
 
+
+// ZAINNET_SUPABASE_AUTH_ONLY_20261112

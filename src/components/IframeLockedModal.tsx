@@ -11,7 +11,7 @@ import {
   EyeOff 
 } from 'lucide-react';
 import { ToolItem, UserRole } from '../types';
-import { defaultRolesConfig } from '../data/toolsData';
+import { database } from '../storage/client';
 
 interface IframeLockedModalProps {
   tool: ToolItem | null;
@@ -32,52 +32,24 @@ export const IframeLockedModal: React.FC<IframeLockedModalProps> = ({
   onAdminAuthorized,
 }) => {
   const [pinInput, setPinInput] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   if (!isOpen || !tool) return null;
 
-  const handleQuickUnlock = (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg(null);
-    const clean = pinInput.trim();
-    const targetPin = (defaultRolesConfig.adminPinCode || 'Doraemon12').trim();
-
-    if (
-      clean === targetPin ||
-      clean === 'Doraemon12' ||
-      clean === '1234' ||
-      clean === 'admin123' ||
-      clean.toLowerCase() === 'karyazainnet'
-    ) {
-      setSuccessMsg('PIN Admin diverifikasi! Membuka modul...');
-      try {
-        localStorage.setItem('admin_logged_in', 'true');
-        localStorage.setItem('zain_admin_logged_in', 'true');
-        const adminUser = {
-          uid: 'admin_hanafisumenep',
-          email: 'hanafisumenep@gmail.com',
-          displayName: 'Administrator ZAIN.NET',
-          role: 'admin',
-          isCustomAuth: true,
-          photoURL: null,
-          createdAt: Date.now()
-        };
-        localStorage.setItem('zain_custom_auth_user', JSON.stringify(adminUser));
-      } catch (e) {}
-
-      setTimeout(() => {
-        onClose();
-        if (onAdminAuthorized) {
-          onAdminAuthorized(tool);
-        } else {
-          window.location.reload();
-        }
-      }, 500);
-    } else {
-      setErrorMsg('PIN Admin tidak cocok. (PIN Standar: Doraemon12)');
-    }
+  const handleQuickUnlock = async (e: React.FormEvent) => {
+    e.preventDefault();setErrorMsg(null);
+    try{
+      const {data,error}=await database().auth.signInWithPassword({email:adminEmail.trim(),password:pinInput});
+      if(error||!data.user)throw new Error(error?.message||'Login Supabase gagal');
+      if(data.user.app_metadata?.academic_role!=='admin'||
+         data.user.email?.toLowerCase()!=='hanslakomesem@gmail.com')
+        throw new Error('Akun ini bukan administrator Supabase ZAIN.NET.');
+      setSuccessMsg('Admin Supabase terverifikasi. Membuka modul...');
+      onClose();onAdminAuthorized?.(tool);
+    }catch(err:any){setErrorMsg(err?.message||'Gagal memeriksa sesi Supabase.');}
   };
 
   const internalAlternatives = [
@@ -171,14 +143,17 @@ export const IframeLockedModal: React.FC<IframeLockedModalProps> = ({
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
               <p className="font-bold text-white text-xs sm:text-sm">
-                Buka Seketika dengan PIN Admin
+                Masuk melalui Admin Supabase
               </p>
             </div>
             <p className="text-[11px] text-amber-200/90 leading-relaxed">
-              Jika Anda adalah Administrator, masukkan PIN Admin sekali untuk membuka semua modul iframe tanpa terkunci lagi.
+              Masuk dengan email dan password administrator Supabase Auth. PIN lokal tidak berlaku.
             </p>
 
-            <form onSubmit={handleQuickUnlock} className="flex gap-2 pt-1">
+            <form onSubmit={handleQuickUnlock} className="flex flex-col gap-2 pt-1">
+              <input type="email" required value={adminEmail} onChange={e=>setAdminEmail(e.target.value)}
+                aria-label="Email admin Supabase" placeholder="Email admin Supabase"
+                className="w-full p-2 rounded-lg bg-slate-950 text-white border border-slate-700" />
               <div className="relative flex-1">
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -187,7 +162,7 @@ export const IframeLockedModal: React.FC<IframeLockedModalProps> = ({
                     setPinInput(e.target.value);
                     setErrorMsg(null);
                   }}
-                  placeholder="PIN Admin (Doraemon12)..."
+                  placeholder="Password Supabase Auth"
                   className="w-full pl-3 pr-8 py-2 bg-slate-950 border border-amber-500/40 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-amber-400"
                 />
                 <button
@@ -200,7 +175,7 @@ export const IframeLockedModal: React.FC<IframeLockedModalProps> = ({
               </div>
               <button
                 type="submit"
-                disabled={!pinInput.trim()}
+                disabled={!pinInput.trim() || !adminEmail.trim()}
                 className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold text-xs rounded-xl shadow transition-all cursor-pointer whitespace-nowrap"
               >
                 Buka Kunci
@@ -272,3 +247,5 @@ export const IframeLockedModal: React.FC<IframeLockedModalProps> = ({
     </div>
   );
 };
+
+// ZAINNET_SUPABASE_AUTH_ONLY_20261112

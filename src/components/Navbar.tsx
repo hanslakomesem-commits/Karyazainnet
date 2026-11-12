@@ -377,11 +377,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             {onOpenPinLogin && (
               <button
                 onClick={onOpenPinLogin}
-                title="Masuk Cepat PIN Admin"
+                title="Masuk Admin Supabase Auth"
                 className="p-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
               >
                 <KeyRound className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline-block text-[11px]">PIN Admin</span>
+                <span className="hidden sm:inline-block text-[11px]">Admin Supabase</span>
               </button>
             )}
             <button
@@ -656,3 +656,5 @@ export const Navbar: React.FC<NavbarProps> = ({
     </>
   );
 };
+
+// ZAINNET_SUPABASE_AUTH_ONLY_20261112

@@ -27,9 +27,8 @@ import {
 } from 'lucide-react';
 import { AppUser, RolesConfig } from '../types';
 import { 
-  loginWithEmailPassword, 
-  registerStudentAccount, 
-  loginWithAdminMasterPin 
+  loginWithEmailPassword,
+  registerStudentAccount
 } from '../utils/authService';
 
 interface LoginViewProps {
@@ -45,7 +44,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
   onGuestLogin,
   onNavigateToBlog 
 }) => {
-  const [activeTab, setActiveTab] = useState<'login' | 'register' | 'admin_pin'>('login');
+  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -64,11 +63,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
-
-  // Form State: Admin PIN Quick Access
-  const [adminPin, setAdminPin] = useState('');
-  const [adminEmail, setAdminEmail] = useState(rolesConfig.adminEmails[0] || 'hanafisumenep@gmail.com');
-  const [showAdminPin, setShowAdminPin] = useState(false);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,39 +116,24 @@ export const LoginView: React.FC<LoginViewProps> = ({
         rolesConfig
       });
 
-      if (!res.success || !res.user) {
+      if (!res.success) {
         setError(res.error || 'Pendaftaran gagal. Silakan coba kembali.');
         setLoading(false);
         return;
       }
 
-      setSuccessMsg(`Pendaftaran akun mahasiswa berhasil! Mengalihkan ke dashboard...`);
-      setTimeout(() => {
-        onLoginSuccess(res.user!);
-      }, 700);
+      if (!res.user) {
+        setSuccessMsg(res.message || 'Pendaftaran diterima. Konfirmasi email di kotak masuk, lalu masuk kembali.');
+        setLoading(false);
+        setActiveTab('login');
+        return;
+      }
+      setSuccessMsg('Pendaftaran Supabase berhasil. Masuk ke dashboard...');
+      setTimeout(() => { onLoginSuccess(res.user!); }, 700);
     } catch (err: any) {
       setError(err.message || 'Terjadi kendala saat pendaftaran akun.');
       setLoading(false);
     }
-  };
-
-  const handleAdminPinSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setSuccessMsg(null);
-    setLoading(true);
-
-    const res = loginWithAdminMasterPin(adminPin, adminEmail, rolesConfig);
-    if (!res.success || !res.user) {
-      setError(res.error || 'PIN Rahasia Admin salah.');
-      setLoading(false);
-      return;
-    }
-
-    setSuccessMsg('Otorisasi Administrator berhasil! Membuka panel kontrol...');
-    setTimeout(() => {
-      onLoginSuccess(res.user!);
-    }, 500);
   };
 
   return (
@@ -278,7 +257,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                     Kata Sandi
                   </label>
                   {/* ZAINNET_SUPABASE_ADMIN_AUTH_V1: Admin uses the regular email/password form. */}
-                  <span className="text-[11px] text-emerald-400">Admin: password Supabase</span>
+                  <span className="text-[11px] text-emerald-400">Admin, reseller, umum: Supabase Auth</span>
                 </div>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -520,90 +499,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
             </form>
           )}
 
-          {/* ================= TAB 3: ADMIN MASTER PIN ================= */}
-          {activeTab === 'admin_pin' && (
-            <form onSubmit={handleAdminPinSubmit} className="space-y-4">
-              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-xs text-amber-200 space-y-1">
-                <div className="flex items-center gap-2 font-bold text-amber-300">
-                  <Crown className="w-4 h-4 text-amber-400" />
-                  <span>Akses Langsung Administrator</span>
-                </div>
-                <p className="text-[11px] text-amber-200/90 leading-relaxed">
-                  Gunakan PIN Rahasia Admin untuk membuka kontrol penuh ZAIN.NET, verifikasi bukti pembayaran QRIS, atur kuota, dan kelola role tanpa perlu password biasa.
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  PIN Rahasia Admin
-                </label>
-                <div className="relative">
-                  <KeyRound className="w-4 h-4 text-amber-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type={showAdminPin ? 'text' : 'password'}
-                    required
-                    value={adminPin}
-                    onChange={(e) => setAdminPin(e.target.value)}
-                    placeholder="Masukkan PIN Rahasia Admin"
-                    className="w-full pl-10 pr-10 py-3 bg-slate-950 border border-slate-700 focus:border-amber-500 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500 transition-all font-mono"
-                    autoFocus
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowAdminPin(!showAdminPin)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 cursor-pointer"
-                  >
-                    {showAdminPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Email Administrator
-                </label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="email"
-                    value={adminEmail}
-                    onChange={(e) => setAdminEmail(e.target.value)}
-                    placeholder="fastprint2026@gmail.com"
-                    className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950 border border-slate-700 focus:border-amber-500 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500 transition-all"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-sm transition-all shadow-lg shadow-amber-500/20 active:scale-[0.99] disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2 mt-2"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
-                    <span>Membuka Akses Admin...</span>
-                  </>
-                ) : (
-                  <>
-                    <Crown className="w-4 h-4 text-slate-950" />
-                    <span>Buka Akses Admin Sekarang</span>
-                  </>
-                )}
-              </button>
-
-              <div className="text-center pt-1">
-                <button
-                  type="button"
-                  onClick={() => { setActiveTab('login'); setError(null); }}
-                  className="text-xs text-slate-400 hover:text-slate-200 underline cursor-pointer"
-                >
-                  Kembali ke Form Masuk Biasa
-                </button>
-              </div>
-            </form>
-          )}
-
           {/* Promo Pengguna Terdaftar */}
           <div className="mt-6 p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-purple-500/10 border border-amber-500/20 text-left">
             <div className="flex items-start gap-2.5">
@@ -741,3 +636,5 @@ export const LoginView: React.FC<LoginViewProps> = ({
     </div>
   );
 };
+
+// ZAINNET_SUPABASE_AUTH_ONLY_20261112

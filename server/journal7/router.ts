@@ -205,6 +205,10 @@ async function generateContentWithFallback(params: {
   maxRetriesPerModel?: number;
 }): Promise<any> {
   const { contents, config, model: requestedModel, maxRetriesPerModel = 2 } = params;
+  // ZAINNET_LINK7_EXACT_GEMINI_ERRORS_20261112
+  // Separate capacity failures, free-tier quota, and explicit billing caps.
+  let hadCapacityIssue = false;
+  let hadFreeTierZero = false;
   let lastError: any = null;
 
   // Prioritize requested model first if provided, followed by candidate models
@@ -268,6 +272,12 @@ async function generateContentWithFallback(params: {
       } catch (err: any) {
         lastError = err;
         const errMessage = err?.message || JSON.stringify(err);
+        if (/503|504|UNAVAILABLE|DEADLINE_EXCEEDED|high demand|overloaded|timeout|melebihi batas waktu/i.test(errMessage)) {
+          hadCapacityIssue = true;
+        }
+        if (/429|RESOURCE_EXHAUSTED/i.test(errMessage) && /limit:\s*0\b|free[_ -]?tier/i.test(errMessage)) {
+          hadFreeTierZero = true;
+        }
         console.warn(`[Gemini API] Warning on model "${modelName}" (attempt ${attempt}):`, errMessage);
 
         // Immediate stop for monthly spending cap / billing issues (no point in retrying)
@@ -341,10 +351,20 @@ async function generateContentWithFallback(params: {
   // If all candidate models failed
   console.error('[Gemini API] All fallback models exhausted:', lastError);
   const finalErrMsg = lastError?.message || JSON.stringify(lastError);
-  if (finalErrMsg.includes('spending cap') || finalErrMsg.includes('RESOURCE_EXHAUSTED')) {
-    throw new Error(
-      'Batas kuota / pengeluaran API tercapai (Spending Cap Exceeded). Silakan periksa pengaturan kuota di https://ai.studio/spend atau coba lagi nanti.'
-    );
+  // A Free Tier quota 429 is not evidence that monthly spending is exhausted.
+  if (/monthly spending cap|exceeded its monthly spending cap|spend cap exceeded/i.test(finalErrMsg)) {
+    throw new Error('Batas pengeluaran bulanan Gemini API tercapai. Periksa proyek API terkait di https://ai.studio/spend.');
+  }
+  if (hadCapacityIssue) {
+    throw new Error('Layanan Gemini sedang sibuk atau timeout (503/504). ' +
+      (hadFreeTierZero ? 'Model Pro cadangan juga tidak memiliki kuota Free Tier (429, limit 0). ' : '') +
+      'Belum ada bukti batas pengeluaran bulanan tercapai. Coba lagi saat layanan Google pulih.');
+  }
+  if (hadFreeTierZero) {
+    throw new Error('Kuota Free Tier model Gemini tidak tersedia (429, limit 0). Periksa Rate Limits atau pilih model yang memiliki kuota pada proyek Anda.');
+  }
+  if (/429|RESOURCE_EXHAUSTED/i.test(finalErrMsg)) {
+    throw new Error('Batas permintaan atau kuota Gemini API tercapai (429). Periksa Rate Limits Google AI Studio; ini tidak otomatis berarti batas pengeluaran bulanan.');
   }
 
   throw new Error(

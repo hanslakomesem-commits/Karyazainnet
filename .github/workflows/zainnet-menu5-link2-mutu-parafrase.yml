@@ -1,0 +1,438 @@
+name: ZAIN.NET - Perbaiki Mutu Parafrase Menu 5 Link 2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  improve-paraphrase:
+    name: Optimasi bahasa akademik dan keamanan revisi DOCX
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Terapkan perbaikan mesin parafrase
+        shell: bash
+        run: |
+          python3 - <<'PY_PATCH'
+          #!/usr/bin/env python3
+          """Perbaikan kualitas editorial Menu 5 Link 2, tanpa mengubah pembayaran, auth atau kuota."""
+          from pathlib import Path
+          
+          ROOT = Path.cwd()
+          CHANGED = []
+          
+          
+          def edit(path, editor):
+              target = ROOT / path
+              if not target.is_file():
+                  raise RuntimeError(f'File tidak ditemukan: {path}')
+              original = target.read_text(encoding='utf-8')
+              if 'ZAINNET_MENU5_NATURAL_EDITOR_V1' in original:
+                  print(f'Sudah terpasang: {path}')
+                  return
+              updated = editor(original)
+              if updated == original:
+                  raise RuntimeError(f'Patch tidak menghasilkan perubahan untuk {path}')
+              target.write_text(updated, encoding='utf-8')
+              CHANGED.append(path)
+              print(f'Diperbarui: {path}')
+          
+          
+          def once(s, old, new, name):
+              count = s.count(old)
+              if count != 1:
+                  raise RuntimeError(f'Pola {name}: perlu 1 kecocokan, ditemukan {count}. Periksa sumber terbaru sebelum memasang.')
+              return s.replace(old, new, 1)
+          
+          
+          def between(s, left, right, replacement, label):
+              if s.count(left) != 1 or s.count(right) != 1:
+                  raise RuntimeError(f'Batas {label} tidak unik: {s.count(left)}, {s.count(right)}')
+              i = s.index(left)
+              j = s.index(right, i + len(left))
+              return s[:i] + replacement + s[j:]
+          
+          
+          def backend(s):
+              # Hapus mesin sinonim statis yang menimbulkan frasa berat & klaim similarity palsu.
+              s = between(s,
+                  '/**\n * Comprehensive Academic Indonesian Lexical & Structural Replacement Library\n */',
+                  'function escapeRegExp(string: string) {',
+                  '''/**
+           * ZAINNET_MENU5_NATURAL_EDITOR_V1
+           * Fail-safe: when the remote editor is unavailable, do NOT invent a revision.
+           * Keep the original passage unchanged for a responsible manual review.
+           */
+          function academicLocalParaphrase(
+            text: string,
+            _style: string = 'natural_academic',
+            _protectedTerms: string[] = []
+          ): { paraphrased: string; alt: string; note: string } {
+            const original = String(text || '');
+            return {
+              paraphrased: original,
+              alt: original,
+              note: 'Belum diproses: layanan revisi otomatis sedang tidak tersedia. Teks asli dipertahankan untuk ditinjau manual.',
+            };
+          }
+          
+          ''',
+                  'mesin cadangan')
+              # Fungsi escape regex tidak lagi digunakan setelah penghapusan engine otomatis.
+              s = between(s, 'function escapeRegExp(string: string) {',
+                  '// Authentication/entitlement check for EVERY tool-specific API request.',
+                  '', 'escape regex')
+              s = once(s,
+                  "let styleInstruction = 'Gaya Bahasa Indonesia Akademik Formal Baku (Standar Skripsi/Jurnal Sinta/Scopus).';\n      if (style === 'active_passive') {",
+                  "let styleInstruction = 'Sunting seperlunya agar jelas, baku, dan sesuai gaya penulis naskah asli; hindari sinonim yang dipaksakan.';\n      if (style === 'natural_academic') {\n        styleInstruction = 'REVISI AKADEMIK NATURAL: Gunakan gaya bahasa penulis asli, kalimat efektif, variasi struktur yang wajar, dan pilihan kata umum yang tepat. Jangan menambah argumen baru. Jika kalimat sudah baik, pertahankan tanpa perubahan.';\n      } else if (style === 'active_passive') {",
+                  'mode natural')
+              s = once(s,
+                  "styleInstruction = 'METODE PEMECAH KALIMAT MAJEMUK (ANTI 5-7 KATA TURNITIN): Pecah satu kalimat panjang majemuk menjadi 2-3 kalimat efektif yang terpisah dan mengalir alami untuk menghancurkan kluster kesamaan kata berturut-turut.';",
+                  "styleInstruction = 'Pecah kalimat panjang jika dapat meningkatkan kejelasan. Jaga hubungan sebab-akibat, konteks, sitasi, dan maksud asli.';",
+                  'pecah kalimat')
+              s = once(s,
+                  "styleInstruction = 'METODE REKONSTRUKSI RADIKAL: Tulis ulang secara komprehensif mulai dari sudut pandang epistemologis, ubah susunan anak kalimat di depan induk kalimat, dan gunakan variasi nomina/verba akademik mendalam.';",
+                  "styleInstruction = 'Susun ulang gagasan yang rumit menjadi uraian yang runtut dan mudah dipahami tanpa mengubah data, argumen atau istilah teknis. Jangan memaksakan kosakata yang tidak alami.';",
+                  'rekonstruksi')
+              s = once(s,
+                  "styleInstruction = 'Gunakan sinonim ilmiah dan penataan ulang kata yang kaya tanpa mengubah makna konsep ilmiah.';",
+                  "styleInstruction = 'Gunakan diksi yang tepat dan lazim dalam penulisan ilmiah. Ubah hanya kata yang memang perlu diperjelas; jangan mengganti istilah teknis atau sinonim secara mekanis.';",
+                  'sinonim')
+              s = once(s,
+                  "styleInstruction = 'METODE KUTIPAN LANGSUNG RESMI (EXCLUDE QUOTE COMPLIANT): Bungkus teks persis dengan tanda kutip resmi standar akademis dan tambahkan frasa atribusi rujukan agar memenuhi filter Turnitin Exclude Quotes.';",
+                  "styleInstruction = 'Bila bagian ini benar-benar kutipan langsung dari sumber yang tersedia, pertahankan teks sumber secara verbatim dan rujukannya. Jangan mengarang kutipan, atribusi, atau menyarankan manipulasi pemeriksaan similarity.';",
+                  'kutipan asli')
+              start = 'const prompt = `Anda adalah asisten ahli parafrase skripsi dan karya ilmiah berbahasa Indonesia tingkat Magister/Doktor spesialis Anti-Plagiasi Turnitin.'
+              end = '        try {\n          const { text, modelUsed } = await generateWithFallback('
+              if s.count(start)!=1 or s.count(end)<1: raise RuntimeError('Penanda prompt batch tidak ditemukan')
+              i=s.index(start); j=s.index(end,i)
+              s=s[:i]+'''const prompt = `Anda adalah editor bahasa akademik Indonesia. Revisi naskah secara bertanggung jawab berdasarkan maksud dan gaya penulis asli, bukan untuk menyiasati pendeteksi otomatis.
+          TUGAS:
+          1. Pertahankan makna, fakta, angka, simpulan, dan terminologi khusus. Jangan membuat sumber, kutipan, data, atau argumen baru.
+          2. Gunakan bahasa Indonesia baku yang jelas, efektif, tidak bertele-tele, dan selaras dengan gaya penulis.
+          3. Hindari awalan kalimat yang berulang, sinonim yang dibuat-buat, dan pengubahan kalimat yang sudah jelas.
+          4. Pertahankan sitasi, tanda rujukan, token yang dilindungi, serta keterkaitan dengan paragraf sekitarnya.${protectedClause}
+          5. Jika suatu kalimat tidak perlu diubah atau berisiko berubah makna, kembalikan persis seperti semula.
+          
+          PENDEKATAN PENYUNTINGAN: ${styleInstruction}
+          
+          Daftar bagian dari dokumen beserta petunjuk konteks:
+          ${JSON.stringify(chunk, null, 2)}
+          
+          Berikan JSON array: id, originalText, paraphrasedText, alternativeText, explanation.
+          Penjelasan harus menjelaskan suntingan faktual, bukan menjanjikan nilai similarity atau hasil AI detector.`;
+          
+          '''+s[j:]
+              # Setiap chunk harus memberi penanda jika gagal, jangan bercampur dan dilabeli sukses.
+              s = once(s, '''          const chunkRes = JSON.parse(text || '[]');
+                    if (Array.isArray(chunkRes) && chunkRes.length > 0) {
+                      usedAI = true;
+                      return chunkRes;
+                    }''', '''          const chunkRes = JSON.parse(text || '[]');
+                    if (Array.isArray(chunkRes) && chunkRes.length > 0) {
+                      const normalized = chunk.map((item: any) => {
+                        const original = String(item.text || item.originalText || '');
+                        const found = chunkRes.find((r: any) => String(r?.id) === String(item.id));
+                        if (!found || typeof found.paraphrasedText !== 'string' || !found.paraphrasedText.trim()) {
+                          return {
+                            id: item.id, originalText: original, paraphrasedText: original,
+                            alternativeText: '', requiresReview: true, source: 'manual_review',
+                            explanation: 'Respons penyuntingan belum lengkap; teks asli tidak diubah.'
+                          };
+                        }
+                        return { ...found, id: item.id, requiresReview: false, source: 'editor' };
+                      });
+                      if (normalized.some((r: any) => !r.requiresReview)) usedAI = true;
+                      return normalized;
+                    }''', 'normalisasi chunk')
+              s = once(s, '''        return chunk.map((item: any) => {
+                    const local = academicLocalParaphrase(item.text || item.originalText || '', style, protectedTerms);
+                    return {
+                      id: item.id,
+                      originalText: item.text || item.originalText || '',
+                      paraphrasedText: local.paraphrased,
+                      alternativeText: local.alt,
+                      explanation: local.note,
+                    };
+                  });''', '''        return chunk.map((item: any) => {
+                    const original = String(item.text || item.originalText || '');
+                    const local = academicLocalParaphrase(original, style, protectedTerms);
+                    return {
+                      id: item.id,
+                      originalText: original,
+                      paraphrasedText: local.paraphrased,
+                      alternativeText: '',
+                      explanation: local.note,
+                      requiresReview: true,
+                      source: 'manual_review',
+                    };
+                  });''', 'fallback jujur')
+              s = once(s, '''      res.json({
+                  results: aggregatedResults,
+                  modelUsed: usedAI ? finalModelUsed : 'academic_engine_fallback',
+                  source: usedAI ? 'ai' : 'academic_engine_fallback',
+                });''', '''        const requiresReviewCount = aggregatedResults.filter((r: any) => r.requiresReview).length;
+                res.json({
+                  results: aggregatedResults,
+                  modelUsed: usedAI ? finalModelUsed : 'manual_review',
+                  source: requiresReviewCount > 0 ? (usedAI ? 'partial_review' : 'manual_review') : 'editor',
+                  requiresReviewCount,
+                });''', 'statistik batch')
+              # Tidak boleh membuat 4 opsi sintetis dengan klaim tingkat similarity yang tidak pernah diukur.
+              left='      // Offline Multi-Strategy Engine Fallback\n'
+              right='    } catch (err: any) {\n      console.error(\'Error resolving stubborn plagiarism:\', err);'
+              s=between(s,left,right,"      return res.status(503).json({ error: 'Layanan revisi lanjutan belum tersedia. Teks asli dipertahankan; tinjau dan sunting manual.' });\n",'fallback variasi sulit')
+              left='      const opt1 = academicLocalParaphrase(text, \'academic_formal\', protectedTerms);\n'
+              right="    } catch (err: any) {\n      console.error('Error single paraphrase:', err);"
+              s=between(s,left,right,"      return res.status(503).json({ error: 'Variasi otomatis belum tersedia. Teks asli tidak diubah. Silakan coba lagi atau edit manual.' });\n",'fallback satu kalimat')
+              # Editorial intent, not detector or Turnitin evasion.
+              s=once(s,
+                  'const prompt = `Parafrase kalimat skripsi berikut ini ke dalam Bahasa Indonesia Akademik agar lolos plagiasi Turnitin, dengan tetap mempertahankan seluruh rujukan dan konteks ilmiah.${protectedClause}',
+                  'const prompt = `Sunting kalimat skripsi ke dalam Bahasa Indonesia akademik yang wajar dan jelas. Jaga gaya penulis asli, makna, rujukan, dan konteks; jangan menambah fakta atau sumber. Bila sudah baik, biarkan seperti semula.${protectedClause}',
+                  'prompt satu kalimat')
+              # For four-solution endpoint, remove numerical similarity promises without changing JSON schema.
+              s=once(s,
+                  'const prompt = `Anda adalah konsultan anti-plagiasi akademik level tertinggi untuk mengatasi kalimat/paragraf skripsi yang SANGAT SULIT DIPARAFRASE dan masih terkena Turnitin.',
+                  'const prompt = `Anda adalah editor akademik yang membantu memperjelas kalimat sulit tanpa mengubah gagasan, angka, atau sitasi asli.',
+                  'prompt kalimat sulit')
+              s=once(s,
+                  'TUGAS: Hasilkan 4 solusi alternatif yang menggunakan 4 teknik anti-plagiasi berbeda secara terstruktur:',
+                  'TUGAS: Berikan variasi yang secara akademik masuk akal, hanya bila diperlukan:',
+                  'tugas resolver')
+              s=once(s,
+                  '1. TEKNIK 1: Pemecah Kalimat (Split Clause) -> Memecah kalimat majemuk menjadi 2 kalimat ringkas untuk menghancurkan urutan 5-7 kata Turnitin.',
+                  '1. TEKNIK 1: Pemecah Kalimat -> Pecah kalimat panjang bila membuat makna lebih jelas.',
+                  'tugas resolver 1')
+              s=once(s,
+                  '2. TEKNIK 2: Rekonstruksi Radikal (Deep Rephrase) -> Menulis ulang 100% tata bahasa dari sudut pandang subjek baru & pergeseran klausa.',
+                  '2. TEKNIK 2: Rekonstruksi Kontekstual -> Susun ulang secara wajar tanpa memindahkan fokus argumen.',
+                  'tugas resolver 2')
+              s=once(s,
+                  '3. TEKNIK 3: Sintesis Argumen (Substance Summarization) -> Rangkuman intisari argumen dalam bahasa ilmiah orisinal.',
+                  '3. TEKNIK 3: Ringkasan Gagasan -> Ringkas hanya jika tidak menghilangkan data penting.',
+                  'tugas resolver 3')
+              s=once(s,
+                  '4. TEKNIK 4: Format Kutipan Langsung Resmi (Direct Quote) -> Diberi tanda kutip baku agar lolos filter "Exclude Quotes" Turnitin.',
+                  '4. TEKNIK 4: Kutipan Langsung Terverifikasi -> Tampilkan verbatim hanya jika teks adalah kutipan asli dan atribusinya tersedia.',
+                  'tugas resolver 4')
+              for old in ['"< 5%"','"< 3%"','"< 2%"','"0% (Exclude Quotes)"']:
+                  s=once(s,old,'"Tidak dapat diperkirakan tanpa pemeriksaan terpisah"',f'klaim {old}')
+              s=once(s,'"Memecah klausa untuk menghilangkan cluster 5 kata berturut-turut."','"Membuat kalimat panjang lebih mudah dipahami."','rationale 1')
+              s=once(s,'"Menggeser fokus anak kalimat ke depan dan mengganti verba menjadi nomina."','"Memperjelas susunan klausa tanpa mengubah fokus argumen."','rationale 2')
+              s=once(s,'"Menyajikan intisari gagasan penulis tanpa keterikatan pada redaksi awal."','"Memadatkan gagasan tanpa menghilangkan fakta atau rujukan."','rationale 3')
+              s=once(s,'"Memanfaatkan filter Exclude Quotes Turnitin untuk pasal atau teori paten."','"Mempertahankan kutipan asli dan sumbernya secara akurat."','rationale 4')
+              return s
+          
+          
+          def frontend(s):
+              s=once(s, "const [selectedStyle, setSelectedStyle] = useState<ParaphraseStyle>('academic_formal');",
+                  "// ZAINNET_MENU5_NATURAL_EDITOR_V1\n  const [selectedStyle, setSelectedStyle] = useState<ParaphraseStyle>('natural_academic');", 'default gaya')
+              s=once(s,
+                  "          footnoteContext: s.footnoteIdsNearby ? `Footnote: ${s.footnoteIdsNearby.join(', ')}` : '',",
+                  "          footnoteContext: s.footnoteIdsNearby ? `Footnote: ${s.footnoteIdsNearby.join(', ')}` : '',\n          contextBefore: s.contextBefore || '',\n          contextAfter: s.contextAfter || '',",
+                  'konteks tetangga')
+              s=once(s,
+                  '        source?: string;\n      }>(\'/api/paraphrase\', {',
+                  '        source?: string;\n        requiresReviewCount?: number;\n      }>(\'/api/paraphrase\', {',
+                  'respon source')
+              s=once(s,
+                  '''          if (res) {
+                      const finalParaphrase = res.paraphrasedText || seg.originalText;''',
+                  '''          if (res) {
+                      if (seg.isCustomEdited) return seg; // Jangan menimpa suntingan manual pengguna.
+                      if (res.requiresReview) {
+                        return { ...seg, paraphrasedText: '', alternativeText: '',
+                          explanation: res.explanation || 'Teks asli dipertahankan; periksa dan sunting secara manual.',
+                          status: 'matched' as const };
+                      }
+                      const finalParaphrase = res.paraphrasedText || seg.originalText;''',
+                  'tidak menimpa asli')
+              s=once(s,
+                  '''      const modelBadge = data.modelUsed ? ` (${data.modelUsed})` : '';
+                if (data.source === 'academic_engine_fallback') {
+                  showNotification(
+                    'Parafrase ilmiah diselesaikan dengan Mesin Parafrase Akademik EYD V Cadangan.',
+                    'success'
+                  );
+                } else {
+                  showNotification(`Parafrase ilmiah berhasil diselesaikan oleh Sistem Linguistik Akademik${modelBadge}.`, 'success');
+                }''',
+                  '''      const needsReview = Number(data.requiresReviewCount || 0);
+                if (needsReview > 0) {
+                  showNotification(`${needsReview} bagian memerlukan peninjauan manual karena layanan revisi belum berhasil menyuntingnya. Teks aslinya tidak diubah.`, 'info');
+                } else {
+                  showNotification('Penyuntingan akademik selesai. Tinjau setiap perubahan sebelum menerapkan ke Word.', 'success');
+                }''',
+                  'notifikasi jujur')
+              s=once(s,
+                  '''  const handleStyleChange = async (newStyle: ParaphraseStyle) => {
+              setSelectedStyle(newStyle);
+              await runBatchParaphrase(segments, newStyle, protectedTerms, defaultModel);
+            };''',
+                  '''  const handleStyleChange = (newStyle: ParaphraseStyle) => {
+              // Pilih strategi saja. Proses ulang hanya setelah tombol ditekan pengguna.
+              setSelectedStyle(newStyle);
+            };''',
+                  'ubah mode aman')
+              s=once(s,
+                  '''  const handleApplyParaphrase = async () => {
+              if (!docxInfo) return;
+          
+              try {''',
+                  '''  const handleApplyParaphrase = async () => {
+              if (!docxInfo) return;
+              const reviewed = segments.filter((s) => s.isSelected &&
+                Boolean(s.paraphrasedText?.trim()) && s.paraphrasedText.trim() !== s.originalText.trim());
+              if (!reviewed.length) {
+                showNotification('Belum ada revisi yang berbeda dari teks asli. Tinjau dan sunting bagian terlebih dahulu.', 'error');
+                return;
+              }
+          
+              try {''',
+                  'hindari ekspor tanpa revisi')
+              return s
+          
+          
+          def styles(s):
+              s=once(s,
+                  "export type ParaphraseStyle =\n  | 'academic_formal'",
+                  "// ZAINNET_MENU5_NATURAL_EDITOR_V1\nexport type ParaphraseStyle =\n  | 'natural_academic'\n  | 'academic_formal'",
+                  'tipe mode natural')
+              return s
+          
+          
+          def review(s):
+              s=once(s,
+                  '''  const selectedCount = filteredSegments.filter((s) => s?.isSelected).length;''',
+                  '''  // ZAINNET_MENU5_NATURAL_EDITOR_V1
+            const selectedCount = filteredSegments.filter((s) => s?.isSelected).length;
+            const readyCount = filteredSegments.filter((s) => s?.isSelected &&
+              Boolean(s.paraphrasedText?.trim()) && s.paraphrasedText.trim() !== s.originalText.trim()).length;''',
+                  'validasi siap Word')
+              s=once(s,
+                  '''                <option value="academic_formal">1. Akademik Baku & EYD V (Standar Skripsi)</option>''',
+                  '''                <option value="natural_academic">1. Revisi Akademik Natural (Direkomendasikan)</option>
+                          <option value="academic_formal">2. Akademik Baku & EYD V</option>''',
+                  'opsi natural')
+              s=once(s,'2. Pemecah Kalimat Majemuk (Hancurkan Kluster Turnitin)','3. Kalimat Efektif & Ringkas','nama mode 2')
+              s=once(s,'3. Rekonstruksi Radikal (Perombakan Sintaksis Total)','4. Susun Ulang Kontekstual','nama mode 3')
+              s=once(s,'4. Sintesis Intisari & Gagasan Utama','5. Sintesis Intisari & Gagasan Utama','nama mode 4')
+              s=once(s,'5. Restrukturisasi Klausa (Aktif ↔ Pasif)','6. Restrukturisasi Klausa (Aktif ↔ Pasif)','nama mode 5')
+              s=once(s,'6. Sinonim Ilmiah & Diksi Kontekstual','7. Diksi & Pilihan Kata Tepat','nama mode 6')
+              s=once(s,'7. Format Kutipan Langsung Resmi (Exclude Quotes)','8. Kutipan Langsung (Dengan Sumber Asli)','nama mode 7')
+              s=once(s,
+                  '              disabled={selectedCount === 0 || isParaphrasing}',
+                  '              disabled={readyCount === 0 || isParaphrasing}',
+                  'tombol apply aman')
+              s=once(s,
+                  '<span>Lanjut Terapkan ke Word ({selectedCount})</span>',
+                  '<span>Lanjut Terapkan ke Word ({readyCount})</span>',
+                  'jumlah siap Word')
+              s=once(s,
+                  '              Terapkan strategi parafrase massal atau sesuaikan per kalimat secara presisi sebelum dimasukkan ke file Word.',
+                  '              Pilih gaya suntingan lalu tekan Proses Revisi. Semua hasil harus ditinjau sebelum dimasukkan ke Word.',
+                  'instruksi UI')
+              s=once(s,
+                  '                        Hasil Parafrase (Revisi Word)',
+                  '                        Hasil Revisi (Tinjau sebelum menerapkan)',
+                  'judul hasil')
+              return s
+          
+          
+          def docx(s):
+              s=once(s,
+                  '''  const selectedSegments = safeSegmentsToApply.filter(
+              (s) => s.isSelected && s.paraphrasedText && s.paraphrasedText.trim().length > 0
+            );''',
+                  '''  // ZAINNET_MENU5_NATURAL_EDITOR_V1: Jangan mengubah Word untuk teks asli atau fallback gagal.
+            const selectedSegments = safeSegmentsToApply.filter(
+              (s) => s.isSelected && Boolean(s.paraphrasedText?.trim()) &&
+                s.paraphrasedText.trim() !== s.originalText.trim()
+            );''',
+                  'filter docx')
+              return s
+          
+          
+          def download(s):
+              s=once(s,
+                  'Lolos uji kesamaan plagiasi',
+                  'Perlu diperiksa kembali menggunakan layanan similarity terpisah',
+                  'klaim similarity')
+              s=once(s,
+                  '              Revisi Selesai • File Word Asli Telah Diperbarui',
+                  '              Revisi Word Selesai • Periksa Isi Sebelum Digunakan',
+                  'klaim hasil')
+              return '// ZAINNET_MENU5_NATURAL_EDITOR_V1\n' + s
+          
+          
+          def main():
+              tasks = [
+                  ('server/plagiarismV2/router.ts', backend),
+                  ('src/plagiarismV2/App.tsx', frontend),
+                  ('src/plagiarismV2/types.ts', styles),
+                  ('src/plagiarismV2/components/PlagiarismReview.tsx', review),
+                  ('src/plagiarismV2/lib/docxHandler.ts', docx),
+                  ('src/plagiarismV2/components/ResultDownload.tsx', download),
+              ]
+              # Fail atomically: calculate all changes before writing any file.
+              originals = []
+              for path, fn in tasks:
+                  target = ROOT / path
+                  if not target.exists(): raise RuntimeError(f'File tidak ditemukan: {path}')
+                  s = target.read_text(encoding='utf-8')
+                  originals.append((target,s,fn))
+              processed = []
+              for target,s,fn in originals:
+                  if 'ZAINNET_MENU5_NATURAL_EDITOR_V1' in s:
+                      print('Sudah terpasang:',target)
+                      processed.append((target,s))
+                  else:
+                      updated = fn(s)
+                      if updated == s: raise RuntimeError(f'Tidak ada perubahan {target}')
+                      processed.append((target,updated))
+              for (target,updated),(_,original,_) in zip(processed, originals):
+                  if updated != original:
+                      target.write_text(updated,encoding='utf-8')
+                      CHANGED.append(str(target.relative_to(ROOT)))
+              print('File diubah:',len(CHANGED), ', '.join(CHANGED))
+          
+          
+          if __name__ == '__main__': main()
+          PY_PATCH
+
+      - name: Periksa whitespace dan pemformatan kode
+        run: git diff --check
+
+      - name: Install dependensi website
+        run: npm install --no-audit --no-fund
+
+      - name: Verifikasi build produksi
+        env:
+          VITE_BASE_PATH: /
+        run: npm run build
+
+      - name: Simpan perubahan hanya jika build berhasil
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Tidak ada perubahan baru; patch sudah terpasang."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/plagiarismV2/router.ts src/plagiarismV2/App.tsx src/plagiarismV2/types.ts src/plagiarismV2/components/PlagiarismReview.tsx src/plagiarismV2/lib/docxHandler.ts src/plagiarismV2/components/ResultDownload.tsx
+          git commit -m "fix(menu5-link2): natural academic editing and safe review fallback"
+          git push origin HEAD:main

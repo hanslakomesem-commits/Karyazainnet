@@ -59,6 +59,7 @@ import { generateProcedural7000WordArticle, expandPostTo7000Words } from './src/
 import { hardCoverRouter } from './server/hardcover/router.mjs';
 import { journal7Router } from './server/journal7/router.ts';
 import { pisahSkripsiRouter } from './server/pisahSkripsi/router.ts';
+import { plagiarismV2Router } from './server/plagiarismV2/router.ts';
 
 const nodeRequire = typeof require !== 'undefined' ? require : createRequire(import.meta.url);
 
@@ -443,6 +444,9 @@ app.use(journal7Router);
 
 // Menu No 2 Link 3: Pemisah Berkas Skripsi & Ekstraktor Bab Otomatis
 app.use(pisahSkripsiRouter);
+
+// Menu No. 5 Link 2: protected paraphrase / DOCX revision endpoints
+app.use('/api/plagiarism-v2', plagiarismV2Router);
 
 // R2 Storage configuration file path for runtime persistence
 const R2_CONFIG_FILE = path.join(process.cwd(), 'r2_config.json');

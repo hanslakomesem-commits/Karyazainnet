@@ -58,6 +58,7 @@ export const defaultCustomPrices: CustomPricesConfig = {
     'mak-2': 20000,
     'mak-3': 20000,
     'plag-1': 20000,
+    'plag-2': 20000,
     'prop-1': 20000,
     'ref-1': 2000,
     'foto-1': 5000,
@@ -432,6 +433,17 @@ export const categoriesData: ToolCategory[] = [
         url: "https://aplikasi-parafrase-skripsi-revisi-plagiasi-docx-921936667702.asia-southeast1.run.app/",
         description: "Aplikasi otomatis parafrase naskah skripsi & revisi dokumen DOCX untuk menurunkan indeks similaritas plagiasi.",
         badge: "Anti-Plagiasi",
+        priceRp: 20000,
+      },
+      {
+        id: "plag-2",
+        categoryId: 5,
+        number: 2,
+        title: "Revisi Similarity & Parafrase DOCX (Link 2)",
+        domain: "internal.zainnet.store",
+        url: "internal://plagiarism-v2",
+        description: "Analisis laporan similarity, revisi akademik EYD/KBBI, pemeriksaan sitasi dan catatan kaki, ekspor Word (.docx) siap ditinjau.",
+        badge: "Link 2 • Revisi Akademik DOCX",
         priceRp: 20000,
       }
     ]

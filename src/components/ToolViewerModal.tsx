@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { X, Maximize2, Lock, ShieldCheck, RefreshCw } from 'lucide-react';
 import { ToolItem, UserRole, ToolMaintenanceItem, AppUser, UserActivityLogEntry } from '../types';
 import { recordSessionInProgress, recordSessionCompleted, getSessionForTool } from '../utils/sessionTracker';
@@ -14,6 +14,7 @@ import { SewaTogaView } from './SewaTogaView';
 import { ArtikelGeminiView } from './ArtikelGeminiView';
 import JournalConverterApp from '../journalConverter/App';
 import PisahSkripsiApp from '../pisahSkripsi/App';
+const PlagiarismV2App = lazy(() => import('../plagiarismV2/App'));
 
 interface ToolViewerModalProps {
   tool: ToolItem | null;
@@ -221,6 +222,24 @@ export const ToolViewerModal: React.FC<ToolViewerModalProps> = ({tool,userRole='
                 );
               }}
             />
+          </div>
+        ) : tool.id === 'plag-2' || tool.url === 'internal://plagiarism-v2' ? (
+          <div key={iframeKey} className="w-full h-full overflow-y-auto bg-slate-100">
+            <Suspense fallback={<div className="p-6 text-slate-900">Menyiapkan layanan revisi akademik...</div>}>
+              <PlagiarismV2App onExportComplete={(outFileName: string) => {
+                if (!tool || done.current) return;
+                done.current = true;
+                setStatus('Word revisi telah diunduh. Menyimpan transaksi ke Supabase...');
+                Promise.resolve(finishRef.current?.(tool, `Word revisi Menu 5 Link 2: ${outFileName}`)).then(() => {
+                  recordSessionCompleted(tool, effectiveUserId, { fileName: outFileName, reason: 'Word revisi berhasil dibuat' }, [], 0);
+                  setCompleted(true);
+                  setTimeout(onClose, 1600);
+                }).catch((e: any) => {
+                  done.current = false;
+                  setStatus('File sudah diminta, tetapi sinkronisasi transaksi gagal: ' + String(e?.message || e));
+                });
+              }} />
+            </Suspense>
           </div>
         ) : tool.id === 'art-6' || tool.url === '/artikel-gemini' || tool.url === 'internal://artikel-gemini' ? (
           <div key={iframeKey} className="w-full h-full overflow-y-auto bg-[#07111f]">

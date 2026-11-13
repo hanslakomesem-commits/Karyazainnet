@@ -1373,16 +1373,16 @@ function AcademicHubMainApp({ onNavigateToPath, initialToolId }: { onNavigateToP
     // ZAINNET_LINK7_DOWNLOAD_SYNC_FIX_20261112: Supabase RPC is atomic and
     // idempotent per session ID. Never write a decremented local quota first:
     // that caused a second charge when academic_complete_session also debited.
-    if (tool.id === 'art-7') {
-      if (!user?.uid) throw new Error('Masuk ke akun Supabase untuk menyelesaikan transaksi Link 7.');
+    if (tool.id === 'art-7' || tool.id === 'plag-2') {
+      if (!user?.uid) throw new Error('Masuk ke akun Supabase untuk menyelesaikan transaksi.');
       const finished = getSessionForTool(tool.id, user.uid);
       if (!finished || finished.userId !== user.uid) {
-        throw new Error('Identitas sesi Link 7 tidak sesuai dengan akun Supabase.');
+        throw new Error('Identitas sesi tidak sesuai dengan akun Supabase.');
       }
       const verifiedSession = { ...finished, status: 'completed', completedAt: Date.now() };
       const { data, error } = await database().rpc('academic_complete_session', {
         p_session: verifiedSession,
-        p_details: details || 'Paket artikel Link 7 siap; unduhan ZIP diminta'
+        p_details: details || (tool.id === 'plag-2' ? 'Revisi Menu 5 Link 2 siap; unduhan DOCX diminta' : 'Paket artikel Link 7 siap; unduhan ZIP diminta')
       });
       if (error) throw error;
       if (data?.quotas) {

@@ -1,3 +1,4 @@
+// ZAINNET_MENU5_NATURAL_EDITOR_V1
 import React from 'react';
 import {
   Download,
@@ -49,7 +50,7 @@ export const ResultDownload: React.FC<ResultDownloadProps> = ({
           <div className="space-y-2">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              Revisi Selesai • File Word Asli Telah Diperbarui
+              Revisi Word Selesai • Periksa Isi Sebelum Digunakan
             </div>
             <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
               Dokumen Skripsi Siap Diunduh
@@ -98,7 +99,7 @@ export const ResultDownload: React.FC<ResultDownloadProps> = ({
               <Sparkles className="w-4 h-4 text-amber-400" />
               {result.totalReplaced} Bagian
             </div>
-            <div className="text-[10px] text-slate-400 mt-1">Lolos uji kesamaan plagiasi</div>
+            <div className="text-[10px] text-slate-400 mt-1">Perlu diperiksa kembali menggunakan layanan similarity terpisah</div>
           </div>
 
           <div className="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/60">

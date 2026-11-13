@@ -142,7 +142,10 @@ export const PlagiarismReview: React.FC<PlagiarismReviewProps> = ({
     return counts;
   }, [safeSegments]);
 
+  // ZAINNET_MENU5_NATURAL_EDITOR_V1
   const selectedCount = filteredSegments.filter((s) => s?.isSelected).length;
+  const readyCount = filteredSegments.filter((s) => s?.isSelected &&
+    Boolean(s.paraphrasedText?.trim()) && s.paraphrasedText.trim() !== s.originalText.trim()).length;
 
   const handleStartEdit = (segment: PlagiarismSegment) => {
     setEditingId(segment.id);
@@ -473,7 +476,7 @@ export const PlagiarismReview: React.FC<PlagiarismReviewProps> = ({
               </span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Terapkan strategi parafrase massal atau sesuaikan per kalimat secara presisi sebelum dimasukkan ke file Word.
+              Pilih gaya suntingan lalu tekan Proses Revisi. Semua hasil harus ditinjau sebelum dimasukkan ke Word.
             </p>
           </div>
 
@@ -490,13 +493,14 @@ export const PlagiarismReview: React.FC<PlagiarismReviewProps> = ({
                 disabled={isParaphrasing}
                 className="text-xs font-medium bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs cursor-pointer"
               >
-                <option value="academic_formal">1. Akademik Baku & EYD V (Standar Skripsi)</option>
-                <option value="split_sentences">2. Pemecah Kalimat Majemuk (Hancurkan Kluster Turnitin)</option>
-                <option value="deep_reconstruct">3. Rekonstruksi Radikal (Perombakan Sintaksis Total)</option>
-                <option value="synthesize">4. Sintesis Intisari & Gagasan Utama</option>
-                <option value="active_passive">5. Restrukturisasi Klausa (Aktif ↔ Pasif)</option>
-                <option value="synonym_rephrase">6. Sinonim Ilmiah & Diksi Kontekstual</option>
-                <option value="quote_block">7. Format Kutipan Langsung Resmi (Exclude Quotes)</option>
+                <option value="natural_academic">1. Revisi Akademik Natural (Direkomendasikan)</option>
+                <option value="academic_formal">2. Akademik Baku & EYD V</option>
+                <option value="split_sentences">3. Kalimat Efektif & Ringkas</option>
+                <option value="deep_reconstruct">4. Susun Ulang Kontekstual</option>
+                <option value="synthesize">5. Sintesis Intisari & Gagasan Utama</option>
+                <option value="active_passive">6. Restrukturisasi Klausa (Aktif ↔ Pasif)</option>
+                <option value="synonym_rephrase">7. Diksi & Pilihan Kata Tepat</option>
+                <option value="quote_block">8. Kutipan Langsung (Dengan Sumber Asli)</option>
               </select>
             </div>
           </div>
@@ -538,10 +542,10 @@ export const PlagiarismReview: React.FC<PlagiarismReviewProps> = ({
             <button
               type="button"
               onClick={onProceedToApply}
-              disabled={selectedCount === 0 || isParaphrasing}
+              disabled={readyCount === 0 || isParaphrasing}
               className="inline-flex items-center gap-1.5 px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-300 disabled:text-slate-500 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
             >
-              <span>Lanjut Terapkan ke Word ({selectedCount})</span>
+              <span>Lanjut Terapkan ke Word ({readyCount})</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -672,7 +676,7 @@ export const PlagiarismReview: React.FC<PlagiarismReviewProps> = ({
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1">
                         <Sparkles className="w-3 h-3" />
-                        Hasil Parafrase (Revisi Word)
+                        Hasil Revisi (Tinjau sebelum menerapkan)
                       </span>
                       <div className="flex items-center gap-1">
                         {/* Audit EYD Single */}

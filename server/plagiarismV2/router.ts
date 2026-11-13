@@ -99,138 +99,22 @@ async function generateWithFallback(
 }
 
 /**
- * Comprehensive Academic Indonesian Lexical & Structural Replacement Library
+ * ZAINNET_MENU5_NATURAL_EDITOR_V1
+ * Fail-safe: when the remote editor is unavailable, do NOT invent a revision.
+ * Keep the original passage unchanged for a responsible manual review.
  */
-const ACADEMIC_SYNONYMS: Record<string, string[]> = {
-  'sangat pesat': ['teramat dinamis', 'begitu akseleratif', 'kian signifikan'],
-  'pada era globalisasi saat ini': ['dalam dinamika kontemporer saat ini', 'pada fase keterbukaan global dewasa ini', 'dalam lanskap modern kini'],
-  'telah membawa perubahan': ['mengakibatkan transformasi mendasar', 'memicu pergeseran signifikan', 'berimplikasi pada pembaharuan struktural'],
-  'dalam berbagai aspek kehidupan manusia': ['pada ragam dimensi kehidupan bermasyarakat', 'dalam spektrum aktivitas sosial-ekonomi', 'pada berbagai ranah interaksi publik'],
-  'khususnya dalam sistem': ['terutama berkaitan dengan mekanisme', 'spesifik pada tata kelola', 'terlebih dalam kerangka tata cara'],
-  'merupakan salah satu hak asasi manusia': ['tergolong bagian fundamental dari hak asasi', 'dikategorikan sebagai hak esensial warga negara', 'menjadi entitas mendasar hak individu'],
-  'harus dijamin keberadaannya oleh negara': ['wajib memperoleh kepastian dan proteksi dari otoritas negara', 'mutlak diakomodasi serta dilindungi oleh instrumen negara', 'sepatutnya mendapat garansi yuridis dari pemerintah'],
-  'sebagaimana diatur dalam ketentuan peraturan perundang-undangan': ['selaras dengan amanat regulasi hukum positif', 'sesuai dengan kaidah normatif yang berlaku', 'berdasarkan ketentuan perundang-undangan nasional'],
-  'yang berlaku di indonesia': ['dalam yurisdiksi nasional indonesia', 'pada tatanan hukum positif indonesia', 'di wilayah hukum republik indonesia'],
-  'berdasarkan latar belakang masalah yang telah diuraikan di atas': ['merujuk pada pemaparan konteks persoalan terdahulu', 'berpijak pada deskripsi latar belakang yang telah dikemukakan', 'berangkat dari elaborasi problematika di muka'],
-  'rumusan masalah yang akan dibahas dalam penelitian skripsi ini adalah': ['isu pokok yang hendak dikaji secara komprehensif dalam telaah ini mencakup', 'pertanyaan sentral yang diteliti dalam kajian ini bertumpu pada', 'fokus permasalahan yang diinvestigasi dalam studi ini ialah'],
-  'menurut teori': ['berlandaskan konsepsi teoretis', 'merujuk pada doktrin', 'mengacu pada kerangka konseptual'],
-  'hukum harus mengandung': ['tata hukum seyogianya memuat', 'hukum sepatutnya merefleksikan', 'instrumen yuridis wajib mengintegrasikan'],
-  'hasil penelitian menunjukkan bahwa': ['temuan empiris dalam penelitian ini mengindikasikan bahwa', 'analisis data membuktikan bahwa', 'hasil telaah mengonfirmasi bahwa'],
-  'sebagian besar': ['mayoritas', 'sebagian utama', 'sebagian dominan'],
-  'belum memiliki kesadaran hukum yang memadai': ['masih minim pemahaman serta literasi yuridis', 'belum sepenuhnya menyadari aspek hak hukum', 'masih menunjukkan rendahnya atensi hukum'],
-  'penegakan hukum terhadap tindak pidana': ['proses penindakan yuridis atas perkara pidana', 'implementasi sanksi hukum bagi pelanggaran', 'upaya law enforcement perkara'],
-  'masih menghadapi berbagai macam kendala': ['kerap menjumpai kendala multidimensional', 'masih terhambat sejumlah rintangan yuridis-faktual', 'menghadapi tantangan struktural yang kompleks'],
-  'dalam rangka mencapai tujuan': ['guna mewujudkan sasaran', 'dalam upaya merealisasikan orientasi', 'sebagai ikhtiar menggapai target'],
-  'memberikan kontribusi yang signifikan': ['menyumbang implikasi bermakna', 'menghadirkan sumbangsih nyata', 'berdampak positif secara substansial'],
-  'metode penelitian yang digunakan dalam penelitian ini adalah': ['pendekatan metodologis yang diaplikasikan pada studi ini mencakup', 'desain riset yang diadopsi dalam kajian ini yaitu', 'metodologi yang diimplementasikan berpedoman pada'],
-  'dapat disimpulkan bahwa': ['dapat ditarik inferensi substantif bahwa', 'dapat disarikan bahwa', 'dapat ditegaskan simpulan bahwa'],
-  'berdasarkan hasil analisis data': ['merujuk pada telaah olah data empiris', 'bertumpu pada komputasi dan analisis temuan', 'mengacu pada interpretasi data kajian'],
-  'perkembangan': ['akselerasi', 'kemajuan', 'perubahan dinamis'],
-  'sangat': ['teramat', 'terbilang', 'begitu'],
-  'membawa': ['menimbulkan', 'menghasilkan', 'menghadirkan'],
-  'perubahan': ['transformasi', 'pergeseran', 'dinamika baru'],
-  'khususnya': ['terutama', 'spesifiknya', 'utamanya'],
-  'merupakan': ['adalah', 'yakni', 'ialah'],
-  'salah satu': ['suatu bentuk', 'satu di antara ragam', 'bagian dari'],
-  'harus': ['wajib', 'sepatutnya', 'mutlak'],
-  'dijamin': ['dipastikan', 'digaransi', 'dilindungi'],
-  'menunjukkan bahwa': ['mengindikasikan bahwa', 'membuktikan bahwa', 'memperlihatkan bahwa'],
-  'karena itu': ['oleh sebab itu', 'atas pertimbangan tersebut', 'konsekuensinya'],
-  'bertujuan untuk': ['bermaksud untuk', 'memiliki orientasi guna', 'ditujukan dalam rangka'],
-  'faktor yang mempengaruhi': ['determinan yang berimplikasi pada', 'unsur yang memengaruhi', 'aspek yang berkontribusi terhadap'],
-};
-
 function academicLocalParaphrase(
   text: string,
-  style: string = 'academic_formal',
-  protectedTerms: string[] = []
+  _style: string = 'natural_academic',
+  _protectedTerms: string[] = []
 ): { paraphrased: string; alt: string; note: string } {
-  // If style is quote_block, wrap into academic direct quotation standard for Turnitin exclusion
-  if (style === 'quote_block') {
-    return {
-      paraphrased: `"${text.trim().replace(/^["']|["']$/g, '')}"`,
-      alt: `« ${text.trim().replace(/^["']|["']$/g, '')} »`,
-      note: 'Diformat sebagai Kutipan Langsung Resmi Berbobot (Opsi Turnitin "Exclude Quotes" akan mengabaikan teks ini).',
-    };
-  }
-
-  // Protect terms by replacing with temporary tokens
-  const tokenMap: Record<string, string> = {};
-  let sanitized = text;
-
-  protectedTerms.forEach((term, idx) => {
-    if (term && term.trim()) {
-      const token = `__PROTECTED_${idx}__`;
-      tokenMap[token] = term;
-      sanitized = sanitized.replace(new RegExp(escapeRegExp(term), 'gi'), token);
-    }
-  });
-
-  let result = sanitized;
-  let altResult = sanitized;
-
-  // Replace multi-word academic phrases
-  for (const [key, syns] of Object.entries(ACADEMIC_SYNONYMS)) {
-    const regex = new RegExp(`\\b${escapeRegExp(key)}\\b`, 'gi');
-    if (regex.test(result)) {
-      result = result.replace(regex, syns[0]);
-      if (syns[1]) {
-        altResult = altResult.replace(regex, syns[1]);
-      }
-    }
-  }
-
-  // Specific style strategies
-  if (style === 'split_sentences') {
-    result = result.replace(/\bsehingga\b/gi, '. Konsekuensinya,');
-    result = result.replace(/\bsedangkan\b/gi, '. Di sisi lain,');
-    result = result.replace(/\bdan oleh karena itu\b/gi, '. Oleh sebab itu,');
-    result = result.replace(/\bnamun demikian\b/gi, '. Kendati demikian,');
-  } else if (style === 'active_passive') {
-    result = result.replace(/\bmengembangkan\b/gi, 'dikembangkan oleh');
-    result = result.replace(/\bmengatur\b/gi, 'diatur dalam');
-    result = result.replace(/\bmenjelaskan\b/gi, 'dijelaskan secara ilmiah bahwa');
-    result = result.replace(/\bmembutuhkan\b/gi, 'dibutuhkan oleh');
-    result = result.replace(/\bmelindungi\b/gi, 'diberikan pelindungan terhadap');
-    result = result.replace(/\bmenghasilkan\b/gi, 'dihasilkan dari');
-  } else if (style === 'synthesize') {
-    result = 'Dapat disintesiskan bahwa ' + result.charAt(0).toLowerCase() + result.slice(1);
-    altResult = 'Intisari kajian ini menegaskan bahwa ' + result.charAt(0).toLowerCase() + result.slice(1);
-  } else if (style === 'deep_reconstruct') {
-    result = 'Secara mendasar dalam tinjauan konseptual, ' + result.charAt(0).toLowerCase() + result.slice(1);
-    altResult = 'Berdasarkan telaah kritis terhadap substansi tersebut, ' + result.charAt(0).toLowerCase() + result.slice(1);
-  }
-
-  // Prefix shifts if untouched
-  if (result === sanitized) {
-    if (result.startsWith('Berdasarkan')) {
-      result = result.replace(/^Berdasarkan\s+/, 'Merujuk pada telaah komprehensif ');
-    } else if (result.startsWith('Perkembangan')) {
-      result = 'Dalam kaitannya dengan ' + result.charAt(0).toLowerCase() + result.slice(1);
-    } else if (result.startsWith('Hasil')) {
-      result = 'Secara faktual, ' + result.charAt(0).toLowerCase() + result.slice(1);
-    } else {
-      result = 'Ditinjau dari perspektif ilmiah, ' + result.charAt(0).toLowerCase() + result.slice(1);
-    }
-  }
-
-  // Restore protected terms
-  for (const [token, term] of Object.entries(tokenMap)) {
-    result = result.replace(new RegExp(token, 'g'), term);
-    altResult = altResult.replace(new RegExp(token, 'g'), term);
-  }
-
+  const original = String(text || '');
   return {
-    paraphrased: result,
-    alt: altResult !== result ? altResult : 'Secara substansial, ' + result.charAt(0).toLowerCase() + result.slice(1),
-    note: `Parafrase strategi "${style}" dengan perlindungan istilah baku & nomor rujukan.`,
+    paraphrased: original,
+    alt: original,
+    note: 'Belum diproses: layanan revisi otomatis sedang tidak tersedia. Teks asli dipertahankan untuk ditinjau manual.',
   };
 }
-
-function escapeRegExp(string: string) {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 
 // Authentication/entitlement check for EVERY tool-specific API request.
 // CORS alone is not authentication; never expose a public unauthenticated Gemini endpoint.
@@ -408,19 +292,21 @@ Pastikan teks yang diekstrak adalah kalimat lengkap atau frasa bermakna dalam ba
         return res.status(413).json({ error: 'Jumlah teks terlalu besar. Proses maksimal 100 bagian dalam satu permintaan.' });
       }
 
-      let styleInstruction = 'Gaya Bahasa Indonesia Akademik Formal Baku (Standar Skripsi/Jurnal Sinta/Scopus).';
-      if (style === 'active_passive') {
+      let styleInstruction = 'Sunting seperlunya agar jelas, baku, dan sesuai gaya penulis naskah asli; hindari sinonim yang dipaksakan.';
+      if (style === 'natural_academic') {
+        styleInstruction = 'REVISI AKADEMIK NATURAL: Gunakan gaya bahasa penulis asli, kalimat efektif, variasi struktur yang wajar, dan pilihan kata umum yang tepat. Jangan menambah argumen baru. Jika kalimat sudah baik, pertahankan tanpa perubahan.';
+      } else if (style === 'active_passive') {
         styleInstruction = 'METODE RESTRUKTURISASI KLAUSA: Ubah orientasi subjek-objek, konversikan kalimat aktif menjadi pasif atau sebaliknya, tanpa menghilangkan istilah teknis rujukan.';
       } else if (style === 'split_sentences') {
-        styleInstruction = 'METODE PEMECAH KALIMAT MAJEMUK (ANTI 5-7 KATA TURNITIN): Pecah satu kalimat panjang majemuk menjadi 2-3 kalimat efektif yang terpisah dan mengalir alami untuk menghancurkan kluster kesamaan kata berturut-turut.';
+        styleInstruction = 'Pecah kalimat panjang jika dapat meningkatkan kejelasan. Jaga hubungan sebab-akibat, konteks, sitasi, dan maksud asli.';
       } else if (style === 'synthesize') {
         styleInstruction = 'METODE SINTESIS ARGUMEN: Rangkum intisari dan substansi ilmiah gagasan tersebut ke dalam konstruksi kalimat baru dengan perspektif akademis orisinal.';
       } else if (style === 'deep_reconstruct') {
-        styleInstruction = 'METODE REKONSTRUKSI RADIKAL: Tulis ulang secara komprehensif mulai dari sudut pandang epistemologis, ubah susunan anak kalimat di depan induk kalimat, dan gunakan variasi nomina/verba akademik mendalam.';
+        styleInstruction = 'Susun ulang gagasan yang rumit menjadi uraian yang runtut dan mudah dipahami tanpa mengubah data, argumen atau istilah teknis. Jangan memaksakan kosakata yang tidak alami.';
       } else if (style === 'synonym_rephrase') {
-        styleInstruction = 'Gunakan sinonim ilmiah dan penataan ulang kata yang kaya tanpa mengubah makna konsep ilmiah.';
+        styleInstruction = 'Gunakan diksi yang tepat dan lazim dalam penulisan ilmiah. Ubah hanya kata yang memang perlu diperjelas; jangan mengganti istilah teknis atau sinonim secara mekanis.';
       } else if (style === 'quote_block') {
-        styleInstruction = 'METODE KUTIPAN LANGSUNG RESMI (EXCLUDE QUOTE COMPLIANT): Bungkus teks persis dengan tanda kutip resmi standar akademis dan tambahkan frasa atribusi rujukan agar memenuhi filter Turnitin Exclude Quotes.';
+        styleInstruction = 'Bila bagian ini benar-benar kutipan langsung dari sumber yang tersedia, pertahankan teks sumber secara verbatim dan rujukannya. Jangan mengarang kutipan, atribusi, atau menyarankan manipulasi pemeriksaan similarity.';
       }
 
       const protectedClause = protectedTerms.length > 0
@@ -438,25 +324,21 @@ Pastikan teks yang diekstrak adalah kalimat lengkap atau frasa bermakna dalam ba
 
       // Process all chunks concurrently for maximum speed with Gemini 3.1 Flash-Lite
       const chunkWorker = async (chunk: any[]) => {
-        const prompt = `Anda adalah asisten ahli parafrase skripsi dan karya ilmiah berbahasa Indonesia tingkat Magister/Doktor spesialis Anti-Plagiasi Turnitin.
-TUGAS SANGAT PENTING:
-Parafrase setiap kalimat/teks di bawah ini dengan makna dan sitasi yang tetap akurat; hasil similarity harus diperiksa ulang, namun:
-1. Makna inti, fakta, data, dan substansi ilmiah HARUS TETAP 100% SAMA.
-2. JANGAN MENGHAPUS atau mengubah istilah paten/teknis (nama undang-undang, nama teori, pasal, nama variabel).
-3. Tata bahasa harus EYD V / KBBI, kalimat efektif, formal, dan tidak terkesan terjemahan mesin.
-4. Penataan kata harus alami agar jika disisipkan kembali ke naskah skripsi Word aslinya, footnote dan kalimat sebelum/sesudahnya tetap menyatu sempurna.${protectedClause}
+        const prompt = `Anda adalah editor bahasa akademik Indonesia. Revisi naskah secara bertanggung jawab berdasarkan maksud dan gaya penulis asli, bukan untuk menyiasati pendeteksi otomatis.
+TUGAS:
+1. Pertahankan makna, fakta, angka, simpulan, dan terminologi khusus. Jangan membuat sumber, kutipan, data, atau argumen baru.
+2. Gunakan bahasa Indonesia baku yang jelas, efektif, tidak bertele-tele, dan selaras dengan gaya penulis.
+3. Hindari awalan kalimat yang berulang, sinonim yang dibuat-buat, dan pengubahan kalimat yang sudah jelas.
+4. Pertahankan sitasi, tanda rujukan, token yang dilindungi, serta keterkaitan dengan paragraf sekitarnya.${protectedClause}
+5. Jika suatu kalimat tidak perlu diubah atau berisiko berubah makna, kembalikan persis seperti semula.
 
-STRATEGI TERPILIH: ${styleInstruction}
+PENDEKATAN PENYUNTINGAN: ${styleInstruction}
 
-Daftar Teks yang Perlu Diparafrase:
+Daftar bagian dari dokumen beserta petunjuk konteks:
 ${JSON.stringify(chunk, null, 2)}
 
-Berikan output JSON dengan format array obyek berisi:
-- id
-- originalText
-- paraphrasedText
-- alternativeText (opsi parafrase ke-2 dengan sudut pandang berbeda)
-- explanation (teknik yang dipakai dan tips anti-plagiasinya)`;
+Berikan JSON array: id, originalText, paraphrasedText, alternativeText, explanation.
+Penjelasan harus menjelaskan suntingan faktual, bukan menjanjikan nilai similarity atau hasil AI detector.`;
 
         try {
           const { text, modelUsed } = await generateWithFallback(
@@ -484,8 +366,20 @@ Berikan output JSON dengan format array obyek berisi:
           finalModelUsed = modelUsed;
           const chunkRes = JSON.parse(text || '[]');
           if (Array.isArray(chunkRes) && chunkRes.length > 0) {
-            usedAI = true;
-            return chunkRes;
+            const normalized = chunk.map((item: any) => {
+              const original = String(item.text || item.originalText || '');
+              const found = chunkRes.find((r: any) => String(r?.id) === String(item.id));
+              if (!found || typeof found.paraphrasedText !== 'string' || !found.paraphrasedText.trim()) {
+                return {
+                  id: item.id, originalText: original, paraphrasedText: original,
+                  alternativeText: '', requiresReview: true, source: 'manual_review',
+                  explanation: 'Respons penyuntingan belum lengkap; teks asli tidak diubah.'
+                };
+              }
+              return { ...found, id: item.id, requiresReview: false, source: 'editor' };
+            });
+            if (normalized.some((r: any) => !r.requiresReview)) usedAI = true;
+            return normalized;
           }
         } catch (chunkErr) {
           console.warn('Gemini chunk call failed, using academic local engine for this chunk:', chunkErr);
@@ -493,13 +387,16 @@ Berikan output JSON dengan format array obyek berisi:
 
         // Chunk Fallback to offline academic engine
         return chunk.map((item: any) => {
-          const local = academicLocalParaphrase(item.text || item.originalText || '', style, protectedTerms);
+          const original = String(item.text || item.originalText || '');
+          const local = academicLocalParaphrase(original, style, protectedTerms);
           return {
             id: item.id,
-            originalText: item.text || item.originalText || '',
+            originalText: original,
             paraphrasedText: local.paraphrased,
-            alternativeText: local.alt,
+            alternativeText: '',
             explanation: local.note,
+            requiresReview: true,
+            source: 'manual_review',
           };
         });
       };
@@ -512,10 +409,12 @@ Berikan output JSON dengan format array obyek berisi:
       }
       const aggregatedResults = chunkResultsArray.flat();
 
+        const requiresReviewCount = aggregatedResults.filter((r: any) => r.requiresReview).length;
       res.json({
         results: aggregatedResults,
-        modelUsed: usedAI ? finalModelUsed : 'academic_engine_fallback',
-        source: usedAI ? 'ai' : 'academic_engine_fallback',
+        modelUsed: usedAI ? finalModelUsed : 'manual_review',
+        source: requiresReviewCount > 0 ? (usedAI ? 'partial_review' : 'manual_review') : 'editor',
+        requiresReviewCount,
       });
     } catch (err: any) {
       console.error('Error paraphrasing:', err);
@@ -536,16 +435,16 @@ Berikan output JSON dengan format array obyek berisi:
         ? `\nJAGA DAN JANGAN UBAH ISTILAH BERIKUT: [${protectedTerms.join(', ')}]`
         : '';
 
-      const prompt = `Anda adalah konsultan anti-plagiasi akademik level tertinggi untuk mengatasi kalimat/paragraf skripsi yang SANGAT SULIT DIPARAFRASE dan masih terkena Turnitin.
+      const prompt = `Anda adalah editor akademik yang membantu memperjelas kalimat sulit tanpa mengubah gagasan, angka, atau sitasi asli.
 
 Teks Asli: "${text}"
 ${context ? `Konteks Paragraf Asli: "${context}"` : ''}${protectedClause}
 
-TUGAS: Hasilkan 4 solusi alternatif yang menggunakan 4 teknik anti-plagiasi berbeda secara terstruktur:
-1. TEKNIK 1: Pemecah Kalimat (Split Clause) -> Memecah kalimat majemuk menjadi 2 kalimat ringkas untuk menghancurkan urutan 5-7 kata Turnitin.
-2. TEKNIK 2: Rekonstruksi Radikal (Deep Rephrase) -> Menulis ulang 100% tata bahasa dari sudut pandang subjek baru & pergeseran klausa.
-3. TEKNIK 3: Sintesis Argumen (Substance Summarization) -> Rangkuman intisari argumen dalam bahasa ilmiah orisinal.
-4. TEKNIK 4: Format Kutipan Langsung Resmi (Direct Quote) -> Diberi tanda kutip baku agar lolos filter "Exclude Quotes" Turnitin.
+TUGAS: Berikan variasi yang secara akademik masuk akal, hanya bila diperlukan:
+1. TEKNIK 1: Pemecah Kalimat -> Pecah kalimat panjang bila membuat makna lebih jelas.
+2. TEKNIK 2: Rekonstruksi Kontekstual -> Susun ulang secara wajar tanpa memindahkan fokus argumen.
+3. TEKNIK 3: Ringkasan Gagasan -> Ringkas hanya jika tidak menghilangkan data penting.
+4. TEKNIK 4: Kutipan Langsung Terverifikasi -> Tampilkan verbatim hanya jika teks adalah kutipan asli dan atribusinya tersedia.
 
 Kembalikan dalam JSON:
 {
@@ -553,26 +452,26 @@ Kembalikan dalam JSON:
     {
       "technique": "Pemecah Kalimat Majemuk",
       "text": "...",
-      "estimatedSimilarity": "< 5%",
-      "rationale": "Memecah klausa untuk menghilangkan cluster 5 kata berturut-turut."
+      "estimatedSimilarity": "Tidak dapat diperkirakan tanpa pemeriksaan terpisah",
+      "rationale": "Membuat kalimat panjang lebih mudah dipahami."
     },
     {
       "technique": "Rekonstruksi Radikal",
       "text": "...",
-      "estimatedSimilarity": "< 3%",
-      "rationale": "Menggeser fokus anak kalimat ke depan dan mengganti verba menjadi nomina."
+      "estimatedSimilarity": "Tidak dapat diperkirakan tanpa pemeriksaan terpisah",
+      "rationale": "Memperjelas susunan klausa tanpa mengubah fokus argumen."
     },
     {
       "technique": "Sintesis Argumen",
       "text": "...",
-      "estimatedSimilarity": "< 2%",
-      "rationale": "Menyajikan intisari gagasan penulis tanpa keterikatan pada redaksi awal."
+      "estimatedSimilarity": "Tidak dapat diperkirakan tanpa pemeriksaan terpisah",
+      "rationale": "Memadatkan gagasan tanpa menghilangkan fakta atau rujukan."
     },
     {
       "technique": "Kutipan Langsung Resmi",
       "text": "...",
-      "estimatedSimilarity": "0% (Exclude Quotes)",
-      "rationale": "Memanfaatkan filter Exclude Quotes Turnitin untuk pasal atau teori paten."
+      "estimatedSimilarity": "Tidak dapat diperkirakan tanpa pemeriksaan terpisah",
+      "rationale": "Mempertahankan kutipan asli dan sumbernya secara akurat."
     }
   ]
 }`;
@@ -613,42 +512,7 @@ Kembalikan dalam JSON:
         console.warn('Resolve stubborn AI fallback:', aiErr?.message);
       }
 
-      // Offline Multi-Strategy Engine Fallback
-      const s1 = academicLocalParaphrase(text, 'split_sentences', protectedTerms);
-      const s2 = academicLocalParaphrase(text, 'deep_reconstruct', protectedTerms);
-      const s3 = academicLocalParaphrase(text, 'synthesize', protectedTerms);
-      const s4 = academicLocalParaphrase(text, 'quote_block', protectedTerms);
-
-      res.json({
-        solutions: [
-          {
-            technique: 'Pemecah Kalimat Majemuk',
-            text: s1.paraphrased,
-            estimatedSimilarity: '< 8%',
-            rationale: 'Pemisahan anak kalimat untuk memutus jejak kesamaan berurutan.',
-          },
-          {
-            technique: 'Rekonstruksi Radikal',
-            text: s2.paraphrased,
-            estimatedSimilarity: '< 5%',
-            rationale: 'Penataan ulang konstruksi kalimat dengan kosakata ilmiah EYD V.',
-          },
-          {
-            technique: 'Sintesis Argumen',
-            text: s3.paraphrased,
-            estimatedSimilarity: '< 5%',
-            rationale: 'Penyusunan intisari substansi tanpa mengubah rujukan data.',
-          },
-          {
-            technique: 'Kutipan Langsung Resmi',
-            text: s4.paraphrased,
-            estimatedSimilarity: '0% (Exclude Quotes)',
-            rationale: 'Format tanda kutip resmi untuk mengaktifkan filter Exclude Quotes Turnitin.',
-          },
-        ],
-        modelUsed: 'academic_engine_fallback',
-        source: 'academic_engine_fallback',
-      });
+      return res.status(503).json({ error: 'Layanan revisi lanjutan belum tersedia. Teks asli dipertahankan; tinjau dan sunting manual.' });
     } catch (err: any) {
       console.error('Error resolving stubborn plagiarism:', err);
       res.status(500).json({ error: err.message || 'Gagal memproses solusi kalimat sulit' });
@@ -668,7 +532,7 @@ Kembalikan dalam JSON:
         ? `\nPENTING: Pertahankan istilah berikut tanpa perubahan: [${protectedTerms.join(', ')}]`
         : '';
 
-      const prompt = `Parafrase kalimat skripsi berikut ini ke dalam Bahasa Indonesia Akademik agar lolos plagiasi Turnitin, dengan tetap mempertahankan seluruh rujukan dan konteks ilmiah.${protectedClause}
+      const prompt = `Sunting kalimat skripsi ke dalam Bahasa Indonesia akademik yang wajar dan jelas. Jaga gaya penulis asli, makna, rujukan, dan konteks; jangan menambah fakta atau sumber. Bila sudah baik, biarkan seperti semula.${protectedClause}
 
 Teks Asli: "${text}"
 ${context ? `Konteks Paragraf Asli: "${context}"` : ''}
@@ -703,20 +567,7 @@ Berikan 3 variasi hasil parafrase ilmiah yang berbeda sudut pandang/struktur kal
         console.warn('Single paraphrase AI fallback:', aiErr?.message);
       }
 
-      const opt1 = academicLocalParaphrase(text, 'academic_formal', protectedTerms);
-      const opt2 = academicLocalParaphrase(text, 'active_passive', protectedTerms);
-      const opt3 = academicLocalParaphrase(text, 'synonym_rephrase', protectedTerms);
-
-      res.json({
-        result: {
-          option1: opt1.paraphrased,
-          option2: opt2.paraphrased,
-          option3: opt3.paraphrased,
-          similarityReductionTip: 'Penyesuaian tata bahasa baku EYD V dengan perlindungan nomor & istilah ilmiah.',
-        },
-        modelUsed: 'academic_engine_fallback',
-        source: 'academic_engine_fallback',
-      });
+      return res.status(503).json({ error: 'Variasi otomatis belum tersedia. Teks asli tidak diubah. Silakan coba lagi atau edit manual.' });
     } catch (err: any) {
       console.error('Error single paraphrase:', err);
       res.status(500).json({ error: err.message || 'Gagal memproses parafrase' });

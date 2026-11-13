@@ -82,7 +82,9 @@ export const GEMINI_MODEL_OPTIONS: GeminiModelOption[] = [
   },
 ];
 
+// ZAINNET_MENU5_NATURAL_EDITOR_V1
 export type ParaphraseStyle =
+  | 'natural_academic'
   | 'academic_formal'
   | 'active_passive'
   | 'split_sentences'

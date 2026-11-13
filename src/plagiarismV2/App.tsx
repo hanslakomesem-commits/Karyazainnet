@@ -35,7 +35,8 @@ export default function App({ onExportComplete }: { onExportComplete?: (fileName
   const [docxInfo, setDocxInfo] = useState<DocxFileInfo | null>(null);
   const [plagInfo, setPlagInfo] = useState<PlagiarismFileInfo | null>(null);
   const [segments, setSegments] = useState<PlagiarismSegment[]>([]);
-  const [selectedStyle, setSelectedStyle] = useState<ParaphraseStyle>('academic_formal');
+  // ZAINNET_MENU5_NATURAL_EDITOR_V1
+  const [selectedStyle, setSelectedStyle] = useState<ParaphraseStyle>('natural_academic');
   const defaultModel: GeminiModelId = 'gemini-3.1-flash-lite';
   const [excludeBibliography, setExcludeBibliography] = useState<boolean>(true);
   const [protectedTerms, setProtectedTerms] = useState<string[]>([
@@ -563,6 +564,8 @@ export default function App({ onExportComplete }: { onExportComplete?: (fileName
           text: maskedText,
           location: s.locationLabel,
           footnoteContext: s.footnoteIdsNearby ? `Footnote: ${s.footnoteIdsNearby.join(', ')}` : '',
+          contextBefore: s.contextBefore || '',
+          contextAfter: s.contextAfter || '',
         };
       });
 
@@ -570,6 +573,7 @@ export default function App({ onExportComplete }: { onExportComplete?: (fileName
         results?: any[];
         modelUsed?: string;
         source?: string;
+        requiresReviewCount?: number;
       }>('/api/paraphrase', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -598,6 +602,12 @@ export default function App({ onExportComplete }: { onExportComplete?: (fileName
         prev.map((seg) => {
           const res = resultsMap.get(seg.id);
           if (res) {
+            if (seg.isCustomEdited) return seg; // Jangan menimpa suntingan manual pengguna.
+            if (res.requiresReview) {
+              return { ...seg, paraphrasedText: '', alternativeText: '',
+                explanation: res.explanation || 'Teks asli dipertahankan; periksa dan sunting secara manual.',
+                status: 'matched' as const };
+            }
             const finalParaphrase = res.paraphrasedText || seg.originalText;
             const newHistoryItem: SegmentVersionHistory = {
               id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -632,14 +642,11 @@ export default function App({ onExportComplete }: { onExportComplete?: (fileName
         })
       );
 
-      const modelBadge = data.modelUsed ? ` (${data.modelUsed})` : '';
-      if (data.source === 'academic_engine_fallback') {
-        showNotification(
-          'Parafrase ilmiah diselesaikan dengan Mesin Parafrase Akademik EYD V Cadangan.',
-          'success'
-        );
+      const needsReview = Number(data.requiresReviewCount || 0);
+      if (needsReview > 0) {
+        showNotification(`${needsReview} bagian memerlukan peninjauan manual karena layanan revisi belum berhasil menyuntingnya. Teks aslinya tidak diubah.`, 'info');
       } else {
-        showNotification(`Parafrase ilmiah berhasil diselesaikan oleh Sistem Linguistik Akademik${modelBadge}.`, 'success');
+        showNotification('Penyuntingan akademik selesai. Tinjau setiap perubahan sebelum menerapkan ke Word.', 'success');
       }
     } catch (err: any) {
       console.error(err);
@@ -793,14 +800,20 @@ export default function App({ onExportComplete }: { onExportComplete?: (fileName
     );
   };
 
-  const handleStyleChange = async (newStyle: ParaphraseStyle) => {
+  const handleStyleChange = (newStyle: ParaphraseStyle) => {
+    // Pilih strategi saja. Proses ulang hanya setelah tombol ditekan pengguna.
     setSelectedStyle(newStyle);
-    await runBatchParaphrase(segments, newStyle, protectedTerms, defaultModel);
   };
 
   // Apply in-place to Word DOCX
   const handleApplyParaphrase = async () => {
     if (!docxInfo) return;
+    const reviewed = segments.filter((s) => s.isSelected &&
+      Boolean(s.paraphrasedText?.trim()) && s.paraphrasedText.trim() !== s.originalText.trim());
+    if (!reviewed.length) {
+      showNotification('Belum ada revisi yang berbeda dari teks asli. Tinjau dan sunting bagian terlebih dahulu.', 'error');
+      return;
+    }
 
     try {
       setIsProcessing(true);

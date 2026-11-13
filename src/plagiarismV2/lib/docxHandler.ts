@@ -356,8 +356,10 @@ export async function applyParaphraseToDocx(
 
   let replacedCount = 0;
   const safeSegmentsToApply = segmentsToApply || [];
+  // ZAINNET_MENU5_NATURAL_EDITOR_V1: Jangan mengubah Word untuk teks asli atau fallback gagal.
   const selectedSegments = safeSegmentsToApply.filter(
-    (s) => s.isSelected && s.paraphrasedText && s.paraphrasedText.trim().length > 0
+    (s) => s.isSelected && Boolean(s.paraphrasedText?.trim()) &&
+      s.paraphrasedText.trim() !== s.originalText.trim()
   );
 
   logs.push(`Memulai penggantian in-place komprehensif untuk ${selectedSegments.length} bagian.`);

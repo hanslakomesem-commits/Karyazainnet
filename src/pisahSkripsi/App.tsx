@@ -24,8 +24,9 @@ import {
   detectSectionsFromText,
 } from './lib/heuristicsDetector';
 import { getProdiCode } from './lib/prodiMapping';
+import { backendUrl } from '../utils/deploymentBridge';
 import { createSampleThesisPdf } from './lib/sampleThesisGenerator';
-import * as pdfjsLib from 'pdfjs-dist';
+import type * as pdfjsLib from 'pdfjs-dist';
 
 export interface PisahSkripsiAppProps {
   onExportComplete?: (fileName: string) => void;
@@ -163,9 +164,12 @@ export default function App({
       const detectedSections = detectSectionsFromText(pages, detectedMeta);
       setSections(detectedSections);
 
-      // Step 3: Server Gemini Refinement (if online)
+      // Step 3: Optional server refinement. Local parsing must not wait indefinitely.
+      const refineController = new AbortController();
+      const refineTimeout = setTimeout(() => refineController.abort(), 15000);
       try {
-        const aiRes = await fetch('/api/analyze-thesis', {
+        const aiRes = await fetch(backendUrl('/api/analyze-thesis'), {
+          signal: refineController.signal,
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -211,7 +215,9 @@ export default function App({
           }
         }
       } catch (aiErr) {
-        console.warn('AI analysis endpoint skipped, using heuristic detection:', aiErr);
+        console.warn('Penyempurnaan server dilewati; hasil deteksi lokal tetap tersedia:', aiErr);
+      } finally {
+        clearTimeout(refineTimeout);
       }
 
       setProgress({

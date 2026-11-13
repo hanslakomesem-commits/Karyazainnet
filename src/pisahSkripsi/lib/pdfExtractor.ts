@@ -1,6 +1,7 @@
-import * as pdfjsLib from 'pdfjs-dist';
-import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+import pdfWorker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { PageTextInfo } from '../types';
+import { backendUrl } from '../../utils/deploymentBridge';
 
 // ZAIN.NET - Perbaikan PDF Worker GitHub Pages.
 // Gunakan URL worker hasil build Vite secara langsung.
@@ -69,9 +70,9 @@ export async function extractPdfText(
 
   // Browser fallback: ask Render to extract text, but do not fabricate page counts.
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60000);
+  const timeoutId = setTimeout(() => controller.abort(), 110000);
   try {
-    const response = await fetch('/api/extract-pdf-text', {
+    const response = await fetch(backendUrl('/api/extract-pdf-text'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fileBase64: arrayBufferToBase64(pdfBuffer) }),
@@ -97,7 +98,7 @@ export async function extractPdfText(
     return { pages, pdfDoc: null };
   } catch (serverError: any) {
     const serverMessage = serverError?.name === 'AbortError'
-      ? 'Server cadangan melewati batas waktu 60 detik.'
+      ? 'Server cadangan melewati batas waktu 110 detik.'
       : (serverError?.message || 'Gagal menghubungi server cadangan.');
     throw new Error(
       `PDF belum dapat dibaca. Browser: ${String((browserError as any)?.message || browserError)}. ` +

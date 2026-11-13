@@ -78,4 +78,18 @@ if (!String.prototype.replaceAll) {
   };
 }
 
+// PDF.js may request Uint8Array.toHex() even on older Firefox/Chromium.
+// The legacy PDF.js worker carries its own compatibility code; this covers the main realm.
+if (typeof (Uint8Array.prototype as any).toHex !== 'function') {
+  Object.defineProperty(Uint8Array.prototype, 'toHex', {
+    configurable: true,
+    writable: true,
+    value: function (this: Uint8Array): string {
+      let hex = '';
+      for (let i = 0; i < this.length; i++) hex += this[i].toString(16).padStart(2, '0');
+      return hex;
+    },
+  });
+}
+
 export {};

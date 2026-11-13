@@ -1,0 +1,163 @@
+name: ZAIN.NET - Fix Menu 2 Link 3 PDF Firefox Lama
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zainnet-menu2-link3-pdf-firefox
+  cancel-in-progress: false
+
+jobs:
+  fix-link3:
+    name: Perbaiki pembaca PDF Menu 2 Link 3
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - name: Siapkan Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Patch kompatibilitas pembaca PDF Firefox lama
+        shell: bash
+        run: |
+          cat > /tmp/zainnet_fix_link3.py <<'PYCODE'
+          #!/usr/bin/env python3
+          """Patch ZAIN.NET Menu 2 Link 3 PDF compatibility; safe to rerun."""
+          from pathlib import Path
+          import sys
+          
+          ROOT = Path.cwd()
+          CHANGES = {
+            'src/pisahSkripsi/lib/pdfExtractor.ts': [
+              ("import * as pdfjsLib from 'pdfjs-dist';", "import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';"),
+              ("import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';", "import pdfWorker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';"),
+              ("import { PageTextInfo } from '../types';", "import { PageTextInfo } from '../types';\nimport { backendUrl } from '../../utils/deploymentBridge';"),
+              ("fetch('/api/extract-pdf-text', {", "fetch(backendUrl('/api/extract-pdf-text'), {"),
+              ("const timeoutId = setTimeout(() => controller.abort(), 60000);", "const timeoutId = setTimeout(() => controller.abort(), 110000);"),
+              ("'Server cadangan melewati batas waktu 60 detik.'", "'Server cadangan melewati batas waktu 110 detik.'"),
+            ],
+            'src/pisahSkripsi/App.tsx': [
+              ("import * as pdfjsLib from 'pdfjs-dist';", "import type * as pdfjsLib from 'pdfjs-dist';"),
+              ("import { getProdiCode } from './lib/prodiMapping';", "import { getProdiCode } from './lib/prodiMapping';\nimport { backendUrl } from '../utils/deploymentBridge';"),
+              ("fetch('/api/analyze-thesis', {", "fetch(backendUrl('/api/analyze-thesis'), {"),
+            ],
+            'src/utils/polyfills.ts': [
+              (
+                'export {};',
+                """// PDF.js may request Uint8Array.toHex() even on older Firefox/Chromium.
+          // The legacy PDF.js worker carries its own compatibility code; this covers the main realm.
+          if (typeof (Uint8Array.prototype as any).toHex !== 'function') {
+            Object.defineProperty(Uint8Array.prototype, 'toHex', {
+              configurable: true,
+              writable: true,
+              value: function (this: Uint8Array): string {
+                let hex = '';
+                for (let i = 0; i < this.length; i++) hex += this[i].toString(16).padStart(2, '0');
+                return hex;
+              },
+            });
+          }
+          
+          export {};"""
+              ),
+            ],
+          }
+          
+          # Avoid allowing an optional cloud refinement call to hold the local result indefinitely.
+          APP_PATH = 'src/pisahSkripsi/App.tsx'
+          OLD_BEGIN = """      // Step 3: Server Gemini Refinement (if online)
+                try {
+                  const aiRes = await fetch(backendUrl('/api/analyze-thesis'), {
+                    method: 'POST',"""
+          NEW_BEGIN = """      // Step 3: Optional server refinement. Local parsing must not wait indefinitely.
+                const refineController = new AbortController();
+                const refineTimeout = setTimeout(() => refineController.abort(), 15000);
+                try {
+                  const aiRes = await fetch(backendUrl('/api/analyze-thesis'), {
+                    signal: refineController.signal,
+                    method: 'POST',"""
+          OLD_END = """      } catch (aiErr) {
+                  console.warn('AI analysis endpoint skipped, using heuristic detection:', aiErr);
+                }
+          
+                setProgress({"""
+          NEW_END = """      } catch (aiErr) {
+                  console.warn('Penyempurnaan server dilewati; hasil deteksi lokal tetap tersedia:', aiErr);
+                } finally {
+                  clearTimeout(refineTimeout);
+                }
+          
+                setProgress({"""
+          
+          
+          def replace_once(src: str, before: str, after: str, path: str) -> tuple[str,bool]:
+              if after in src:
+                  print(f'[SKIP] already applied: {path}: {before[:55]}')
+                  return src,False
+              count=src.count(before)
+              if count != 1:
+                  raise RuntimeError(f'{path}: expected one match for {before[:90]!r}, got {count}')
+              return src.replace(before,after,1),True
+          
+          
+          def main():
+              changed=0
+              for path, replacements in CHANGES.items():
+                  file=ROOT/path
+                  if not file.is_file(): raise RuntimeError(f'Missing file {path}')
+                  src=file.read_text('utf-8')
+                  original=src
+                  for old,new in replacements:
+                      src,did=replace_once(src,old,new,path)
+                      changed+=int(did)
+                  if path==APP_PATH:
+                      src,did=replace_once(src,OLD_BEGIN,NEW_BEGIN,path)
+                      changed+=int(did)
+                      src,did=replace_once(src,OLD_END,NEW_END,path)
+                      changed+=int(did)
+                  if src != original:
+                      file.write_text(src,'utf-8')
+                      print(f'[UPDATED] {path}')
+              # Safeguard that the import of the modern PDF.js bundle has been removed from Link 3.
+              src=(ROOT/'src/pisahSkripsi/lib/pdfExtractor.ts').read_text('utf-8')
+              if "from 'pdfjs-dist';" in src or "from 'pdfjs-dist/build/pdf.worker.min.mjs?url'" in src:
+                  raise RuntimeError('Modern PDF.js import still in Link 3')
+              print(f'Link 3 Firefox PDF compatibility patch: {changed} replacements; safe to rerun.')
+          
+          if __name__=='__main__':
+              try: main()
+              except Exception as e:
+                  print(f'PATCH FAILED: {e}',file=sys.stderr)
+                  sys.exit(1)
+          PYCODE
+          python3 /tmp/zainnet_fix_link3.py
+          git diff --check
+      - name: Instal dependency proyek
+        run: npm install --no-audit --no-fund
+      - name: Pastikan PDF.js legacy tersedia
+        shell: bash
+        run: |
+          test -f node_modules/pdfjs-dist/legacy/build/pdf.mjs
+          test -f node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs
+      - name: Uji build website
+        run: npm run build
+      - name: Simpan patch ke branch main
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/pisahSkripsi/lib/pdfExtractor.ts src/pisahSkripsi/App.tsx src/utils/polyfills.ts
+          if git diff --cached --quiet; then
+            echo 'Kode sudah diperbaiki, tidak ada perubahan baru.'
+          else
+            git commit -m 'fix(link3): support old Firefox PDF parsing and Render fallback'
+            git push origin HEAD:main
+          fi

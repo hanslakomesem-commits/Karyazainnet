@@ -1,0 +1,204 @@
+name: ZAIN.NET - Tambah Menu 12 Link 2 Hard Cover V4.46
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: zainnet-menu12-cover2
+  cancel-in-progress: false
+
+jobs:
+  add-hardcover-link2:
+    name: Integrasikan Hard Cover V4.46 sebagai Link 2
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout website ZAIN.NET
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Ambil source V4.46 yang identik dengan ZIP unggahan
+        shell: bash
+        env:
+          SOURCE_SHA: bc50ae63a57bf9bc1aa066fb36b64de593313c30
+        run: |
+          set -euo pipefail
+          SOURCE_DIR="$RUNNER_TEMP/hardcover-v446"
+          mkdir -p "$SOURCE_DIR"
+          git -C "$SOURCE_DIR" init -q
+          git -C "$SOURCE_DIR" remote add origin "https://github.com/${GITHUB_REPOSITORY_OWNER}/Edit-Hard-Cover.git"
+          git -C "$SOURCE_DIR" fetch --quiet --depth=1 origin "$SOURCE_SHA"
+          git -C "$SOURCE_DIR" checkout --quiet --detach FETCH_HEAD
+          echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
+
+      - name: Tambahkan menu Link 2 dan source hard cover lengkap
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, hashlib, shutil, re
+
+          # Source is pinned to the same GitHub snapshot as the uploaded Edit-Hard-Cover ZIP.
+          src = Path(os.environ['SOURCE_DIR'])
+          dst = Path('public/hardcover-link2')
+          tools_path = Path('src/data/toolsData.ts')
+
+          expected_blobs = {
+            'index.html': '4828bf6336484ca35de00d63e450fee217829312',
+            'app.js': '48c65e847da24c3bd5beba139e99f662067c197e',
+            'pdf-engine.js': '4d02e7b102e9c288a477a646864a91d0079e16aa',
+            'style.css': '02ce178a81d355c10c7c860604e38a6d6dd37c21',
+            'pembatas.html': 'b60002406ad4d51faa1066beed883b0d3efd4dc7',
+          }
+
+          def git_blob_sha(data):
+            return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+          for name, sha in expected_blobs.items():
+            f=src/name
+            if not f.is_file() or git_blob_sha(f.read_bytes()) != sha:
+              raise RuntimeError('Snapshot sumber tidak cocok dengan ZIP unggahan: ' + name)
+          for rel in ['document-reader.js','pembatas.js','vendor/jszip.min.js','assets/layout.json','assets/masters.pdf']:
+            if not (src/rel).is_file(): raise RuntimeError('Aset sumber tidak ditemukan: ' + rel)
+
+          static_ext = {'.js','.html','.css','.json','.png','.jpg','.jpeg','.svg','.webp','.pdf','.docx','.woff','.woff2','.ttf','.otf','.md'}
+          files=[]
+          for p in src.iterdir():
+            if p.is_file() and p.suffix.lower() in static_ext and (p.suffix.lower() != '.pdf' or p.name == 'uim_clean.pdf'):
+              files.append((p,p.name))
+          for subdir in ('assets','vendor'):
+            for p in (src/subdir).rglob('*'):
+              if p.is_file() and p.suffix.lower() in static_ext:
+                files.append((p,str(p.relative_to(src))))
+          for original, rel in files:
+            target=dst/rel
+            target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(original,target)
+
+          # The uploaded snapshot includes a link to a reference PDF that is not in the ZIP.
+          # Show an honest label rather than a broken download; do not change cover generation.
+          index_file=dst/'index.html'
+          html=index_file.read_text(encoding='utf-8')
+          missing_ref = '<a href="./assets/REFERENSI_COVER_ARTIKEL_TANPA_PUNGGUNG.pdf" target="_blank" rel="noopener">Lihat referensi Cover Artikel</a>'
+          if not (dst/'assets/REFERENSI_COVER_ARTIKEL_TANPA_PUNGGUNG.pdf').exists():
+            if html.count(missing_ref) != 1:
+              raise RuntimeError('Tautan referensi cover artikel pada sumber berubah. Perlu pemeriksaan manual.')
+            html=html.replace(missing_ref,'<span title="File PDF referensi tidak disertakan dalam sumber">Referensi PDF Cover Artikel belum disertakan</span>')
+            index_file.write_text(html,encoding='utf-8')
+
+          # Verify all local relative references exposed by HTML are present.
+          for htmlfile in [dst/'index.html',dst/'pembatas.html']:
+            page=htmlfile.read_text(encoding='utf-8')
+            missing=[]
+            for link in re.findall(r'(?:href|src)=["\']([^"\']+)',page):
+              path=link.split('?',1)[0].split('#',1)[0]
+              if path.startswith('./') and not (htmlfile.parent/path).exists(): missing.append(path)
+            if missing: raise RuntimeError(f'Asset tidak ditemukan untuk {htmlfile.name}: {missing}')
+
+          if not tools_path.is_file(): raise RuntimeError('Tidak menemukan src/data/toolsData.ts')
+          data=tools_path.read_text(encoding='utf-8')
+          if data.count('id: "cover-1"') != 1:
+            raise RuntimeError('Menu 12 Link 1 tidak ditemukan tepat sekali. Tidak ada perubahan.')
+
+          if 'id: "cover-2"' not in data:
+            old='''        badge: "Menu 12 • Hard Cover Studio",
+                  priceRp: 0,
+                }
+              ]
+            }
+          ];'''
+            new='''        badge: "Menu 12 • Hard Cover Studio",
+                  priceRp: 0,
+                },
+                {
+                  id: "cover-2",
+                  categoryId: 12,
+                  number: 2,
+                  title: "Edit Hard Cover V4.46 — Link 2",
+                  domain: "www.zainnet.store",
+                  url: "/hardcover-link2/index.html",
+                  description: "Versi V4.46 dari source terbaru: cover polos dan warna, maroon, UIM, custom warna dan logo, cover artikel tanpa punggung, pembatas custom, dummybook, cover CD, serta ekspor PDF/ZIP.",
+                  badge: "Menu 12 • Hard Cover V4.46",
+                  priceRp: 0,
+                }
+              ]
+            }
+          ];'''
+            if data.count(old) != 1:
+              raise RuntimeError('Struktur Menu 12 sudah berubah; lokasi integrasi tidak ditemukan tepat sekali.')
+            data=data.replace(old,new,1)
+            data=data.replace('subtitle: "Generator Hard Cover Skripsi Presisi 10–28 mm (GitHub Pages V4.10)"',
+                              'subtitle: "2 link generator hard cover presisi — versi online & V4.46"',1)
+            tools_path.write_text(data,encoding='utf-8')
+
+          # Guarantee Link 1 remains unchanged, Link 2 separate, and both obey existing admin-only iframe policy.
+          assert 'url: "https://hanslakomesem-commits.github.io/Edit-Hard-Cover/"' in data
+          assert data.count('id: "cover-2"') == 1
+          assert 'url: "/hardcover-link2/index.html"' in data
+          assert '  if (id === \'cover-2\'' not in data.split('export function isIframeTool(',1)[1].split('export const categoriesData',1)[0], 'Do not bypass iframe admin policy'
+          assert 'priceRp: 0,' in data
+          assert (dst/'app.js').is_file() and (dst/'pdf-engine.js').is_file()
+          print(f'PASS: Menu 12 Link 1 tetap, Link 2 V4.46 ditambahkan, {len(files)} file statis siap, hak akses admin tetap berlaku.')
+          PY
+
+      - name: Periksa perubahan menu dan JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check -- src/data/toolsData.ts
+          test -f public/hardcover-link2/index.html
+          test -f public/hardcover-link2/app.js
+          test -f public/hardcover-link2/pdf-engine.js
+          test -f public/hardcover-link2/pembatas.html
+          node --check public/hardcover-link2/app.js
+          node --check public/hardcover-link2/pdf-engine.js
+          node --check public/hardcover-link2/pembatas.js
+
+      - name: Pasang dependensi website ZAIN.NET
+        run: npm install --no-audit --no-fund
+
+      - name: Build website dan verifikasi hasil
+        shell: bash
+        env:
+          VITE_BASE_PATH: /
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: |
+          set -euo pipefail
+          npm run build
+          test -f dist/hardcover-link2/index.html
+          test -f dist/hardcover-link2/app.js
+          test -f dist/hardcover-link2/assets/masters.pdf
+          test -f dist/hardcover-link2/pembatas.html
+          echo 'PASS: Link 2 dan aset V4.46 tersedia pada hasil build.'
+
+      - name: Simpan kode Link 2 ke branch main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add src/data/toolsData.ts public/hardcover-link2
+          if git diff --cached --quiet; then
+            echo 'Source Link 2 sudah sama. Tidak perlu commit tambahan.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(menu12): add pinned hardcover V4.46 as independent Link 2'
+          git push origin HEAD:main
+
+      - name: Terbitkan ulang GitHub Pages
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run pages.yml --ref main
+          echo 'GitHub Pages diminta deploy. Pastikan workflow Deploy ZAIN.NET to GitHub Pages berhasil.'

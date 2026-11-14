@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="theme-color" content="#0f467e" />
+<title>ZAIN.NET Cover V4.46 — GitHub Pages Tanpa API</title>
+<link rel="stylesheet" href="./style.css?v=4.46"/>
+<style>
+/* V4.40 custom color + logo controls; works with existing style.css */
+.custom-logo-panel{margin-top:12px;padding:15px;border:1px solid #b8c9da;border-radius:12px;background:rgba(24,74,120,.045)}
+.custom-logo-panel.hidden{display:none!important}
+.custom-logo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;align-items:end}
+.custom-logo-panel label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:650}
+.custom-logo-panel input[type="file"],.custom-logo-panel input[type="number"]{width:100%;max-width:100%;padding:9px;border-radius:8px;border:1px solid #b8c9da;background:white;color:#111}
+.custom-logo-preview{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}
+.custom-logo-preview img{width:96px;height:96px;object-fit:contain;border:1px dashed #9daec0;border-radius:8px;background:#fff}
+.custom-logo-panel small{display:block;color:#526173;line-height:1.45;margin-top:8px}
+.custom-logo-panel .btn{padding:8px 12px}
+</style>
+</head>
+<body>
+<header class="topbar">
+ <div class="brand"><div class="logo">Z<span>•</span></div><div><strong>ZAIN.NET <span>COVER</span></strong><small>GitHub Pages • V4.46 • Tanpa API</small></div></div>
+ <div class="header-right"><span class="dot" id="serverDot"></span><span id="connection">Menyiapkan mode lokal...</span></div>
+</header>
+<main class="container">
+ <div class="page-head"><div><p class="eyebrow">PRODUKSI PERCETAKAN</p><h1>Foto, PDF, Word <span>Jadi Cover Siap Cetak</span></h1><p class="subtitle">Upload foto (OCR lokal), PDF asli (halaman 1), atau Word DOCX (halaman 1). Edit hasil, pilih warna, unggah logo sendiri, dan atur ukuran tiap pesanan.</p></div><div class="format-chip">Polos V1/V2 480 × 330 <small>Warna/UIM/Custom Logo/Artikel 475 × 320 · UNIRA 484 × 330 · Dummybook 420 × 297 mm · IPS 330 × 210 · CD 137 × 137</small></div></div>
+ <div style="margin:4px 0 17px;padding:14px;border:1px solid #bad4e9;border-radius:13px;background:#f0f7fc;display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:space-between"><div><b>Pembatas Custom V4.42</b><div style="font-size:13px;color:#345;line-height:1.5">Buat pembatas dengan logo custom otomatis grayscale/hitam-putih, edit data, unduh Word &amp; PDF A4.</div></div><a href="./pembatas.html" class="btn btn-secondary" style="text-decoration:none;display:inline-block">✦ Buka Menu Pembatas Custom</a></div>
+ <div class="stepper"><span class="active" data-step="1"><b>1</b> Upload Berkas</span><span data-step="2"><b>2</b> Periksa Teks</span><span data-step="3"><b>3</b> Ketebalan / Format</span><span data-step="4"><b>4</b> PDF</span></div>
+ <div id="notice" class="notice hidden" role="alert"></div>
+ <div class="workspace">
+ <section class="card upload-panel">
+  <div class="section-head"><span class="section-icon">01</span><div><h2>Satu tombol upload — langsung baca otomatis</h2><p>JPG / PNG / WebP → OCR lokal · PDF → halaman 1 · Word DOCX → bagian cover</p></div></div>
+  <label class="dropzone" id="dropzone" for="universalInput"><input type="file" id="universalInput" accept=".jpg,.jpeg,.png,.webp,.pdf,.docx,image/jpeg,image/png,image/webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple hidden/><div id="emptyPreview"><div class="drop-icon">↥</div><h3>Upload foto, PDF, atau Word sekaligus</h3><p>Berkas langsung dibaca setelah dipilih · Maksimal 40 berkas · PDF/DOCX hanya bagian cover</p><div class="ghost-button">Pilih Semua Jenis Berkas</div></div><img id="imagePreview" class="hidden" alt="Pratinjau foto cover"/></label>
+  <input type="file" id="cameraInput" accept="image/jpeg,image/png,image/webp" capture="environment" hidden/>
+  <div class="upload-actions"><button type="button" class="btn btn-outline" id="cameraButton">📷 Ambil foto kamera</button><button type="button" class="btn btn-outline" id="manualButton">+ Pesanan Manual</button></div>
+  <div class="input-modes"><div><b>Foto</b><small>OCR lokal dengan mode Cepat dan Teliti per zona (tanpa API)</small></div><div><b>PDF</b><small>Teks halaman 1 lokal, OCR lokal bila PDF hasil scan</small></div><div><b>Word</b><small>Ekstraksi halaman pertama tanpa OCR</small></div></div>
+  <div class="batch-note" style="margin-top:10px"><label for="ocrAccuracy"><strong>Mode OCR foto / PDF scan:</strong></label> <select id="ocrAccuracy" aria-label="Mode OCR"><option value="fast" selected>Cepat — 1 pembacaan; ulang zona jika data hilang</option><option value="detail">Teliti — 3 zona, kontras tinggi & pemeriksaan NIM</option></select><p style="font-size:12px;margin-top:5px">Cepat: satu pembacaan seluruh foto; jika judul/nama/NIM kosong, bagian itu dicoba ulang. Teliti: judul, nama/NIM dan kampus dibaca per zona dengan detail lebih tinggi. Model OCR diunduh sekali; PDF/Word asli tidak menggunakan OCR.</p></div>
+  <div class="batch-header"><div><h3>Daftar pesanan <span id="orderCount">(0)</span></h3><p>Setiap nama memiliki <b>jenis cover</b> sendiri. Cover CD dan Cover Artikel tanpa ketebalan; lainnya mengikuti punggung.</p></div></div>
+  <div id="ordersList" class="orders-list" aria-live="polite"><p class="empty-orders">Belum ada pesanan. Pilih beberapa foto sekaligus.</p></div>
+  <div id="batchProgress" class="batch-progress hidden" role="status"></div>
+  <div class="batch-actions"><button type="button" class="btn btn-primary" id="ocrAllButton">✦ Baca Ulang Berkas Gagal</button><button type="button" class="btn btn-outline" id="ocrButton">Baca Berkas Terpilih</button><select id="batchOutputMode" class="batch-output" aria-label="Bentuk hasil PDF massal"><option value="separate">PDF per orang (ZIP)</option><option value="combined">Gabung satu PDF</option><option value="both">ZIP PDF per orang + PDF gabungan</option></select><button type="button" class="btn btn-secondary" id="batchJobsButton">↓ Download Hasil Batch</button></div>
+  <div id="batchFeedback" class="notice hidden" role="status"></div>
+  <div id="batchDownloadArea" class="download-ready hidden" role="status"><strong id="batchDownloadMessage">File siap diunduh</strong><a id="batchDownloadLink" class="download-real-link" download>↓ Ketuk di sini untuk mengunduh hasil batch</a><small>Jika Chrome memblokir unduhan otomatis, ketuk tautan ini secara manual.</small></div>
+  <div class="batch-note">Untuk setiap mahasiswa: cek hasil pembacaan → pilih ketebalan 10–28 mm → tandai diperiksa. Pilih <b>Polos V1, Polos V2, Merah, Maroon, Custom Warna/Logo V1/V2, UIM, UNIRA, Dummybook, Soft Cover IPS, Cover CD, atau Cover Artikel Tanpa Punggung</b> untuk setiap foto. Unduh tiap orang dalam ZIP atau gabungkan semua sebagai satu PDF; ukuran tiap halaman tetap sesuai jenis cover.</div>
+  <div class="upload-actions"><button type="button" class="btn btn-quiet" id="clearPhoto">Hapus pesanan terpilih</button></div>
+  <div class="micro-note"><b>Cover bahasa Inggris:</b> semua pilihan Polos mendukung THESIS, Written by, prodi/fakultas/universitas bahasa Inggris tanpa diterjemahkan. OCR foto menggunakan model bilingual Indonesia + Inggris dan mungkin perlu unduh model tambahan saat pertama digunakan. Cocokkan setiap huruf dengan sumber. <b>Fakultas tidak wajib:</b> Jika kampus tidak mempunyai fakultas (misalnya STAI), kosongkan kolom Fakultas. Program studi, nama kampus, dan tahun tetap dicetak rapi tanpa tulisan FAKULTAS kosong. <b>Upload otomatis:</b> Pilih JPG, PNG, WebP, PDF, dan DOCX bersamaan dari satu dialog. Setiap berkas diklasifikasikan sendiri; tidak perlu memilih jenis sebelumnya. <b>Hemat token:</b> PDF/Word dengan teks asli diproses lokal tanpa AI online. PDF scan menggunakan OCR hanya halaman 1. Foto memakai Tesseract lokal tanpa token. Jenis dokumen tidak otomatis dikunci SKRIPSI.</div>
+  <div class="info-section"><h3>Audit khusus punggung warna tiga baris</h3><p><strong>Hasil pemeriksaan:</strong> referensi 3 baris sekarang lengkap 19 ukuran, termasuk 25 dan 26 mm. Penanda potong dibangun ulang dalam vektor; untuk 28 mm hanya penanda luar kiri yang digeser agar tetap terlihat di kertas 475 × 320 mm. Kedua garis lipatan punggung tidak bergeser. <a href="./AUDIT_WARNA_3_BARIS_V4_8.md" target="_blank">Baca hasil audit sebelum cetak</a>.</p></div><div class="info-section"><h3>Tata letak terkunci ke referensi asli</h3><p>Polos V1 memakai tata letak Serli; Polos V2 memakai posisi teks dari PDF baru; keduanya tanpa gambar logo; merah dan maroon memakai posisi dari file PILIHAN WARNA.pdf, termasuk logo UIN Madura dan tulisan kuning. Punggung adaptif tiap pesanan.</p></div>
+ </section>
+ <section class="card editor-panel">
+  <div class="section-head"><span class="section-icon">02</span><div><h2>Data pesanan yang dipilih</h2><p id="activeOrderHeader">Pilih pesanan dari daftar di sebelah kiri</p></div><span class="editor-pill">EDITABLE</span></div>
+  <form id="dataForm" autocomplete="off">
+    <label class="field"><span>Judul dokumen <i>*</i></span><div class="rich-toolbar"><button type="button" class="format-btn" id="italicButton" title="Pilih beberapa kata lalu tekan Italic"><em>I</em> Italic</button><button type="button" class="format-btn" id="clearFormatting">Hapus italic</button><span>Pilih kata → Italic</span></div><div id="titleEditor" class="rich-editor" contenteditable="true" role="textbox" aria-label="Judul skripsi, bisa mengatur italic" spellcheck="false"></div><small>V4.37: Italic dari Word dan PDF yang memiliki bukti font dicoba dipertahankan; pada foto/scan periksa italic secara manual. Karakter transliterasi ā, ḥ, ṣ, ḍ, ṭ, ẓ, ‘, ’ tidak disederhanakan.</small></label>
+    <p class="template-msg hidden" id="cdCoverHint">Cover CD: <strong>nama, NIM, dan judul wajib</strong>. Prodi serta bulan/tahun bersifat opsional seperti pada Word contoh. Kolom fakultas, universitas, dan jenis dokumen tidak dicetak pada Cover CD. Tidak perlu memilih ketebalan.</p>
+    <p class="template-msg hidden" id="articleCoverHint">Cover Artikel: kertas <strong>475 × 320 mm</strong>, sampul depan di kanan dan belakang putih kosong; <strong>tanpa punggung dan tanpa logo, tetapi empat garis tanda kecil wajib tetap ada (2 atas, 2 bawah)</strong>. Tulisan ARTIKEL otomatis. Judul, nama, NIM, prodi, fakultas, universitas dan bulan/tahun mengikuti PDF referensi.</p>
+    <div class="fields-grid">
+     <label class="field"><span>Nama mahasiswa <i>*</i></span><input name="nama" placeholder="Nama lengkap" required/></label>
+     <label class="field"><span>Format nama pada sampul</span><span class="check-row"><input type="checkbox" name="nama_garis_bawah" id="nameUnderline"/><span><u>Garis bawah nama</u> (sesuai sumber)</span></span><small>Dicetak tepat di bawah nama mahasiswa pada cover depan. Bisa diubah manual jika foto/scan sulit dikenali.</small></label>
+     <label class="field"><span id="studentIdLabel">NIM <i>*</i></span><input name="nim" placeholder="Nomor induk" inputmode="text" required/></label>
+     <label class="field"><span>Program studi <i>*</i></span><input name="prodi" placeholder="Ekonomi Syariah" required/></label>
+     <div class="field span2 hidden" id="programJenjangRow" style="padding:12px;border:1px solid #b8c9da;border-radius:10px;background:#f4f8fc">
+      <label for="programJenjangInput"><span>Program / Jenjang (opsional, ditampilkan di atas Program Studi)</span></label>
+      <input id="programJenjangInput" name="program_jenjang_input" type="text" maxlength="120" placeholder="PROGRAM MAGISTER (S2)" style="width:100%;padding:10px;border:1px solid #b8c9da;border-radius:8px" autocomplete="off"/>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><button type="button" class="btn btn-outline" id="programJenjangAuto" style="padding:6px 10px">↻ Otomatis</button><small id="programJenjangHint" style="flex:1;min-width:180px">UIM otomatis PROGRAM MAGISTER (S2). Boleh diubah ke S1/S3 atau dihapus; tombol Otomatis mengembalikan nilai awal.</small></div>
+     </div>
+     <label class="field"><span>Fakultas (opsional)</span><input name="fakultas" placeholder="Kosongkan jika kampus tidak memiliki fakultas"/></label>
+     <label class="field span2"><span>Universitas <i>*</i></span><input name="universitas" placeholder="Universitas Islam Negeri Madura" required/></label>
+     <label class="field span2"><span>Kota / Lokasi Kampus (opsional)</span><input name="kota" placeholder="Contoh: PAMEKASAN (boleh kosong)" autocomplete="off"/><small>Ditampilkan di bawah nama kampus jika tersedia. Hasil OCR harus diperiksa.</small></label>
+     <label class="field span2"><span>Bahasa penulisan cover (Polos)</span><select name="bahasa" aria-label="Bahasa cover Polos"><option value="auto">Otomatis dari teks</option><option value="id">Bahasa Indonesia</option><option value="en">English / Bahasa Inggris</option></select><small>Otomatis memilih English untuk THESIS / Written by / Faculty / University. Bisa diubah manual. Penulisan asli dipertahankan; bahasa lainnya tidak diterjemahkan.</small></label>
+     <label class="field"><span>Jenis dokumen</span><input name="jenis_dokumen" placeholder="SKRIPSI / TESIS / THESIS / DISERTASI / lainnya" required/></label>
+     <label class="field"><span>Bulan dan tahun <i>*</i></span><input name="bulan_tahun" placeholder="AGUSTUS 2026" required/></label>
+    </div>
+  </form>
+  <section id="dummyAbstractPanel" class="dummy-abstract-panel hidden" aria-label="Abstrak Dummybook">
+   <h3>Dummybook — Abstrak untuk halaman belakang</h3>
+   <p>Sampul belakang di <strong>sisi kiri satu lembar 420 × 297 mm</strong> memakai <strong>dua paragraf terakhir dari ABSTRAK asli</strong>. Jika terlalu panjang dipakai satu paragraf terakhir; jika terlalu sedikit dipakai tiga. PDF/Word skripsi lengkap dibaca sampai <strong>ABSTRAK utuh</strong>, bukan dibatasi halaman pertama. Teks tidak diringkas atau dikarang.</p>
+   <div class="dummy-abstract-actions">
+    <label class="field">Ambil abstrak dari PDF / Word terpisah
+     <input type="file" id="dummyAbstractFile" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" aria-label="Unggah abstrak PDF atau DOCX"/>
+    </label>
+    <button type="button" class="btn btn-outline" id="dummyReadAbstract">Baca ABSTRAK lengkap dari skripsi yang diupload</button>
+   </div>
+   <label class="field" for="abstractText">Paragraf-paragraf ABSTRAK asli (boleh edit manual)</label>
+   <textarea id="abstractText" rows="9" spellcheck="false" placeholder="Tempel abstrak dari sumber asli. Pisahkan masing-masing paragraf dengan satu baris kosong. Aplikasi memilih 1, 2, atau 3 paragraf paling akhir secara otomatis."></textarea>
+   <div class="batch-note" style="margin-top:10px"><strong>Paragraf akhir yang akan dicetak:</strong><pre id="dummyParagraphPreview" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:250px;overflow:auto;font:13px Arial,sans-serif"></pre><small>Pratinjau memakai perkiraan metrik browser; PDF menghitung ulang dengan font tertanam. Jika hanya identitas mahasiswa yang terbaca, aplikasi akan meminta perbaikan.</small></div>
+   <p id="dummyAbstractStatus" class="micro-note" role="status" aria-live="polite">Belum ada abstrak.</p>
+   <p class="micro-note"><b>Penting:</b> PDF scan tanpa teks dan dokumen yang tidak memiliki pemisah paragraf perlu dikoreksi manual. Periksa semua paragraf dan posisi teks sebelum mencetak 100%.</p>
+  </section>
+  <div id="ocrWarnings" class="warnings hidden"></div>
+  <div class="editor-actions"><button type="button" class="btn btn-success" id="approveOrder">✓ Tandai data sudah diperiksa</button><button type="button" class="btn btn-outline" id="fillExample">Isi Contoh Untuk Tes</button><button type="button" class="btn btn-quiet" id="resetForm">Kosongkan isian aktif</button></div>
+ </section>
+ </div>
+
+ <section class="card style-panel">
+  <div class="section-head"><span class="section-icon">03</span><div><h2>Jenis Cover Pesanan Terpilih</h2><p>Default Polos V1. Semua empat pilihan Polos tanpa gambar logo; keduanya memiliki tata letak teks yang berbeda dan ketebalan 10–28 mm. Mode Warna memakai referensi UIN; UNIRA menggunakan PDF contoh Universitas Madura (484 × 330 mm).</p></div></div>
+  <div class="style-options" id="coverStyleOptions">
+   <button class="cover-style selected" type="button" data-cover-style="polos"><span class="swatch swatch-plain"></span><strong>Polos V1 — 217 mm/sisi</strong><small>480 × 330 mm</small></button>
+   <button class="cover-style" type="button" data-cover-style="poloslogoatas"><span class="swatch swatch-plain"></span><strong>Polos V2 — 217 mm/sisi</strong><small>480 × 330 mm • tanpa logo</small></button>
+   <button class="cover-style" type="button" data-cover-style="polosv11"><span class="swatch swatch-plain"></span><strong>Polos V1.1 — 215 mm/sisi</strong><small>480 × 330 mm • tanpa logo</small></button>
+   <button class="cover-style" type="button" data-cover-style="polosv22"><span class="swatch swatch-plain"></span><strong>Polos V2.1 — 215 mm/sisi</strong><small>480 × 330 mm • tanpa logo</small></button>
+   <button class="cover-style" type="button" data-cover-style="merah"><span class="swatch swatch-red"></span><strong>Merah</strong><small>475 × 320 mm</small></button>
+   <button class="cover-style" type="button" data-cover-style="maroon"><span class="swatch swatch-maroon"></span><strong>Maroon #8B0000</strong><small>475 × 320 mm</small></button>
+   <button class="cover-style" type="button" data-cover-style="custom"><span class="swatch swatch-custom"></span><strong>Custom Warna (lama)</strong><small>475 × 320 mm · logo UIN tetap</small></button>
+   <button class="cover-style" type="button" data-cover-style="customlogo1"><span class="swatch" style="background:#8b0000"></span><strong>Custom Logo V1 — UIM</strong><small>Warna &amp; logo bebas · nama → logo</small></button>
+   <button class="cover-style" type="button" data-cover-style="customlogo2"><span class="swatch swatch-maroon"></span><strong>Custom Logo V2 — UIN</strong><small>Warna &amp; logo bebas · logo → nama</small></button>
+   <button class="cover-style" type="button" data-cover-style="unira"><span class="swatch swatch-unira"></span><strong>UNIRA</strong><small>484 × 330 mm</small></button>
+   <button class="cover-style" type="button" data-cover-style="uim"><span class="swatch" style="background:#8b0000"></span><strong>UIM — Islam Madura</strong><small>475 × 320 mm · 10–28 mm</small></button>
+   <button class="cover-style" type="button" data-cover-style="dummybook"><span class="swatch swatch-dummybook"></span><strong>Dummybook</strong><small>420 × 297 mm • 5–10 mm</small></button>
+   <button class="cover-style" type="button" data-cover-style="softips"><span class="swatch swatch-softips"></span><strong>Soft Cover IPS</strong><small>330 × 210 mm • 5–10 mm</small></button>
+   <button class="cover-style" type="button" data-cover-style="covercd"><span class="swatch swatch-cd"></span><strong>Cover CD</strong><small>137 × 137 mm • tanpa punggung</small></button>
+   <button class="cover-style" type="button" data-cover-style="coverartikel"><span class="swatch swatch-plain"></span><strong>Cover Artikel — Tanpa Punggung</strong><small>475 × 320 mm • putih, tanpa logo</small></button>
+  </div>
+  <label class="custom-color-row hidden" id="customColorRow">Warna latar cover: <input type="color" id="customColorPicker" value="#1458A8" aria-label="Pilih warna latar custom" /><span id="customColorCode">#1458A8</span></label>
+  <div class="custom-logo-panel hidden" id="customLogoPanel">
+   <strong id="customLogoHeading">Custom Logo V1</strong>
+   <div class="custom-logo-grid">
+    <label>Upload logo sendiri (PNG/JPG/WebP)
+      <input type="file" id="customLogoFile" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" aria-label="Upload logo custom"/>
+    </label>
+    <label>Lebar logo manual (mm)
+      <input type="number" id="customLogoWidth" inputmode="decimal" min="10" max="100" step="0.1" value="58.5" aria-label="Lebar logo dalam milimeter"/>
+    </label>
+   </div>
+   <div class="custom-logo-preview"><img id="customLogoPreview" class="hidden" alt="Preview logo untuk pesanan ini"/><span id="customLogoStatus">Belum ada logo. Upload logo untuk membuat PDF custom.</span><button type="button" class="btn btn-outline" id="customLogoRemove">Hapus logo</button></div>
+   <small id="customLogoInfo">Posisi logo terkunci mengikuti template. Perubahan lebar otomatis mengikuti rasio tinggi gambar dan tetap terpusat. PNG transparan direkomendasikan; gambar tidak diunggah ke server.</small>
+  </div>
+  <p class="template-msg"><b>V4.46:</b> Cover Artikel 475 × 320 mm: tanpa punggung dan logo; dua tanda kecil di atas dan dua tanda kecil di bawah dipertahankan sesuai PDF asli sebagai penanda cetak, tanpa garis lipatan panjang. Posisi teks mengikuti PDF contoh pada sisi kanan, sisi kiri kosong. <b>V4.44:</b> UIM dan pilihan warna/logo custom menyediakan kolom Program/Jenjang di atas Program Studi. UIM otomatis PROGRAM MAGISTER (S2), bisa diedit/dikosongkan; pilihan UIN tidak otomatis menambah jenjang. <b>V4.40:</b> Custom Logo V1 mengikuti posisi logo UIM (setelah nama/NIM); Custom Logo V2 mengikuti posisi logo UIN Maroon (sebelum nama/NIM). Upload logo sendiri dan atur lebar 10–100 mm dengan tinggi proporsional; jika berpotensi bertabrakan dengan teks, PDF diblokir. Warna latar bebas, tulisan/garis tetap kuning. Mode <b>UIM (Universitas Islam Madura)</b> ditambahkan pada V4.39: mengikuti PDF UIM asli, marun, huruf kuning, logo UIM, kertas 475 × 320 mm; punggung dinamis 10–28 mm dan referensi yang Anda kirim memiliki punggung 15 mm. Mode <b>UNIRA (Universitas Madura)</b> dengan logo transparan baru yang Anda kirim mengikuti PDF baru: judul depan bagian atas, NPM, PRODI, FAKULTAS, UNIVERSITAS MADURA, PAMEKASAN, tahun; punggung dengan logo kecil dan garis lipatan adaptif 10–28 mm. <b>Cover CD</b>: berdasarkan dokumen Word 137 × 137 mm dengan nama/NIM di atas, prodi/bulan tahun di atas logo, dua logo UIN kiri–kanan, judul di bawah; tanpa punggung. Polos mempunyai 4 pilihan: <b>V1 dan V1.1 memakai tata letak lama</b>; <b>V2 dan V2.1 memakai tata letak baru</b>. Semua jenis Polos <b>tidak menggunakan gambar logo</b>. Varian V1.1 dan V2.1 memakai 215 mm dari garis potong luar ke garis lipatan punggung per sisi; V1 dan V2 lama tetap memakai master 217 mm per sisi. Aset logo Cover CD dan template lainnya tidak diubah. Keempatnya memakai master garis Polos dengan punggung 10–28 mm. <b>V4.38: Keempat Polos memakai garis sudut L sangat pendek dan empat penanda pendek di punggung seperti PDF update final; dua garis di tengah panel kiri dan kanan dihapus semuanya.</b> Aturan judul punggung Polos tetap memakai kalibrasi Serli; tahun punggung Polos V1 sekarang 12 pt untuk 12–28 mm dan 10,5/11 pt untuk 10/11 mm; V4.25 menghapus logo Polos V1 dan V2 dari output. V4.43: Warna marun dikunci ke <b>#8B0000</b>; garis potong kuning pada versi warna dan UIM digambar sebagai vektor baru di atas satu latar solid, tanpa menempel/menambal garis lama. Untuk punggung 28 mm, hanya penanda terluar kiri dimasukkan sedikit ke bidang kertas; posisi lipatan tetap presisi. Mode warna <b>dengan logo asli</b> dan huruf <b>kuning</b>, mengikuti tata letak file PDF warna, bukan tata letak polos. Ketebalan 10–28 mm dipilih terpisah per orang; Dummybook memakai satu lembar 420 × 297 mm (belakang–punggung–depan) dengan master asli per ukuran 5–10 mm. <b>Soft Cover IPS</b> memakai master 330 × 210 mm, warna putih, logo UIN Madura asli, identitas hitam, dan lipatan 5–10 mm (hanya 5 mm terukur dari referensi).</p>
+ </section>
+ <section class="card size-panel">
+  <div class="section-head"><span class="section-icon">04</span><div><h2>Ketebalan pesanan terpilih</h2><p>Judul punggung dicoba 2 baris pada 9 pt. Untuk punggung lebar (23–28 mm), 3 baris 9 pt lebih diutamakan daripada 2 baris kecil 7/6 pt. Font turun hanya jika diperlukan. Referensi 3 baris lengkap 10–28 mm; cover depan tetap dari file warna yang sudah benar.</p></div></div>
+  <div class="size-options" id="thicknessOptions"><span>Menyiapkan template lokal...</span></div>
+  <div class="template-msg"><span>ⓘ</span> Pilihan Polos V1 / V1.1 / V2 / V2.1 / Warna / Custom Logo V1/V2 / UNIRA / UIM: <strong>10–28 mm</strong>. Cover CD: <strong>tanpa ketebalan</strong> (137 × 137 mm). Cover Artikel: <strong>tanpa ketebalan</strong> (475 × 320 mm). Khusus Dummybook dan Soft Cover IPS: <strong>5–10 mm</strong>. Referensi punggung 3-baris sekarang <strong>lengkap 10–28 mm (19 halaman)</strong>, termasuk 25 dan 26 mm. Gunakan <strong>hanya posisi punggung</strong> dari referensi; posisi cover depan tetap master lama yang disetujui. Tata letak depan polos mengikuti <strong>Serli</strong>; tata letak depan warna mengikuti <strong>PDF warna asli</strong>. Prioritas <strong>2 baris 9 pt</strong>; untuk punggung <strong>23–28 mm</strong>, jika 2 baris 9 pt tidak muat, coba <strong>3 baris 9 pt</strong> sebelum menurunkan font. Untuk punggung sempit 10–12 mm, tetap prioritaskan 2 baris dengan font adaptif 8/7/6 pt. Judul harus tetap berada dalam batas cetak sebenarnya.</div>
+ </section>
+ <section class="card result-panel">
+  <div class="section-head"><span class="section-icon">05</span><div><h2>Pratinjau dan PDF cetak</h2><p>PDF dihasilkan langsung dari master vektor asli</p></div><span id="selectedSize" class="result-size">Belum dipilih</span></div>
+  <p id="spineFontResult" class="micro-note" role="status" aria-live="polite" style="font-weight:700">Font punggung akan ditampilkan setelah PDF dibuat.</p>
+  <div class="result-actions"><button type="button" class="btn btn-primary" id="generateButton">◫ Buat & Lihat PDF</button><button type="button" class="btn btn-secondary" id="downloadButton">↓ Buat & Download PDF</button></div>
+  <div id="singleDownloadArea" class="download-ready hidden" role="status"><strong>PDF selesai dibuat</strong><a id="singleDownloadLink" class="download-real-link" download>↓ Ketuk di sini untuk menyimpan PDF</a><small>Tautan manual ini tetap tersedia apabila browser memblokir unduhan otomatis.</small></div>
+  <div class="preview-outer"><div id="previewEmpty"><span>▣</span><strong>Pratinjau akan muncul di sini</strong><p>Isi data, pilih ketebalan jika diperlukan, lalu tekan “Buat & Lihat PDF”.</p></div><iframe id="pdfPreview" class="hidden" title="Preview PDF Hard Cover" loading="lazy"></iframe></div>
+  <div class="micro-note"><span title="File PDF referensi tidak disertakan dalam sumber">Referensi PDF Cover Artikel belum disertakan</span> &nbsp;·&nbsp; <a href="./assets/REFERENSI_POLOS_V2_LOGO_ATAS.pdf" target="_blank" rel="noopener">Lihat referensi Polos V2</a> &nbsp;·&nbsp; <a href="./assets/contoh_serli_10mm.pdf" target="_blank" rel="noopener">Lihat PDF contoh Serli 10 mm</a> &nbsp;·&nbsp; <a href="./assets/contoh_serli_27mm.pdf" target="_blank" rel="noopener">Lihat PDF contoh Serli 27 mm</a> &nbsp;·&nbsp; <a href="./assets/CONTOH_COVER_UNIRA_REFERENSI.pdf" target="_blank" rel="noopener">Lihat contoh asli UNIRA</a> &nbsp;·&nbsp; <a href="./uim_clean.pdf" target="_blank" rel="noopener">Lihat template bersih UIM</a> &nbsp;·&nbsp; <a href="./assets/DUMMYBOOK_REFERENSI_TERBARU_420X297.pdf" target="_blank" rel="noopener">Lihat referensi Dummybook baru 420 × 297 mm</a> &nbsp;·&nbsp; <a href="./assets/SOFT_COVER_IPS_REFERENSI_6_HALAMAN.pdf" target="_blank" rel="noopener">Lihat referensi Soft Cover IPS (6 halaman)</a> &nbsp;·&nbsp; <a href="./assets/REFERENSI_COVER_CD_5_CONTOH.docx" download>Unduh template Word Cover CD (5 contoh)</a></div>
+  <div class="safety"><strong>Periksa setiap pesanan sebelum cetak.</strong> Font sumber adalah Times New Roman Bold. Template akademik selain Dummybook memakai Tinos Bold/Bold Italic. Dummybook memakai Arimo (metrik Arial) atau Arial asli yang diunggah pengguna. Tetap periksa pada printer dan skala 100%.</div>
+ </section>
+ <footer>© ZAIN.NET • COVER V4.46 GitHub Pages • Tanpa API/Token • Foto OCR lokal, PDF &amp; Word halaman awal • Periksa PDF sebelum cetak</footer>
+<section class="card" style="margin-top:16px"><h2>Font Unicode otomatis untuk template selain Dummybook (V4.37)</h2><p>Aplikasi otomatis mengambil font Unicode Tinos Bold dan Bold Italic dari sumber terbuka saat PDF pertama dibuat. Mendukung petik melengkung “ ” dan banyak karakter transliterasi Arab-Latin. Tidak memakai token AI. Perlu internet ketika font belum masuk cache browser. Font milik sendiri boleh diunggah jika Anda ingin font lain.</p><label>Font tebal <input type="file" id="fontBoldInput" accept=".ttf,.otf"/></label> <label>Font tebal miring <input type="file" id="fontItalicInput" accept=".ttf,.otf"/></label><p id="fontStatus" class="micro-note">Otomatis memakai font Unicode saat membuat PDF. Unggah font sendiri hanya jika diperlukan.</p></section>
+<section class="card"><h2>Font Dummybook — Arial</h2><p>Dummybook menggunakan Arimo (metrik sangat dekat Arial) secara otomatis. Jika harus <b>Arial asli</b>, unggah berkas font Arial Regular dan Arial Bold milik sendiri dari komputer. Kedua font ditanam ke PDF, tanpa mengirim file font ke server.</p><label>Arial Regular <input id="dummyArialRegularInput" type="file" accept=".ttf,.otf"/></label><label>Arial Bold <input id="dummyArialBoldInput" type="file" accept=".ttf,.otf"/></label><p id="dummyArialStatus" class="micro-note">Otomatis Arimo, kompatibel metrik Arial; tidak menyertakan file font.</p></section>
+</main>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script defer src="./vendor/jszip.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+  // Jika import modul gagal (misalnya file app.js/ocr-zones.js tidak ikut ter-upload),
+  // tampilkan error agar layar tidak diam setelah memilih berkas.
+  window.__zainnetAppBooted=false;
+  window.addEventListener('load',()=>setTimeout(()=>{
+    if(window.__zainnetAppBooted)return;
+    const notice=document.getElementById('notice');
+    if(notice){notice.className='notice error';notice.textContent='Aplikasi tidak berhasil memuat kode JavaScript. Periksa seluruh file JS di root GitHub (app.js, document-reader.js, classifier.js, ocr-fast.js, ocr-zones.js, pdf-engine.js). Refresh Ctrl+F5 setelah upload lengkap.';}
+  },4000));
+  window.addEventListener('unhandledrejection',event=>{
+    const notice=document.getElementById('notice');
+    if(notice){notice.className='notice error';notice.textContent='Kesalahan proses: '+(event.reason?.message||String(event.reason));}
+  });
+</script>
+<script type="module" src="./app.js?v=4.46"></script>
+</body>
+</html>

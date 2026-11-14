@@ -1,0 +1,36 @@
+{
+  "name": "zainnet-nota-v9-gabungan",
+  "private": true,
+  "version": "9.12.2",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "check": "tsc --noEmit",
+    "test:priority": "node scripts/test-priority.cjs",
+    "test:v9-3": "node scripts/test-v9-3.cjs",
+    "test:dashboard": "node scripts/test-dashboard.cjs",
+    "test:v9-9": "node tests/test-v9-9.cjs",
+    "test:v9-10": "node tests/test-v9-10.cjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.0",
+    "html-to-image": "^1.11.13",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.11",
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.4.1",
+    "tailwindcss": "^4.1.11",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

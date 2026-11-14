@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="id">
+<head>
+ <meta charset="utf-8"/>
+ <meta name="viewport" content="width=device-width,initial-scale=1"/>
+ <meta name="theme-color" content="#10395a"/>
+ <title>Pembatas Custom V4.42 — ZAIN.NET Cover</title>
+ <style>
+ :root{color-scheme:light;--navy:#10395a;--blue:#136a9e;--ink:#182b3c;--mute:#526474;--line:#cdd9e5;--soft:#f3f7fb}
+ *{box-sizing:border-box}[hidden]{display:none!important}html{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:#edf3f9;color:var(--ink)}body{margin:0}.top{background:linear-gradient(125deg,#10395a,#176f9e);color:white;padding:20px max(16px,calc((100% - 1200px)/2))}.top h1{margin:5px 0;font-size:clamp(1.35rem,3.5vw,2.1rem)}.top p{margin:5px 0 14px;color:#e1eff7}.top a{color:white;text-underline-offset:3px}.wrap{max-width:1200px;margin:20px auto;padding:0 14px}.layout{display:grid;grid-template-columns:minmax(320px,410px) minmax(0,1fr);gap:18px;align-items:start}.panel{background:white;border:1px solid var(--line);border-radius:15px;padding:18px;box-shadow:0 4px 15px #1734510d}.panel h2{font-size:1.12rem;margin:0 0 14px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:650;margin-bottom:12px}label small{font-weight:400;color:var(--mute)}input,textarea,select{font:inherit;border:1px solid #aabac9;border-radius:9px;padding:10px;background:white;color:#152535;width:100%;min-width:0}textarea{resize:vertical;min-height:56px}input[type="range"]{padding:0;accent-color:var(--blue)}input[type="checkbox"]{width:auto}.check{flex-direction:row;align-items:center;gap:8px}.hline{border:0;border-top:1px solid #e5ebf2;margin:17px 0}.btn{cursor:pointer;border:1px solid #c0d0de;border-radius:10px;padding:12px 15px;background:white;color:var(--navy);font-weight:750;min-height:44px}.btn.primary{background:var(--blue);border-color:var(--blue);color:white}.btn:disabled{opacity:.5;cursor:wait}.btns{display:flex;gap:9px;flex-wrap:wrap}.btns>*{flex:1 1 120px}.preview{display:flex;flex-direction:column;align-items:center;gap:10px}.preview canvas{display:block;max-width:100%;width:100%;height:auto;box-shadow:0 5px 18px #0002;background:white;border:1px solid #d0dae3}.hint{font-size:12.5px;color:var(--mute);line-height:1.5}.status{padding:10px 12px;border-radius:8px;background:#eff7ff;font-size:13px;line-height:1.4}.status.bad{background:#fff0ee;color:#ad2922}.logo-thumb{width:80px;height:80px;object-fit:contain;background:#fafafa;border:1px solid #ddd;border-radius:8px}.brand{font-weight:800}.preset{background:#f2f7fc;padding:12px;border-radius:8px;margin:8px 0}.preset button{font-size:12px;padding:8px 10px}.micro{font-size:12px;color:var(--mute)}@media(max-width:880px){.layout{grid-template-columns:1fr}.top{padding:18px}.panel{padding:15px}.preview{margin-bottom:24px}.fields{grid-template-columns:1fr 1fr}}@media(max-width:420px){.fields{grid-template-columns:1fr}}
+ </style>
+</head>
+<body>
+<header class="top">
+ <a href="./index.html">← Kembali ke ZAIN.NET Cover</a>
+ <h1>Pembatas Custom <span style="font-size:.7em">V4.42</span></h1>
+ <p>Ganti logo dan data sendiri • Motif logo berulang seperti contoh pembatas UIM • PDF dan Word A4 siap cetak</p>
+</header>
+<div class="wrap"><div class="layout">
+<section class="panel">
+ <h2>1. Logo dan teks pembatas</h2>
+ <label>Logo custom (otomatis grayscale/hitam-putih)
+  <input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"/>
+  <small>Default: logo UIM hitam-putih dari contoh Anda. Setiap logo baru otomatis diubah menjadi grayscale atau hitam-putih untuk seluruh pola.</small>
+ </label>
+ <div style="display:flex;gap:13px;align-items:center;margin:-3px 0 10px"><img class="logo-thumb" id="logoThumb" src="./pembatas_uim_logo.png" alt="Logo pembatas"/><button class="btn" id="resetLogo" type="button">Gunakan Logo UIM</button></div>
+ <label>Baris 1 — Program studi<input id="line1" value="PROGRAM STUDI MANAJEMEN PENDIDIKAN ISLAM" maxlength="160"/></label>
+ <label>Baris 2 — Fakultas (boleh dikosongkan)<input id="line2" value="FAKULTAS AGAMA ISLAM" maxlength="160"/></label>
+ <label>Baris 3 — Kampus/instansi<input id="line3" value="UNIVERSITAS ISLAM MADURA" maxlength="160"/></label>
+ <label>Baris tambahan (opsional)<input id="line4" value="" placeholder="Contoh: PAMEKASAN — 2026" maxlength="160"/></label>
+ <div class="preset"><strong>Preset cepat</strong><div class="btns" style="margin-top:8px"><button type="button" class="btn" id="presetUim">Contoh UIM</button><button type="button" class="btn" id="clearText">Kosongkan Teks</button></div></div>
+ <hr class="hline"/>
+ <h2>2. Ukuran dan posisi</h2>
+ <div class="fields">
+  <label>Lebar logo berulang (mm)<input id="logoMm" type="number" min="5" max="40" step="0.5" value="10.5"/></label>
+  <label>Jarak antarmotif (mm)<input id="gapMm" type="number" min="0" max="20" step="0.5" value="2"/></label>
+  <label>Ukuran huruf (pt)<input id="fontPt" type="number" min="9" max="26" step="0.5" value="15"/></label>
+  <label>Posisi teks dari atas (mm)<input id="textY" type="number" min="15" max="245" step="1" value="125"/></label>
+  <label>Kepekatan logo (%)<input id="opacity" type="number" min="10" max="100" step="5" value="55"/></label>
+  <label>Warna tulisan<select id="textColor"><option value="#111111">Hitam</option><option value="#304760">Biru gelap</option><option value="#7f1717">Marun</option></select></label>
+ </div>
+ <label>Mode logo otomatis
+  <select id="logoMode"><option value="gray" selected>Grayscale otomatis (abu-abu)</option><option value="bw">Hitam-putih tegas (2 warna)</option></select>
+  <small>Setiap logo yang diunggah langsung dikonversi, termasuk pratinjau serta file Word, PDF dan PNG. Warna asli tidak ikut diekspor.</small>
+ </label>
+ <label id="thresholdRow" hidden>Ambang hitam-putih (1–254)<input id="bwThreshold" type="number" min="1" max="254" step="5" value="165"/><small>Angka lebih tinggi menghasilkan lebih banyak bagian hitam.</small></label>
+ <label class="check"><input type="checkbox" id="clearBehind"/> <span>Berikan bidang putih di belakang teks agar lebih jelas</span></label>
+ <p class="micro">Ukuran kertas tetap <b>A4 potret (210 × 297 mm)</b>. Pola logo otomatis memenuhi halaman; posisi teks berada di tengah secara horizontal.</p>
+ <hr class="hline"/>
+ <h2>3. Buat file</h2>
+ <div class="btns"><button id="downloadDocx" class="btn primary" type="button">↓ Download Word (.docx)</button><button id="downloadPdf" class="btn primary" type="button">↓ Download PDF</button></div>
+ <div class="btns" style="margin-top:9px"><button id="downloadPng" class="btn" type="button">↓ Download PNG</button><button id="printButton" class="btn" type="button">Cetak dari browser</button></div>
+ <p id="status" role="status" aria-live="polite" class="status">Pratinjau siap. Ubah logo atau data untuk memperbaruinya.</p>
+ <p class="hint">Teks pada file Word tetap bisa diedit. Motif logo disimpan sebagai gambar di belakang teks agar posisinya stabil. Untuk mengganti motif, buka menu ini kembali dan unduh ulang. Tidak ada file yang dikirim ke server.</p>
+</section>
+<section class="panel preview"><h2>Pratinjau pembatas A4</h2><canvas id="previewCanvas" width="1050" height="1485" aria-label="Pratinjau halaman pembatas" role="img"></canvas><p class="hint">Hasil cetak: A4, skala 100%, satu halaman. Pratinjau mendekati hasil PDF; susunan Word dapat sedikit berubah menurut versi Microsoft Word.</p></section>
+</div></div>
+<script defer src="./vendor/jszip.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script defer src="./pembatas.js?v=4.41"></script>
+</body>
+</html>

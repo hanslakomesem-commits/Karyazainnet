@@ -4,7 +4,7 @@ import {recognizeLocalResult, prepareOCRZones, setOCRProgress} from './ocr-fast.
 import {normalizedLines, mergeZones} from './ocr-zones.js?v=4.47';
 import {scanNameUnderline,underlineScore,pdfNameBox} from './name-underline.js?v=4.47';
 import {alignTitleFormatting,pdfFontLooksItalic,titleHasTransliteration} from './title-format.js?v=4.47';
-import {readCoverWithGemini} from './gemini-cover-ocr.js?v=4.47';
+import {readCoverWithGemini} from './gemini-cover-ocr.js?v=4.48';
 export {setOCRProgress} from './ocr-fast.js';
 
 export function withTimeout(promise,ms,label){

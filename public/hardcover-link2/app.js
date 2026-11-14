@@ -1,4 +1,4 @@
-import {readPDF,readWord,readPhoto,withTimeout,setOCRProgress} from './document-reader.js?v=4.47';
+import {readPDF,readWord,readPhoto,withTimeout,setOCRProgress} from './document-reader.js?v=4.48';
 import {resetOCR} from './ocr-fast.js';
 import {generatePDF,checkAssets,setUserFonts} from './pdf-engine.js?v=4.46';
 import {canonicalUniversity} from './classifier.js';

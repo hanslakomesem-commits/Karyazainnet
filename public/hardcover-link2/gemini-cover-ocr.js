@@ -1,7 +1,6 @@
 /** ZAIN.NET Menu 12 Link 2 — OCR multimodal via backend Render (tanpa kunci API di browser). */
-import {prepareOCRImage,prepareOCRZones} from './ocr-fast.js?v=4.47';
-import {auditCoverTransliteration} from './transliteration-check.js?v=4.47';
-import {alignTitleFormatting} from './title-format.js?v=4.47';
+import {auditCoverTransliteration} from './transliteration-check.js?v=4.48';
+import {alignTitleFormatting} from './title-format.js?v=4.48';
 
 const API = 'https://zainnet-api.onrender.com/api/hardcover-cover-ocr/read';
 const SUPABASE_URL = 'https://pxseiytikiulxincoolh.supabase.co';
@@ -93,27 +92,26 @@ export function validateGeminiResult(value) {
 }
 export async function readCoverWithGemini(image, {onProgress=()=>{}}={}) {
   let token = await accessToken();
-  onProgress('Menyiapkan foto resolusi tinggi untuk pembacaan Gemini...');
-  const full=await prepareOCRImage(image,{maxSide:2450,contrast:1.1});
-  let crop=null;
-  try {const zones=await prepareOCRZones(image,{threshold:false}); crop=zones.judul || null;} catch { /* gambar penuh tetap digunakan */ }
-  const [imageBase64,titleCropBase64]=await Promise.all([toBase64(full),crop?toBase64(crop):Promise.resolve('')]);
-  onProgress('Gemini memeriksa Q/O, tanda transliterasi, dan bagian judul italic...');
+  onProgress('Mengirim foto asli ke server agar hasilnya sama di Android, iPhone, dan komputer...');
+  const imageBase64 = await toBase64(image);
+  const fileName = String(image?.name || '').toLowerCase();
+  const mimeType = image?.type || (fileName.endsWith('.png') ? 'image/png' : fileName.endsWith('.webp') ? 'image/webp' : 'image/jpeg');
+  onProgress('Server menormalkan foto, memperbesar judul dan area nama, lalu Gemini memeriksa teks dan format...');
   const controller = typeof AbortController === 'function' ? new AbortController() : null;
-  const timer = controller ? setTimeout(()=>controller.abort(),68_000) : null;
+  const timer = controller ? setTimeout(()=>controller.abort(),100_000) : null;
   const send = async bearer => {
     let response;
     try {
       response = await fetch(API,{
         method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':`Bearer ${bearer}`},
-        body:JSON.stringify({imageBase64,mimeType:full.type||'image/png',titleCropBase64,titleCropMimeType:crop?.type||'image/png'}),
+        headers:{'Content-Type':'application/json','Authorization':'Bearer ' + bearer},
+        body:JSON.stringify({imageBase64,mimeType}),
         ...(controller ? {signal:controller.signal} : {}),
         cache:'no-store'
       });
     } catch(error) {
       if(error?.name==='AbortError') throw error;
-      throw Error(`Koneksi ke layanan Gemini gagal: ${String(error?.message||error)}. Periksa internet dan domain situs ZAIN.NET yang digunakan. Hasil tidak dialihkan diam-diam ke OCR lokal.`);
+      throw Error('Koneksi ke layanan Gemini gagal: ' + String(error?.message||error) + '. Periksa internet dan domain situs ZAIN.NET yang digunakan. Hasil tidak dialihkan diam-diam ke OCR lokal.');
     }
     const body=await response.json().catch(()=>({}));
     return {response,body};
@@ -128,10 +126,10 @@ export async function readCoverWithGemini(image, {onProgress=()=>{}}={}) {
     const {response,body}=result;
     if(response.status===401) throw Error('Sesi admin tidak diterima oleh server. Login ulang ke ZAIN.NET, lalu coba kembali.');
     if(response.status===403) throw Error('Akun yang digunakan belum dikenali sebagai admin Supabase. Gunakan akun admin ZAIN.NET.');
-    if(!response.ok || !body.success) throw Error(String(body.error || `Layanan OCR gagal (HTTP ${response.status}).`));
+    if(!response.ok || !body.success) throw Error(String(body.error || ('Layanan OCR gagal (HTTP ' + response.status + ').')));
     return validateGeminiResult(body.data);
   } catch(e) {
-    if(e?.name==='AbortError') throw Error('Gemini tidak merespons dalam batas waktu 68 detik. Coba foto lebih kecil atau ulangi.');
+    if(e?.name==='AbortError') throw Error('Gemini melewati batas waktu 100 detik. Coba foto lebih kecil atau ulangi.');
     throw e;
   } finally {if(timer)clearTimeout(timer);}
 }

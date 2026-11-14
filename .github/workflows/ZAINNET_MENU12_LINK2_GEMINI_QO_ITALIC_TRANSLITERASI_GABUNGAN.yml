@@ -1,0 +1,253 @@
+name: ZAIN.NET - Menu 12 Link 2 OCR Gemini QO Italic dan Transliterasi
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: menu12-link2-combined-ocr
+  cancel-in-progress: false
+
+jobs:
+  update-ocr:
+    name: OCR cover foto Gemini + Q/O + italic + transliterasi
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Pasang satu paket pembaruan (gabungan)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYCODE'
+          import base64,io,zipfile,pathlib
+          b64=''.join([
+            'UEsDBBQAAAAIAIogbl0KVAquAAsAAHokAAAOAAAAYXBwbHlfcGF0Y2gucHnlWV9z27gRf9enQHSZo9hQpOUkN1fZcsZN7MStE7u2knSaZByI',
+            'hCSEf8ACYGzH55nrB+hT+wmu04dOp+/tTJ861w/S+yTdBUiJkmVHsXMvPc2YEkFgd/Hb3d8u6KEUKcmpHid8QHiaC6nJPtw2yt/qVDUaB3t7',
+            '/R6O+uFx1HIbh/3Nx1tmoHV0NOQJOzpyfcmUSN6zluvnVLJMNxoRGxLJ8oSG7EhkrIVqPCKSyCMZO/bIzzwSjlkYH9FEMhqd9p7BLLfbIPBB',
+            'qT3UG+AqM6TZie7huI+zj/C2xbJQRDwb9ZxCD9tfO66ZyYezggnNorkRnhl5Vhl+cskz3Ro6m9WSPE84i7rkDA04JwE5m5Hwqnv3/pvzUiF+',
+            'JNOFzMxtKIpM91C+b362YM9Ty3DkVq/TJZJyxcgB3PKUbUkpJOi36rpgcjgWkmRCkyLjvysYgbuUKwW7JS2r4cx8nbtgJGh41e2s3H9zS1ZG',
+            'GbyMEaUT0AwPke+4E4z9Y8k1s2DixSOLIbXwOM/ziGoWOR5a6TYaX5ADUWjWJQMaxgxQfsxSnnGy9/DAI7TQYwgEHuISoph8z2Rb8YiRwSk5',
+            'LHI6oLB/GsEK8suXfb8hUZY8QtnW945dFIypjEIBvx7iZS+UgZ3qa+XUV5Wh56dxxGXL3qheXxbMYydc6SMRmzu3WqRk2GuZcJ7omkp2rww0',
+            'cCU6p67d6FAtF11VH79CzK3e1BIbjPWFNedMp3lXeuilFJo53qz6hGr+HgSJFsLqguPeqTrMeTFIeDiFuZ3wLF4NRsaZbTskQum/A7jLlctD',
+            'DQvqMC8SuhTSleI6ytXYlQhbAyy61YIasvbxUqhO1V1E9AuyWURcEy1pphKQLqniQK0RJeCLvNBlbvjkqYiKhGCaaKZpTgYwFWZFnCiuC0WU',
+            'BuHKb1SSlvBUTanmImsbqjLumgip++DS6Us5YsauGXfMPrnSKXW7rGtmF9d5qTZ1KTfNm3HRWfWyVCY+ZrzXaJZ174zAhBGnkqv0xaohOUnO',
+            'yRDLpeMHJVfU59SIY635uQS9ziZiLnDgZbKuIku0bLbmNj+uoOlegRfUSb9QMBrQnNf20X6/6ngL9u4acD591essCMhTlhWks0p2IejJahfL',
+            'DBkKLaqyc9fvkO2EqnF7F6KHRCwb0Wy+1GBZ8l9nsyZME2pCTGDIJZC4C2C8ibjmfERekuWRCIsUeLaNOplhzlqg0YSPsj7XCdsWMqVaQ5Z4',
+            'eTTcFpneFSJWOxqmhJ7GKU+o6s+SwDSOzIT20AhBHTPh/ONpmcY6bs9A9JLrsXXtdN2i+nFFWC+SNR/QnwQ30vMIFmHs5RCP4y6BSaec5jHF',
+            'pjIGAmdJIYsx+DuhKc0cG/PNJiEJ08RuYEepgvUcZ62BXWFL5IiO8nPJhkxaO2/1ekOaKOaeNQw9np6V3WWmNBEZGMl69JhCzVmwydYgEQPv',
+            'TGT7UoygN1ddY/e5u9aYdqulFDN0Dm1aOG4x7EOtxhlLDzVQ7Mg+fuCnIBCkffONne6Dh6G/XPFWV1dKBSVKZWIOAJEUwJGKRZx6puQlfExi',
+            'Bhim0DxSkoiYJr7vO1bAecP+XQvt5sV4WID8zcLAugF5pZdhECf8A4sOmCoS3UJQlffqLVp9+wx2cA7VPZdCMWX3STTNckq0gKbZJ4dQoZIC',
+            'JIYixm0ppmGDJKaSxsjAJY+pIgXc/LcecbaB9AIV0sxyoOYRjQGYdFDEmqOImGpKTimcFSLwjManHB3ok30meawosXlqG5R3BXYk0ICAdzTU',
+            'ccWswwBeyCLfeTOJ4J/Yrm1y1uLGxa37x1RmIFb5RabGfKhbb/dtFIMNZcSP6Ag23Lp9Vlt87voEKJEnGP88hpYQ80DBvAiqndmTwWmNQPTx',
+            'IWwJOshfB3vwOCPcWq5YCAARCPQC0uXt4mBfyuZlqw5WtjLmp+xj6ap3Bl7SlCfd2y0HuHgzDAtJw1PHfeC/B+eyXq/n2BlQ/upcxPQhJjY5',
+            'N4F1Q8F10iwXbGUjiMbJdKBSJxEhvdKMORCvkLokc8wiB/3LIxEjlVgve2UAYyhKBid8k1j2GA1xXNg8WYMxTRU5hqQoTLAzcCcG+/Mdv8IO',
+            'ZZvk2H+0TWyClGGYmiTjU8HQcGTaRlaZYFBjEnxcj79Hew9/Y4QZhrXHFEvQF3H6uKZPhwuOGVhQ3t4+A1wK5idgKr6FgXwBgZAEkU1yUzlu',
+            'n4EuAW0EDx84wv5STtdxziHvH20HL4WM5pjIs20jwEljWss8QzM8G4qyZn8+Q2bcgzVsNCoyGk8Jw7h8YggJKUqm4P+JG5AFzF6sP0qli+ye',
+            '89B1dV/bbw4ccZkV1rUmo+3TjVjLgXkHUhzDcaIsDFM3GLgmi0qzp77qQ/ICc4a6NLiVgj5gVToGNiVpkY1iaPRzJqG+RLzIomLs+o4349mJ',
+            'rZfad6kpEYWD5cSgxWeP+XQ4gAuTXpV0s7uAygPlgk+An7V1gTc/2Z5lyZ6DlSf+WKfAlA2HkPWIvychiFG95gAbxDbAxrAJPk1Yr5lSCYzY',
+            '1iLvdlbyk+bGekKhiEJ2yV6zxtvNDRTn3FygZWAYVlqKbLTxlCnjadtDmqT+cgJMdz0op60HRswGWYdukQHiPKqLI1B+adtM6TX3OXSm1kWg',
+            'xxYkYotO01bVJrFSWLSx2Pk/fPsnErJ4rnavTfw7jfT1wCqYV2SKVXMD5+2aEEeRNks293dIC6WXHYFtBdyppMBat7GeV6gO4XDWVtCqdTur',
+            '+claDeT7iLHJ1gmNAySSp9DAAKYSO3R73i8j2OznsRCjhJEi00VcZUur4hTA7hSSuyx1phsDthzTeMLBrunHIDcTMcIDuTmW/3Zz55n/bKu/',
+            'Rt5B0bD9k1cjpYhXCsoUgvSGfgaoK6u6qmP6jg9QS9nsVQ2daQX99SAHbCD8NhqfM64dZz5DndngctxrZN66gt462XjM9ZNiQPahR1EQAt+R',
+            'F/f8e1+ZX/0qGMDfZu5yyxDQ0tV3bGjV1s/t40bSrrXrmld4lhe6jcSuAH502/pgA7lvPRhslJbVosPGBE4nDxnSIcZpnyVcc4wU8kFkEKOT',
+            'DHIrO21EVPKBOWri+1gMymMl6VSdw1TpgCfUkM3YhB9SzqzY6+xpMaPYVFuGT5bcljV7bmulbqusYtELW7okSj6L3dcLm6GA5JUb//7rhEVM',
+            'dD7ce7F1UEbrhSCe5E/Qxz7bjJnSOrHJMxB8SdN8zTYxFV702BDyd5NTpYGqTjbrQWnStc2rZVbCjqmeaySqgK8xqLcA1uWtnHfqj2Az+LZ8',
+            'T7+/eXjYnX2b2zEBMmIZviiEw3geDdvMEGh5TII+Dvo7H4Tg/1r2GR5m8byPhcCQM74PmvnfC3ylVEH4Pb+zsvqLrcB8bRs9oUgHHCVA9ZSx',
+            '8pcKuvk3ll5DNtmJec1oD6/9g81nh7s7/a2Dzf7O3rOjh082Dw57wavXxUpnZaUNX6v3hq+LDjM3HTYc4tBgYK7h62J1pfO1uf7cXO1I9CYo',
+            'sAv8TLrMkwHe3LXT7n41/Ijm2dCQzcsFNa+Rvc2fRvfR/L/Y6a+s6bbbBlb3Skr3jLmz6bcp6eCHb/+4C4fgjLS+/71Hvv+bR/4Df//9x1/g',
+            '8s8/4+XvePsHGP8X/n8k/UDHAeWZOw/q5C1h9VYwNG8M5xCeOyld19obvRhe9tVd88LcOfNoFtE5Iy9ImNvwDeXN8TO0CTA9Vnza4uGO7lT7',
+            'uXORb0d0AIfv8qCCIY6cXRJ8MKV0ZPH/AVBLAwQUAAAACAB0IG5dP/n4vlwHAACuDwAAEwAAAGdlbWluaS1jb3Zlci1vY3IuanOlV+1y27gV',
+            '/Z+nuJnpLMmMBMXpdqcjj+Jx3GQ33Xy4tttO1+NxIAqSYJEABwBtKwpn+hB9wj5JDwCS+ojbP/0jCiBw78W5B/cejl68oN9O339in95e0Ueh',
+            'ajp6RR+kWtEr+vc//0Wfzy6orAsnSz3jBd1LTlOer4Sa0QV+hKHUcVVxWtUql3R6/p5mkqZGP1hhMkYvRs9kWWnjaFMZUXEjYPF9yRdisB3/',
+            'ppWwDc2NLilhI52b4Zxbx+5sctxv5/VMujN9L8yV4coW0gnDndRqu9HtvxjmS5GvopVnuVbWhfgmlCydq+x4NPrKpVLCDXklmVYmHIjluhxh',
+            'YrTkZpZ7f8P4i7BGRvAZrEVjv779hzdmp8Pq0Qq5dnIl6+JRqlzrYjnktVsOnQZW/Q7rDHbc86IWNHlNl85ItUjj+OSEkiRDpHMg6cMnnufC',
+            '2itvIc1o84xoNKLLuuJTbgWVQq2BDVdkhZVU8RknbeRCKnp4eGDt0Zh12ohjknPDS9Fl1uL/MC5mMFsIhMbvxewYA2fWtIlDxPrny8+fGNJk',
+            'RVronBeXMIfksYVw750oU2CQ0bdvlKi6KBA+NZRzly9hYvQiRlbwkpNUOKWcgQ/UwEmEI4ADJ8HZCYvnvY2zsNlO57VBZtwl3gGV/WU+YDkH',
+            'B9eV0PPW4POJz0rANvF2nofpjNwStKS3xmiTJpchNO3h6iF1csZX4C8OVq+4YvQGjw6zUhTIkyQOphOfldjYXRzm80ZkhKuNojaw5hm3a5VT',
+            'n06n38DJTz+m00JP+3z+WoO0CwnzpQbytpIrAR9yyl3LD+bpfQY2numZSBlj3Bi+zmLGfzlnW8/8gUtHSjzQObZI5Cw1wuriXgyw5E7kLvO0',
+            '8567FHhCC09Kv+udLMRFmEjDgah9jbshPGpYlgYL0VjaQvkzX6A04ACoDJwWHE9DtXL1in4WwEkCn0N7heazHXMhyBQ5S9sVmELVyZitcJ/T',
+            'ZJBk10c3gWjJvin/OLV/4o7/9eJDhNa/bzKfAfEYakefgsBB7kQM6yL4iNcv5sNT6Xm8jnDVkiqOA6n01J87OXzJ7upZXezx7oBt77QpkVCx',
+            'wmu+AvNiBC3jCqEWK161NIqJQZgcAG2Q7+Cj8a/8ZOtssjNgypsv5FeRJp/enUUzc+QrjbZWYk2I9TpRuIrAsjJ6JvGcg8uF4xZ/ayVR46yM',
+            'o5V27boFysbtnVB3IGlyk7Xc2blyPoprOLihyd7xd+a3/58MdFsPrFigqjmLLaee40za8EzDUZ10hbjt1mR0Qk9Ms7ksUP/Tx8nrR/rhhy5N',
+            'j8yJR4cI+wBZySu/KvUIPw7863Fc9V2QTZbRmK5vumLT+/J5c0vvpp9qrUZLGbvTUqWgbABnm7AOxycO4MvhgbF0sxPdACkqZI5R/APDzoAe',
+            '8YY1JAoUsv9lfYdDJ3QdTW/nOvNzDjvNTX/u1toDNwrweTvXwC19Ik3dkuxkbzi+vskG3T0opU8CTBrfHtZcoYtVsX7gX7wUuc41ijEg9lO4',
+            'ORQCPKZSL7VfbuTKcoCVc8Op5KrmBUtu9hkVRAOC/a/iIcSc9XfrQEHczoTDhQ+dMJhgS24PLPR7/09sfGEPLrrZQYA9uazLqTDjrmL8nh3R',
+            'u4Lb5fADQmD0t1DSUFH+Mvo8oJi9AQJStAIuK0RJO4fqhIKAI9QHK6aiqEtfl1AoW/TaZuIj3KmhB83Ml92A59+lW8bQUhlkHW20OveFA016',
+            'kmaT15ummWyaSPmdvj/Zkzfe8XZfmnz06oZX6MIoZE7HFlFbXzHVAu0ytpctZ9pGw/Zq6ByaZBKb4oH4bGPdlPzxUs7E+NWPf3g5wCZAZd34',
+            'iB01wYwXRrnR1cSrm14cReNfvWj9znqQsp11tABhl7qYtdcJ8ihYC1vbO4hWEozv6aa2h1bQ40tw3/EKqmRRK+7x2JNQ18FVFBaDcNfP4CGO',
+            'b9roWjHAeFGk170K8eBkAx/PST/nR9m4W9+1ZdSvm+8S1NIRXb+9iIF/+BYAu/YIF8k45QuJRzxzZOlBsgL6uiiEmXgtcjoF6876uXRnJT5G',
+            'sMgKd4U/unapZ9l2O+N+a5oNfvrj7cuXL7M+b3uyB4RXVrQIzQWgT/FxMIiLCOdySz0bJ+efL6+SQTu5DJLDjjeJDwz1dHiF9pKME15BpuSh',
+            'HIzurFbonadQ/1DYX8NkMv7yRoAghn63CeRvvjSd0amercdBZsfWJOfrdLOb1RKn9H7GPmPMN7Rv35KwYFShkx1mfTv+2G0MSf5+Z5N1MVi5',
+            'ULwY72AYZ7r3Ocen1DhRehg+J5Iw3bRCLCLqj9Gi2YHLPBRpxgKxQ5LSTdMpQTlPn/cLUei9Tvc2mK1DXch29ZMXhuFllKFY++VD2zb8B+oi',
+            'CND0l6urcwDcW7WOu9o22Zet+gyV7UkVGMz3zaC9janYKp5UnDDoJ+FFRCBnCC3ZizPZk3VgaQwFNwAfQbgDUFf0gKJcs07Fxt0i+pxLYF74',
+            'ClOALR27A92z4wa1+D9QSwMEFAAAAAgAsSBuXREXtZIcEgAA0yoAABAAAABzZXJ2ZXIvcm91dGVyLnRznVpJcxtJdr7zV6QYHQOUVCyAlNSj',
+            'AVuiQYqiIHETl263KQ6VQCWAJApVNbWIYkuMmP4BEz7MxT56O004fB07HPZFvsy/8PwSf+9l1gKAVPdYESJQicx8L9/yvSWrdf++2FNhLlbX',
+            'xK4OJ2KtIw62jsRITvsyEYPovUo80T3siYm6FmMZXkvh61EeyokM8U0cqdCnKfdbS3oaR0kmPoqjKM9U4orsOlaY8JtcpVn5lMZRmCpxI4ZJ',
+            'NBUN9SFOVJo21qvlO1E0CtSOCru9ctpfjXiwNVKh1PXJg0TJTG0FWoVZNTvNY9mXqWoVX1YuicQSqNGyAVjIcJrE5wNu0Z+DQWL4Fk/tAZrO',
+            '+pKZmagBbf9UhOpK7Mn4mzRLdDhyiX6Uh1lHhPm0r5J1zExV1q0NyEGm36viWdw8q3bdO3i+vYtNGyM11aFeeeitrgwDmY5XAp2pRjFNBkF0',
+            'pfw9PVWWg2OVNc8aeipHqnUZq1HDFfYpDmsPV6ofN85BrtUSJzL0SXNykuhMT4QP7Y3l9Ac5bkkddoTMfZ2J9zrNZeCKfk7ajVXSl5q+qUuJ',
+            'v316TnUqMtUn9XuWwSyRYUosJzLTUbgnk0kKTltnb/P2aru9go+1R8O3+arih1U1HNJQv8+/9OnhoZn28Gs8rLVXn/DfX5238kIIQ60Cn3Y9',
+            'a1zmfh403EYop5I+9BR/4yTyNT6HcpIHmUzxNQ8h+CTV5mkSZTT7UoU6vfCjST5VIZ77eSDDi0yO89DsMkrk9AKzLiVEeS5kaowFtjPMwwGd',
+            'T4xU1iMBN3UY51B1Hk7C6Cp0xRQqqj/KD7sqHGXjQvuO+LgkhB6KJvlCNBS8gbj3FDZgLKrhwIKyPAmxIgjWMdsc35eZxOF5vpeoOJAD1Wz9',
+            'moY7rOy3reZGh2zhE0zgE2neWSe7//qR29KwiIZTbcaO+FRYHqZsVzUWxIYZ64i6ia1bzu/VzNEby5SP4ohPn5hHL+ADi2/Ek/b82LNKIPTT',
+            'vdavz+TKD2/9B63zB08/tt21m69a2suAFU1a5iyIwj5+hBgCHarndHg8EbMnYKLDJ3KNrG7EzfrSTaWzTPvXzfcyyOcUBDmsPmm3jWYsASsY',
+            'nj0vGR6sNACbxb/WiCXswQkw2OaNHQ9rpk2HxNiYYcVXg8hXAEIYajNTH2BBZn/DRKCAN/IKLhle06mz5BqHxAhYfXV8sO/FMkkVL7Qkagbx',
+            '7t07soM0Cp2Nt+l9q/oav+l9TPnKjjvr4oasQmaDMWhk4yS6YoDZTpIoaTb2wGdAopMTAXcZQd06IDwgPsQ1PITkoX2vYXdiAyFWoV8rRXpi',
+            'A4/6l2qQNeinbpLIa0+n/NnEDOh6gfhxluQT6EMwVYARAtKAYMjwk0J+Unt1u05YpB3EmEGU+CVGQ47PILuPNzRzGCWiWYMUARYNtjh2/Rk/',
+            'npODkM2AOzvi2hVsEQaEYBBkPdDx2uO244VRMoU8flDNxv6LrTpr0FlG6LVwci/TWaAuUjWCgDMwsSEWRyvD+hpUhjqg4NSM2UQc8fSZiMUv',
+            'flEIPPbINGbslozw7Jy4QSTYN0ymkKqALqMQ0eA01GSTrOSR7OfhiLQ8zpN8KB6IjGMHSb8WQDAYS2sVcZ4iL/DK05Zy8A/tufn83lTGM2w3',
+            'YXNs/8fMZ9Ow7vyke62utW+RtisA9ZjSgQjMNxYCzAjZhlNTxmUE9PApls7yucBfwQ8taFoIJRM3GxQODtHPDNS97QHzLsB8Fu1GAxmo0xhh',
+            'dQvI3Gxof6X3HMohLo3teWxWf+kGBjfE/HHO2ufWFO76pQYcRCkv48TiXvOispi+IlbvJPJTS2aO+dUMdSuNWS9YJDEzmUX3/1TqjVABclIj',
+            'RvjIK0AbHABkKdOxdiUkUkkdSIIildWQCGlzwrjOi4wKv3iMGY43xFnhBvXxypqHkni7OS+d+KbmaAiXt8IKgo1KMqR2FwOkuUhCkQkV4HLb',
+            'b5VzPXGMyD6UgZLFxmD4Ab73qO2UGLQZRYGSYYUvhq0rmYTwZ07XWBCNl4zhO5znUt6dp4CSPnBFG6ixshtGWYSUK9CA974K8ilmDSDryTol',
+            'o3qSSvGmdWCSVwanqSbg8Bouk/E8jyVSHqCIq+D/3WscdULpPXYKcmxsd+yIrz5+uHnn0Ba1M5ig8J3OxkU+u5B5/tyccyGrLCEcNZUR7i0Z',
+            'tMmEbEzCxHOKnBy0lyrLml134asMMZaxbY7/KglrFyh2+wyn1J4HWB83GycVDUSMbiL7f/7t73dBD/avEqI4wXizgUAxv6NxMfi1gx8bTkdA',
+            'NnqIigILMooiLurMBAVFLFkybq0kcVnLExmzG3C0MiHfGElhH2wdXgXNB5xleJympVZ6iBzRVDWb742sbXY3m9kBxBFtXrx48fwTBR3pt3Kj',
+            'gPeOsyCSLsLhpDCnInbCpgEGyD1zkUZDVJfX8VihsioM9y6O79W9foHUK8YIszKj+gtB+FKhSPREDyJhcpMoYR1MZYjqrbZ1XMddnPDePDYa',
+            'ucyAo0GdxTNvMgsSJ697nkkCfSAjahQ9icKhBgXw4kOvtongiUMrAgONFX8zOEj83QqYX+CSFv10SoVJt+VUXzi7CQRzEjgsYN+Gg1vRn7zB',
+            'nJMgK+TMaWa+z54UE+jBjqfwo9RK5KbyawKYC3aNi768kmOKGTjB4rDNb2qQUMPe4mvt12iQXKRRngzUl/oOZSVkVlH1snRHs8SLIzhJo5Uo',
+            '6cPTZXodDkixv+lUjR/s0ikbPyxqU2xBByp7iYWAwsaWHIzVylYUZkkUEGaE0UqawbJdESf6vQRjtRSur2TCnRoi5aEgh1Pm2ThK9A+MhA3H',
+            'oiVCAYobJDibvAKZRtN74KAAcja8s9Xz0gnNhk7t4F6aySxPm4/aq0gWUFEhW1VUmqCgO1Yw8WPbWjKhJOCWSR5m+aRWq5j+WQP5Z8V70ZI6',
+            'TShdQXAYqDT1VPjeOz497G52j7cvTo92if/6b9/2TrYv5ic0xlkWp51WK/6QKn0NRNV58EGHA8TlsVcQ8gZRoyJPKf9rdX0X6e7+wf7F6+3v',
+            'v0y/mFV1BcyutwnwcfvhggBfE1KMcg4pEnYUZiYqpCqBwCq8SxUqjlJ+VBrnmNKjANdolNUxe+uscDGh3hls1oTuFiKg9h2Ij6mJEFPUTjMo',
+            'NoX52KTLpZ+jIzXEacYn0USFZTZmOSrIfuSug2vOh1+fCvinrtjxiA7Z6SnYb1pjMxuQ+Mwyaopww4TO+BeZYpr7QIM+gGUy1gDcY6SpZI5B',
+            'NEKYnpA5BroUo6FZUvJkHF8QtNHIhgfD9YELgwv4oTKlu/SBE43bOVrULbWP2e7FZJynyPR4ufibbm/f298+qbFR6rLiRfsmH7c9CZtG/xyT',
+            '+rbKLcyxYTsUnAzsLthSlUQP84AcsezqEaL0I/96w+P216bpoolquGg4IRluXzxuty9Qo9b8e5BEMSf5xXwOPFsYNVshC7+F1twk97b1eyXh',
+            'XxJNpis6ZX+MHZFPA0u6e2uOtMSkc7tG2wuifUEZl5Ej93tM2jFVgerrsRZ9PCIf2bGXAq8Od1qH+zut71T/cA76kM0tQs/O9l5vv3fRPezN',
+            'IoqZi6MUq8gU976/mJ3f+LmQsyuRq4A9W4QU5cWkhkTVdcYs2yiCwPNzoAnqi6tmXdfU/edAZK4IOBQZs+YIVN4PtN3a1QC2eyBWH4v74mtW',
+            'olveErTFTSEAmvWsIODZxU6xI4b4E5Tb6/OzuAqeo1E16GbXP3sq1rhVWwwbVnj8VvtY+9WCaDfJAOodOpUMkBJqT2xFfQlREzLFSIEl0sRA',
+            'jnRNvjVeHjyoDxk+zJgVbloK1y2m1XJJMwXJLcS2yq5Ra/ad5RqLuCw4p56fme7w0qKna2T3DcsOPmKGrTjI+NpOwYgP089UE3vWe3xJNI1J',
+            '9u+6lPUBTgOAMpdok0THyGXs/YpFRx5NtQtxIfSYegdZuZ6oQMCRCIQnFWqKTUr9IUhfpiiu+DqGkw2TjseUme909za7R8X1jb2lMak4zJxS',
+            'U29p6fCod3DUO+kei5Pe/s5Or7O0Ija3n3dfd/fFy9Oj0xfiDbNywKXLWGbmBghFRiuTVK1r8aZK6SEzLWOuypmFV6fPT3d5/X53r0tno3oA',
+            'bE6oK883SGMcQPTC0Qh5rFe0WopcmDuKOSaBiynVy/DJA8abOAdP5dgbKsCQX5t9uQphNBL5NJ96ONLJUXf/eBdJy1H3uCe6R91NKlu7OLNo',
+            'ftd91dt0qtKM2D3u7uInslIcg245UzXNpe19xlXdk9XLYbrySWVA0z//6IrPf3DF/+D///7xX/Dn3/+Jvv2Ovv0r/vzH7+nbP2DGf9KXf6Mf',
+            '/9aljAcHqOpe0fzTf7niT//tij//9u/oz987zJ9py0oKa2A7Q9oUrLzJE/z++ceQNvxHCbKf/2Bo//GfpY/vRI4WYysdTMWr3uuu2Nve6+7v',
+            'CAhma/uk+5p8NMyisb3bJflSeVkzsKLSdcXmKRkJS9wkuihmqMQb0+yJKlpfK7X+mekO1/rGNnRYJYPbUqVjlln5mLLgyseMhVk+wpk//1g+',
+            'SXPMy5LsAP5mb6gLwqhEc3EJYy4yAjmN8cGqLQrVl6ziPsm3uCTFg+lRmCI3JRIZDjvQqPCKe3C6KVVwy6L9R8W+HMFTGBO5yzUrFq7DJ6xW',
+            'CH3GpuhnsEGkshwb+HAMhlTKkvOO0JMc2s9yaoqEhn3qiNRc7T345cSaarMkGhZtFYSZoq/CF7pwPhIH0ynbGSlqzMRoqcycgCcZbH0gwcCU',
+            'zxsBsXSLLcG0aXBGJHFkQczRbS3G0mYKt4vptgESXK8UhwMYvDHXC0zYoiYJ8JA2haFO2A8G2BlIididzTYlmraQ74jyxmp5tvpfLjVEouYT',
+            'ZdFcAU/XeKjuRyvmQ3xcpi7tcmfZ87xld9nQWO5Q/d3iquAGBsROxFcOxtRQGGpgKPmSTFb4b8GlPYA9ndik1jJ40qURDWCheTndZ+ZGcoKC',
+            'GKofG4g3jReTgkFhMXUah5puY8QruDncdWq6ELrYx/i5RU+UPJqiFJ+QJExNpWUmvyxedo9Oj9kgiu5GCUKWMEUWGwGMcIiXuXZ3M41NQyis',
+            'XyTRro43o1CriYkppMhAqVJDwHFrlkwtEMHdRxdZdCCBSvUeobHu0unL8BJD0kN4F1JnSltp1xiTSzCyHbR6ePXzEfkIZEIXzYbwlIKXTq/A',
+            '0n5vjzoT3NkVaZb72K5oBLui1gcGgxGdaObNA4rR5YsHhum5LrHVE184FFZkHbb0S2NamgpAbmOCEhKzkScWGkV906g3lml2ZvvkU9Vts4Q7',
+            'XsegRfMQ312rvtoV4GworJTEYrVdL3KesUEV16AWIpck6Eq595/dDRhFIlODBeszMdwtJ+Z2zGtKE+UjVjf5SNjNKZKvGi5fQZDXGDKuZaAI',
+            'RVCargzGalCkUX7Z3oNtMsgZqlXj2RqPW2CWsWYLJla7yHE1LGfptSm8aYuX3f3vu3xv7hZXpzAzn19DsM6VFhfeH60DFkgzB12dszuQyIDQ',
+            'ubtMWi1/DfW0/M43FuVTYa7lQM1qyzEy3vJhxobL0Zop1ynVrbniZs4yLddEe9EAcNTzG+/dbX2egXnhy7wPVXthDFWJKRcR9LIsPoipG5hS',
+            'hydD8RzR6zqPn1A9tNDC4WY5d4PP6PL/jAppl66UmlzQb4gz+jS3cA61jsydnc36b87reyXFW25FH8iw603phYoURWJINzaKMi9qTn0U/EPH',
+            'vBFGtQ2PM9vmzYEbHkShSkPF7nvliy8NGccwAW59tqg4a1A6MI2JSp6YunKm+XOv2MNcht5aQq8t1Hnz74NU5s21han2qP0TRBO6iJiTsH2J',
+            'aeb9l1k+1u/o96zVmhJpPqDWQYexrHjbx6l3jZrKNvXrBjNNR6BtXzRQG94Ue8iRospXzXBpSNL7ayh1Px1tHx+cIlO+2P7rl93T45Pt58U7',
+            'StiQLlQxCSbRstb16XH7Ef4//HS63/2229vtbu5uzy3Ar1gA8VZEgc3ct282zrg0XIkGyXnRqDDCh0KxvvYKxJO2c6e4zMe8+oqDoZIlpjdE',
+            '43UO5zZo3bclfAKafMlhqRelfJXr1vULmzgsq/5ixWy/rZqPsQyJQl+ntVdIq36cQNoig6By85l2xFOxJ7OxN5Uf6PRzP66IVdvTo73+D1BL',
+            'AwQUAAAACACxIG5d5zXovDgCAADZAwAAGAAAAHRyYW5zbGl0ZXJhdGlvbi1jaGVjay5qc21T204bMRB9z1fM2yYo3U2gqtoiiiJoJEShCNIn',
+            'QGh2dzbreG2vfEkLFKn/0D/sl3ScDaFAX2zPeOb4zMxxtrUFJ6RRlyjAW9SuEZ4sOrbINqJGDx51i6BIz0OONdACUYMLKicLrkCdwlbWyzI4',
+            'FCit8EK+ALpFPYcG74QaRqwSoUZ1h3WGQg+hZLBvWhSmJCiMyoUWHK7QSpf26EdrrGe/dh5m55PTiy9Hs8/nk9nR19Obk8n58QXsQXZ5FUbj',
+            '0egNb9tvq6swppUxpqqKrjxf3eTR2OnCdt6xsT0av1+tH66zsNvrHgkdlTNr8oZURL8K0+n08CdnjbCMgY+sqqALL4wGDKXwB2ZJdvZUeLzp',
+            'C90GP4D7HqxrqAQ1pWPYy2QRytAkw0SjQt5aa0rBe4UyNB4dH5kLYzrRWdL4ddzcorpZkF5wY5Pr3Q34d7SxeSv4f9xLbAJFZ/d4qrDtS9j7',
+            'BBfecnhHcj+9lNewvw9JMhg85dboTuIoOLuDSZ1R1F/G9P/OI/XkfH/ZYYgK+o8Igw29tA2u7iezlRSeS2ViMf/z6/cX7p6OAizJk3QihQNT',
+            'GClZKl5gC3WwoQLWn49yy/gwRyvccC2sTlSsLihZtHysjDeA/Aw4yqkJCgryKNNkw/JVcc91sKnqVRUTrkGiRclsNzr2okQZ+edYIKDHAM5U',
+            '3M3btib+L8fGxrKYjQv871b0HpkpUnngX3d2OF3zs+SD1XAfh/FCYB83Axo+Tf9ht/fQ+wtQSwECFAMUAAAACACKIG5dClQKrgALAAB6JAAA',
+            'DgAAAAAAAAAAAAAApIEAAAAAYXBwbHlfcGF0Y2gucHlQSwECFAMUAAAACAB0IG5dP/n4vlwHAACuDwAAEwAAAAAAAAAAAAAApIEsCwAAZ2Vt',
+            'aW5pLWNvdmVyLW9jci5qc1BLAQIUAxQAAAAIALEgbl0RF7WSHBIAANMqAAAQAAAAAAAAAAAAAACkgbkSAABzZXJ2ZXIvcm91dGVyLnRzUEsB',
+            'AhQDFAAAAAgAsSBuXec16Lw4AgAA2QMAABgAAAAAAAAAAAAAAKSBAyUAAHRyYW5zbGl0ZXJhdGlvbi1jaGVjay5qc1BLBQYAAAAABAAEAAEB',
+            'AABxJwAAAAA=',
+          ])
+          dst=pathlib.Path('/tmp/zainnet-menu12-ocr-combined')
+          dst.mkdir(exist_ok=True)
+          allowed={'apply_patch.py','server/router.ts','gemini-cover-ocr.js','transliteration-check.js'}
+          with zipfile.ZipFile(io.BytesIO(base64.b64decode(b64)), 'r') as z:
+              assert set(z.namelist())==allowed, 'Isi patch tidak sesuai manifest.'
+              for name in sorted(allowed):
+                  target=dst/name
+                  target.parent.mkdir(parents=True,exist_ok=True)
+                  target.write_bytes(z.read(name))
+          print('Paket gabungan berhasil diverifikasi:', len(allowed), 'file patch')
+          PYCODE
+          python3 /tmp/zainnet-menu12-ocr-combined/apply_patch.py
+
+      - name: Audit sintaks dan pertahanan Q/O, italic, transliterasi
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check public/hardcover-link2/app.js
+          node --check public/hardcover-link2/document-reader.js
+          node --check public/hardcover-link2/gemini-cover-ocr.js
+          node --check public/hardcover-link2/title-format.js
+          node --check public/hardcover-link2/transliteration-check.js
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {validateGeminiResult} from './public/hardcover-link2/gemini-cover-ocr.js';
+          import {titleHasTransliteration} from './public/hardcover-link2/title-format.js';
+          const judul='KAJIAN AL-QUR’ĀN DAN ṢAḤĪḤ AL-BUKHĀRĪ DALAM QUALITY OF EDUCATION';
+          const out=validateGeminiResult({judul,title_segments:[
+            {text:'KAJIAN AL-QUR’ĀN DAN ṢAḤĪḤ AL-BUKHĀRĪ DALAM ',italic:false},
+            {text:'QUALITY OF EDUCATION',italic:true}
+          ],nama:'MUḤAMMAD',warnings:[]});
+          assert.equal(out.judul,judul);
+          assert.equal(out.title_segments.map(x=>x.text).join(''),judul);
+          assert.equal(out.title_segments[1].italic,true);
+          assert.equal(out.transliteration_detected,true);
+          assert.ok(out.warnings.some(w=>/transliterasi arab/i.test(w)));
+          assert.ok(titleHasTransliteration('maʿrifah'));
+          assert.ok(titleHasTransliteration('a\u0304'));
+          assert.ok(out.judul.includes('QUR') && out.judul.includes('QUALITY'));
+          const decomposed='KAJIAN a\u0304 DAN ḥ';
+          const normalized=validateGeminiResult({judul:decomposed,title_segments:[{text:decomposed,italic:true}]});
+          assert.equal(normalized.judul,decomposed.normalize('NFC'));
+          assert.equal(normalized.title_segments.map(x=>x.text).join(''),normalized.judul);
+          console.log('LULUS: Q/O, italic, tanda transliterasi Arab-Latin, hamzah/ain, Unicode NFC');
+          JS
+          git diff --check
+
+      - name: Pasang dependensi ZAIN.NET
+        run: npm install --no-audit --no-fund
+
+      - name: Periksa endpoint Gemini TypeScript
+        run: npx --no-install esbuild server/hardcoverCoverOcr/router.ts --bundle --platform=node --packages=external --outfile=/tmp/zainnet-cover-transliteration-router.js
+
+      - name: Build website (tanpa mengubah Menu 12 Link 1)
+        env:
+          VITE_BASE_PATH: /
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: |
+          npm run build
+          test -s dist/hardcover-link2/gemini-cover-ocr.js
+          test -s dist/hardcover-link2/transliteration-check.js
+          test -s dist/hardcover-link2/title-format.js
+          cp dist/index.html dist/404.html
+
+      - name: Commit hasil hanya jika seluruh pengujian lulus
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            server.ts \
+            server/hardcoverCoverOcr/router.ts \
+            public/hardcover-link2/gemini-cover-ocr.js \
+            public/hardcover-link2/transliteration-check.js \
+            public/hardcover-link2/document-reader.js \
+            public/hardcover-link2/title-format.js \
+            public/hardcover-link2/app.js \
+            public/hardcover-link2/index.html
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'Semua pembaruan sudah ada di main. Tidak membuat commit ganda.'
+            exit 0
+          fi
+          git commit -m 'feat(menu12-link2): Gemini OCR Q/O, italic and Arabic Latin transliteration'
+          git push origin HEAD:main
+          echo 'Source sudah diperbarui. Periksa deploy GitHub Pages dan Render pada commit terbaru.'

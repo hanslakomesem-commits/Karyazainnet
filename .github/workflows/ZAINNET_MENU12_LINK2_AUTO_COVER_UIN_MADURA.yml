@@ -1,0 +1,242 @@
+name: ZAIN.NET - Otomatis Jenis Cover UIN Madura Menu 12 Link 2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: zainnet-menu12-cover-uin-auto
+  cancel-in-progress: false
+
+jobs:
+  install:
+    name: Aturan Fakultas dan Prodi UIN Madura
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout source main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Terapkan pembaruan tanpa mengubah template lama
+        shell: bash
+        run: |
+          python3 - <<'PATCHPY'
+          #!/usr/bin/env python3
+          """Idempotent, scoped Menu 12 Link 2 auto-cover selection patch."""
+          from pathlib import Path
+          import sys
+
+          root=Path(sys.argv[1]) if len(sys.argv)>1 else Path('.')
+          app=root/'public/hardcover-link2/app.js'
+          helper=root/'public/hardcover-link2/cover-auto-style.js'
+          if not app.is_file():
+              raise SystemExit(f'FAIL: {app} tidak ditemukan. Pastikan ini repository Karyazainnet.')
+          s=app.read_text(encoding='utf-8')
+
+          helper_content=r'''/**
+           * ZAIN.NET — aturan otomatis memilih jenis cover khusus UIN Madura.
+           * Return null untuk kampus lain. Jangan pernah mengubah template kampus lain.
+           * 'polos' = Polos V1 (217 mm/sisi); 'merah'/'maroon' = warna lama.
+           */
+          function normalise(value) {
+            return String(value ?? '')
+              .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+              .toUpperCase()
+              .replace(/SYARI\s*['‘’ʼ`]?\s*AH\b/g, 'SYARIAH')
+              .replace(/[^A-Z0-9]+/g, ' ')
+              .replace(/\s+/g, ' ').trim();
+          }
+
+          export function recommendUinMaduraCoverStyle(data = {}) {
+            const uni = normalise(data.universitas);
+            const belongsToUin = uni === 'UNIVERSITAS ISLAM NEGERI MADURA'
+              || uni.startsWith('UNIVERSITAS ISLAM NEGERI MADURA ')
+              || /^(?:UIN|U I N) MADURA(?: PAMEKASAN)?$/.test(uni);
+            if (!belongsToUin) return null;
+
+            const faculty = normalise(data.fakultas);
+            const program = normalise(data.prodi);
+            if (!faculty) return {style:null, reason:'Fakultas belum terbaca. Pilih atau perbaiki fakultas sebelum jenis cover otomatis ditentukan.'};
+
+            // Jangan keliru memilih polos jika hasil OCR fakultas mirip "Syariah" tetapi belum pasti.
+            const isSyariah = /(?:^| )SYARIAH(?: |$)/.test(faculty);
+            if (!isSyariah && /(?:^| )SYAR[A-Z]*(?: |$)/.test(faculty)) {
+              return {style:null, reason:'Nama fakultas mirip Syariah tetapi belum jelas. Koreksi tulisan fakultas sebelum melanjutkan.'};
+            }
+            if (!isSyariah) return {style:'polos',reason:'UIN Madura: fakultas selain Syariah → Polos V1 217 mm.'};
+
+            if (!program) return {style:null, reason:'Fakultas Syariah terdeteksi, tetapi prodi belum terbaca. Isi prodi agar HKI tidak salah dipilih.'};
+            const hki = /(?:^| )HKI(?: |$)/.test(program) || /(?:^| )HUKUM KELUARGA ISLAM(?: |$)/.test(program);
+            return hki
+              ? {style:'merah',reason:'UIN Madura: Fakultas Syariah, HKI / Hukum Keluarga Islam → Merah.'}
+              : {style:'maroon',reason:'UIN Madura: Fakultas Syariah, prodi selain HKI → Maroon #8B0000.'};
+          }
+          '''
+          if helper.exists() and helper.read_text(encoding='utf-8')!=helper_content:
+              raise SystemExit('FAIL: cover-auto-style.js ada dengan isi berbeda. Tidak menimpa file baru tanpa audit.')
+          helper.write_text(helper_content,encoding='utf-8')
+
+
+          def change_once(anchor,replacement,label):
+              global s
+              if replacement in s:
+                  print('SKIP (sudah terpasang):',label)
+                  return
+              count=s.count(anchor)
+              if count!=1:
+                  raise SystemExit(f'FAIL: {label} cocok {count} kali, seharusnya 1. Repository berubah; perlu audit sebelum menerapkan patch.')
+              s=s.replace(anchor,replacement,1)
+              print('PATCH:',label)
+
+          change_once(
+              "import {canonicalUniversity} from './classifier.js';",
+              "import {canonicalUniversity} from './classifier.js';\nimport {recommendUinMaduraCoverStyle} from './cover-auto-style.js';",
+              'import aturan pemilihan cover')
+
+          anchor='function renderCoverStyle(){'
+          new=r'''/** Pilihan otomatis hanya berlaku UIN Madura, per pesanan, jika belum diubah manual. */
+          function applyUinCoverRecommendation(order){
+            if(!order || order.manualCoverStyle===true)return false;
+            const recommendation=recommendUinMaduraCoverStyle(order.data);
+            if(!recommendation?.style || order.style===recommendation.style)return false;
+            order.style=recommendation.style;
+            if(order.thickness!==null&&!validThickness(order))order.thickness=null;
+            order.verified=false;
+            order.pdfBlob=null;
+            return true;
+          }
+
+          /** Status kecil di bawah pilihan cover, dengan tombol kembali ke otomatis. */
+          function renderUinCoverAutoHint(order){
+            const list=$('coverStyleOptions');if(!list)return;
+            let area=$('autoUinCoverArea');
+            if(!area){
+              area=document.createElement('div');area.id='autoUinCoverArea';
+              area.className='template-msg';area.style.marginTop='12px';
+              area.style.display='flex';area.style.alignItems='center';area.style.gap='12px';area.style.flexWrap='wrap';
+              const message=document.createElement('span');message.id='autoUinCoverMessage';message.style.flex='1';
+              const reset=document.createElement('button');reset.id='autoUinCoverReset';reset.type='button';reset.className='btn btn-outline';
+              reset.textContent='Aktifkan otomatis';
+              reset.addEventListener('click',()=>{
+                const current=active();if(!current)return;
+                current.manualCoverStyle=false;
+                if(applyUinCoverRecommendation(current)){
+                  invalidateOrder(current);clearPDFPreview();
+                }
+                renderCoverStyle();renderThickness();renderOrders();
+                const selected=recommendUinMaduraCoverStyle(current.data);
+                notice(selected?.style?selected.reason:(selected?.reason||'Kampus ini tidak memiliki aturan otomatis khusus. Pilih jenis cover secara manual.'),'info');
+              });
+              area.append(message,reset);list.insertAdjacentElement('afterend',area);
+            }
+            const message=$('autoUinCoverMessage'),reset=$('autoUinCoverReset');
+            if(!order){area.classList.add('hidden');return;}
+            area.classList.remove('hidden');
+            const selected=recommendUinMaduraCoverStyle(order.data);
+            const manual=order.manualCoverStyle===true;
+            reset.classList.toggle('hidden',!manual);
+            message.textContent=manual
+              ? 'Pilihan manual aktif. Deteksi otomatis tidak akan mengganti jenis cover pesanan ini.'
+              : selected?.reason||'Aturan otomatis ini hanya berlaku untuk Universitas Islam Negeri Madura. Kampus lain mengikuti pilihan cover biasa.';
+          }
+
+          function renderCoverStyle(){'''
+          change_once(anchor,new,'aturan otomatis dan status pilihan di panel')
+
+          change_once(
+              "function renderCoverStyle(){\n const o=active();",
+              "function renderCoverStyle(){\n const o=active();\n renderUinCoverAutoHint(o);",
+              'tampilkan status otomatis di panel cover')
+
+          change_once(
+              " if(o.id===activeId)o.data=currentData();\n const previous=o.style;o.style=style;",
+              " if(o.id===activeId)o.data=currentData();\n o.manualCoverStyle=true; // Pilihan operator lebih tinggi prioritasnya daripada hasil OCR.\n  const previous=o.style;o.style=style;",
+              'pilihan manual tetap dihormati')
+
+          change_once(
+              "  o.data=currentData();o.revision++;invalidateOrder(o);clearPDFPreview();\n  $('approveOrder').textContent='✓ Tandai data sudah diperiksa';renderOrders();updateDummyParagraphPreview();refreshProgramJenjang();",
+              "  o.data=currentData();const coverChanged=applyUinCoverRecommendation(o);o.revision++;invalidateOrder(o);clearPDFPreview();\n  if(coverChanged){renderCoverStyle();renderThickness();}\n  else renderUinCoverAutoHint(o);\n  $('approveOrder').textContent='✓ Tandai data sudah diperiksa';renderOrders();updateDummyParagraphPreview();refreshProgramJenjang();",
+              'pilih otomatis saat kolom fakultas/prodi/universitas diedit')
+
+          change_once(
+              "else {order.data={...newData(),...ocr,universitas:canonicalUniversity(ocr.universitas),abstract_text:order.data.abstract_text||ocr.abstract_text||''};order.warnings=Array.isArray(ocr.warnings)?ocr.warnings:[];order.status='periksa';order.verified=false;order.pdfBlob=null;}",
+              "else {order.data={...newData(),...ocr,universitas:canonicalUniversity(ocr.universitas),abstract_text:order.data.abstract_text||ocr.abstract_text||''};applyUinCoverRecommendation(order);order.warnings=Array.isArray(ocr.warnings)?ocr.warnings:[];order.status='periksa';order.verified=false;order.pdfBlob=null;}",
+              'pilih jenis cover setelah OCR selesai')
+
+          change_once(
+              "if(activeId===order.id){paintData(order.data);showWarnings(order);clearPDFPreview();}",
+              "if(activeId===order.id){paintData(order.data);renderCoverStyle();renderThickness();showWarnings(order);clearPDFPreview();}",
+              'perbarui pilihan pada tampilan seusai OCR')
+
+          app.write_text(s,encoding='utf-8')
+          print('OK:',app,'and',helper)
+
+          PATCHPY
+      - name: Uji aturan cover dan validasi JavaScript
+        shell: bash
+        run: |
+          node --check public/hardcover-link2/app.js
+          node --check public/hardcover-link2/cover-auto-style.js
+          node --input-type=module <<'TESTJS'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const path = 'public/hardcover-link2/cover-auto-style.js';
+          const contents = readFileSync(path, 'utf8');
+          const {recommendUinMaduraCoverStyle: pick} = await import('data:text/javascript;charset=utf-8,'+encodeURIComponent(contents));
+          const tests = [
+            ['non-syariah tarbiyah', {universitas:'UNIVERSITAS ISLAM NEGERI MADURA',fakultas:'FAKULTAS TARBIYAH',prodi:'PENDIDIKAN AGAMA ISLAM'},'polos'],
+            ['non-syariah ekonomi prodi syariah', {universitas:'UIN MADURA',fakultas:'FAKULTAS EKONOMI DAN BISNIS ISLAM',prodi:'EKONOMI SYARIAH'},'polos'],
+            ['non-syariah ushuluddin', {universitas:'UIN Madura',fakultas:'FAKULTAS USHULUDDIN',prodi:'ILMU AL QURAN'},'polos'],
+            ['Syariah HKI', {universitas:'UNIVERSITAS ISLAM NEGERI MADURA',fakultas:'FAKULTAS SYARIAH',prodi:'HKI'},'merah'],
+            ['Syariah full name HKI', {universitas:'UIN MADURA',fakultas:'FAKULTAS SYARIAH',prodi:'HUKUM KELUARGA ISLAM'},'merah'],
+            ['Syariah curly apostrophe and HKI', {universitas:'UIN MADURA',fakultas:'Fakultas Syari’ah',prodi:'Program Studi Hukum Keluarga Islam (HKI)'},'merah'],
+            ['Syariah HTN', {universitas:'UIN MADURA',fakultas:'FAKULTAS SYARIAH',prodi:'HUKUM TATA NEGARA (HTN)'},'maroon'],
+            ['Syariah Syariah', {universitas:'UIN MADURA',fakultas:'FAKULTAS SYARIAH',prodi:'SYARIAH'},'maroon'],
+            ['Syariah Hukum Ekonomi', {universitas:'UIN MADURA',fakultas:'FAKULTAS SYARIAH',prodi:'HUKUM EKONOMI SYARIAH'},'maroon'],
+            ['UIM tidak berubah', {universitas:'UNIVERSITAS ISLAM MADURA',fakultas:'FAKULTAS SYARIAH',prodi:'HKI'},null],
+            ['UNIRA tidak berubah', {universitas:'UNIVERSITAS MADURA',fakultas:'FAKULTAS SYARIAH',prodi:'HKI'},null],
+            ['fakultas tidak terbaca', {universitas:'UIN MADURA',fakultas:'',prodi:'HKI'},null],
+            ['Syariah prodi kosong', {universitas:'UIN MADURA',fakultas:'FAKULTAS SYARIAH',prodi:''},null],
+            ['fakultas samar', {universitas:'UIN MADURA',fakultas:'FAKULTAS SYARLAH',prodi:'HKI'},null],
+          ];
+          for(const [label,input,expected] of tests) {
+            const result=pick(input)?.style??null;
+            assert.equal(result,expected,`${label}: expected ${expected}, got ${result}`);
+          }
+          console.log(`PASS: ${tests.length} kasus pemilihan cover, termasuk alias universitas, HKI, HTN, apostrof, kampus lain, dan data ambigu.`);
+
+          TESTJS
+      - name: Install dependensi dan build website
+        shell: bash
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Periksa perubahan dan commit ke main
+        shell: bash
+        run: |
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/hardcover-link2/app.js public/hardcover-link2/cover-auto-style.js
+          if git diff --cached --quiet; then
+            echo "Sudah terpasang; tidak ada commit baru."
+          else
+            git commit -m "feat(menu12): auto-select UIN Madura cover from faculty and study program"
+            git push origin HEAD:main
+          fi
+      - name: Minta deploy GitHub Pages
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run pages.yml --ref main || echo "Jika tidak terpicu, jalankan Deploy ZAIN.NET to GitHub Pages secara manual."

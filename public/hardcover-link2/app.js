@@ -351,7 +351,7 @@ async function ocrOne(order){
   if(!order.file){order.status='periksa';order.warnings=['Pesanan manual. Isi data pada editor.'];renderOrders();return false;}
   const revision=order.revision;order.status='membaca';order.warnings=[];renderOrders();
   try{
-    // Dokumen lokal, tidak ada request backend atau token; batas waktu membebaskan UI.
+     // Foto/PDF scan: Gemini melalui backend autentikasi dengan fallback OCR lokal; DOCX/PDF teks tetap lokal.
     const kind=isPdf(order.file)?'PDF':isWord(order.file)?'Word':isPhoto(order.file)?'Foto':null;
     if(!kind)throw Error('Format berkas tidak didukung.');
     const method=kind==='PDF'?readPDF:kind==='Word'?readWord:readPhoto;
@@ -362,7 +362,7 @@ async function ocrOne(order){
       progress(label);
     };
     setOCRProgress(setStage);
-    const options={ detail:$('ocrAccuracy')?.value==='detail', onProgress:setStage };
+    const options={ detail:$('ocrAccuracy')?.value==='detail', preferGemini:$('ocrEngine')?.value!=='local', onProgress:setStage };
     const ocr=await withTimeout(method(order.file,options),timeout,`Pembacaan ${kind}`);
     if(revision!==order.revision){order.warnings=['Data berubah saat proses berlangsung; koreksi Anda dipertahankan.'];order.status='periksa';}
     else {order.data={...newData(),...ocr,universitas:canonicalUniversity(ocr.universitas),abstract_text:order.data.abstract_text||ocr.abstract_text||''};order.warnings=Array.isArray(ocr.warnings)?ocr.warnings:[];order.status='periksa';order.verified=false;order.pdfBlob=null;}
@@ -391,7 +391,7 @@ async function readAll({automatic=false}={}){
   // Otomatis tidak mengulang file gagal tanpa henti. Tombol manual mengulang file gagal.
   const queue=orders.filter(o=>o.file && (automatic?o.status==='baru':['baru','gagal'].includes(o.status)));
   if(!queue.length){if(!automatic)notice('Tidak ada berkas baru atau gagal yang perlu dibaca.','info');return;}
-  notice(`${queue.length} berkas sedang dibaca ${automatic?'otomatis':''}. PDF/Word diproses lokal, foto memakai OCR lokal.`, 'info');
+  notice(`${queue.length} berkas sedang dibaca ${automatic?'otomatis':''}. Foto/PDF scan menggunakan Gemini atau OCR lokal cadangan; PDF teks dan Word tetap dibaca lokal.`, 'info');
   
   ocrBatchRunning=true;btnBusy($('ocrAllButton'),true,'Sedang baca...');
   let completed=0,success=0;
@@ -601,7 +601,7 @@ $('downloadButton').addEventListener('click',()=>{
 async function loadStatus(){
  $('connection').textContent='GitHub Pages V4.40 • Dummybook spread A3 5–10 mm • Tanpa token';
  $('serverDot').classList.add('online');
- notice('Mode lokal: Word dan PDF teks dibaca di browser tanpa OCR lokal. Foto dan PDF scan memakai OCR Tesseract lokal (model bahasa mungkin perlu diunduh).','info');
+  notice('Word dan PDF teks dibaca lokal. Foto dan PDF scan dapat memakai Gemini 3.1 Flash-Lite melalui backend Render, dengan OCR Tesseract sebagai cadangan.','info');
  // JANGAN menunggu template saat memuat UI; tidak membuat tombol membaca macet.
  renderThickness();renderOrders();
  checkAssets().catch(error=>notice('Master PDF belum termuat: '+error.message+'. Upload seluruh folder assets saat deploy.','error'));

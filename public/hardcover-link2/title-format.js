@@ -3,7 +3,7 @@
  */
 const clean=s=>String(s??'').replace(/[\u00a0\u2000-\u200b]/gu,' ').replace(/\s+/gu,' ').trim();
 const normalized=s=>clean(s).normalize('NFC').toLocaleUpperCase('id-ID');
-export const TRANSLITERATION_CHARS=/[\u0100-\u024f\u1e00-\u1eff\u02bb\u02bc\u2018\u2019\u201c\u201d]/u;
+export const TRANSLITERATION_CHARS=/[\u0100-\u024f\u1e00-\u1eff\u02bb-\u02bf\u0300-\u036f\u2018\u2019\u201c\u201d]/u;
 export function titleHasTransliteration(title){return TRANSLITERATION_CHARS.test(String(title??''));}
 export function pdfFontLooksItalic(fontName='',style={}){
   // PDF.js fontName can be an opaque identifier; only mark if the name

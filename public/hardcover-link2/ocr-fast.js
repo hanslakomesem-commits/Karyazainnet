@@ -3,7 +3,7 @@
  * Teliti: satu pembacaan + tiga zona yang diproses di resolusi lebih tinggi.
  * Worker bilingual Indonesia + Inggris dipakai ulang sepanjang sesi, juga untuk PDF scan.
  */
-import {COVER_ZONES,zoneBounds} from './ocr-zones.js';
+import {COVER_ZONES,zoneBounds} from './ocr-zones.js?v=4.47';
 let worker=null,workerLanguage=null,loadingPromise=null;
 let onProgress=()=>{};
 export function setOCRProgress(cb){onProgress=typeof cb==='function'?cb:()=>{};}

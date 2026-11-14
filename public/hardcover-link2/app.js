@@ -1,4 +1,4 @@
-import {readPDF,readWord,readPhoto,withTimeout,setOCRProgress} from './document-reader.js';
+import {readPDF,readWord,readPhoto,withTimeout,setOCRProgress} from './document-reader.js?v=4.47';
 import {resetOCR} from './ocr-fast.js';
 import {generatePDF,checkAssets,setUserFonts} from './pdf-engine.js?v=4.46';
 import {canonicalUniversity} from './classifier.js';
@@ -650,9 +650,9 @@ $('downloadButton').addEventListener('click',()=>{
   notice('PDF telah disiapkan. Jika browser tidak langsung mengunduh, gunakan tombol hijau "Download" di bawah pratinjau.','success');
 });
 async function loadStatus(){
- $('connection').textContent='GitHub Pages V4.40 • Dummybook spread A3 5–10 mm • Tanpa token';
+ $('connection').textContent='GitHub Pages V4.47 • Gemini utama lintas perangkat • Tanpa token di browser';
  $('serverDot').classList.add('online');
-  notice('Word dan PDF teks dibaca lokal. Foto dan PDF scan dapat memakai Gemini 3.1 Flash-Lite melalui backend Render, dengan OCR Tesseract sebagai cadangan.','info');
+  notice('Word dan PDF teks dibaca lokal. Foto dan PDF scan memakai Gemini 3.1 Flash-Lite saat mode Gemini dipilih. OCR lokal hanya dijalankan jika dipilih manual; kegagalan Gemini akan ditampilkan.','info');
  // JANGAN menunggu template saat memuat UI; tidak membuat tombol membaca macet.
  renderThickness();renderOrders();
  checkAssets().catch(error=>notice('Master PDF belum termuat: '+error.message+'. Upload seluruh folder assets saat deploy.','error'));

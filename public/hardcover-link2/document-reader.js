@@ -1,10 +1,10 @@
 /* ZAIN.NET • pembaca PDF & DOCX di perangkat pengguna. Tidak ada layanan OCR berbayar. */
 import {categorize,institutionLooksIncomplete} from './classifier.js';
-import {recognizeLocalResult, prepareOCRZones, setOCRProgress} from './ocr-fast.js';
-import {normalizedLines, mergeZones} from './ocr-zones.js';
-import {scanNameUnderline,underlineScore,pdfNameBox} from './name-underline.js';
-import {alignTitleFormatting,pdfFontLooksItalic,titleHasTransliteration} from './title-format.js';
-import {readCoverWithGemini} from './gemini-cover-ocr.js';
+import {recognizeLocalResult, prepareOCRZones, setOCRProgress} from './ocr-fast.js?v=4.47';
+import {normalizedLines, mergeZones} from './ocr-zones.js?v=4.47';
+import {scanNameUnderline,underlineScore,pdfNameBox} from './name-underline.js?v=4.47';
+import {alignTitleFormatting,pdfFontLooksItalic,titleHasTransliteration} from './title-format.js?v=4.47';
+import {readCoverWithGemini} from './gemini-cover-ocr.js?v=4.47';
 export {setOCRProgress} from './ocr-fast.js';
 
 export function withTimeout(promise,ms,label){
@@ -60,21 +60,14 @@ function pdfLines(items,styles={}){
 async function localOCR(blob, tag='Foto', options={}) {
  const stage=message=>{try{options.onProgress?.(message);}catch{}};
  const detail=!!options.detail;
-  let geminiIssue='';
   if(options.preferGemini!==false){
-   try{
-    const online=await readCoverWithGemini(blob,{onProgress:stage});
-    return online;
-   }catch(error){
-    geminiIssue=String(error?.message||error).slice(0,220);
-    stage('Gemini belum tersedia, beralih ke pembaca lokal...');
-   }
+   stage('Mengirim foto ke Gemini 3.1 Flash-Lite...');
+   return await readCoverWithGemini(blob,{onProgress:stage});
   }
   stage('OCR penuh: menyiapkan teks seluruh halaman');
  const full=await recognizeLocalResult(blob,{lang:'ind+eng',psm:'3',maxSide:detail?2400:2100});
  const lines=normalizedLines(full.text);
  const base=normalizedResult(lines,[`OCR ${tag} diproses lokal tanpa token. Selalu cocokkan setiap karakter dengan sumber.`, 'Foto/scan: OCR tidak membuktikan kata yang dicetak miring. Periksa Italic pada judul di editor sebelum ekspor.']);
-  if(geminiIssue)base.warnings.unshift(`Pembacaan Gemini gagal (${geminiIssue}). Hasil berikut berasal dari OCR lokal; verifikasi Q/O, italic, dan tanda transliterasi secara manual.`);
  const mark=await scanNameUnderline(full.data,full.preparedImage,base.nama);
  if(mark.detected===true){base.nama_garis_bawah=true;base.warnings.push('Garis bawah nama terdeteksi dari garis visual foto; pastikan sesuai sumber.');}
  else base.warnings.push('Garis bawah nama dari foto belum dipastikan. Jika nama pada foto bergaris bawah, aktifkan kotak Garis bawah nama.');

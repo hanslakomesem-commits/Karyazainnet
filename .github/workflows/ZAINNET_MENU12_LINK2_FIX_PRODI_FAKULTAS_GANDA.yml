@@ -1,0 +1,90 @@
+name: ZAIN.NET - Fix Duplikasi Prodi dan Fakultas Menu 12 Link 2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zainnet-menu12-identity-duplicate
+  cancel-in-progress: false
+
+jobs:
+  fix-identity:
+    name: Cegah duplikasi awalan prodi dan fakultas pada PDF
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Patch normalisasi PDF
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import base64
+          exec(compile(base64.b64decode('ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCnJvb3Q9UGF0aCgncHVibGljL2hhcmRjb3Zlci1saW5rMicpCmNsYXNzaWZpZXI9cm9vdC8nY2xhc3NpZmllci5qcycKZW5naW5lPXJvb3QvJ3BkZi1lbmdpbmUuanMnCmZvciBwYXRoIGluIChjbGFzc2lmaWVyLCBlbmdpbmUpOgogICAgaWYgbm90IHBhdGguaXNfZmlsZSgpOgogICAgICAgIHJhaXNlIFN5c3RlbUV4aXQoZidCZXJrYXMgdGlkYWsgZGl0ZW11a2FuOiB7cGF0aH0nKQoKZGVmIHJlcGxhY2Vfb25jZShvcmlnaW5hbDogc3RyLCBvbGQ6IHN0ciwgbmV3OiBzdHIsIGRlc2NyaXB0aW9uOiBzdHIpOgogICAgaWYgbmV3IGluIG9yaWdpbmFsOgogICAgICAgIHByaW50KGYnU3VkYWggdGVycGFzYW5nOiB7ZGVzY3JpcHRpb259JykKICAgICAgICByZXR1cm4gb3JpZ2luYWwKICAgIGNvdW50ID0gb3JpZ2luYWwuY291bnQob2xkKQogICAgaWYgY291bnQgIT0gMToKICAgICAgICByYWlzZSBSdW50aW1lRXJyb3IoZidBbmNob3Ige2Rlc2NyaXB0aW9ufSBzZWhhcnVzbnlhIHNhdHU7IGRpdGVtdWthbiB7Y291bnR9LiBUaWRhayBtZW5ndWJhaCBzb3VyY2UuJykKICAgIHJldHVybiBvcmlnaW5hbC5yZXBsYWNlKG9sZCwgbmV3LCAxKQoKc291cmNlPWNsYXNzaWZpZXIucmVhZF90ZXh0KGVuY29kaW5nPSd1dGYtOCcpCmFuY2hvcj0nZXhwb3J0IGZ1bmN0aW9uIHBsYWluQ292ZXJJZGVudGl0eShkYXRhKXsnCmhlbHBlcj1yJycnLyoqCiAqIEtvbG9tIHByb2RpL2Zha3VsdGFzIGJvbGVoIGJlcmlzaSBsYWJlbCBsZW5na2FwIGhhc2lsIHNjYW4uCiAqIEhpbGFuZ2thbiBsYWJlbCBkaSBhd2FsIGFnYXIgcmVuZGVyZXIgaGFueWEgbWVuYW1iYWhrYW5ueWEgc2VrYWxpLgogKi8KZXhwb3J0IGZ1bmN0aW9uIG5vcm1hbGl6ZUNvdmVyQWNhZGVtaWNJZGVudGl0eShkYXRhID0ge30pIHsKIGNvbnN0IHN0cmlwID0gKHZhbHVlLCBwYXR0ZXJuKSA9PiBTdHJpbmcodmFsdWUgPz8gJycpLnJlcGxhY2UoL1xzKy9ndSwgJyAnKS50cmltKCkucmVwbGFjZShwYXR0ZXJuLCAnJykudHJpbSgpOwogcmV0dXJuIHsKICAuLi5kYXRhLAogIHByb2RpOiBzdHJpcChkYXRhLnByb2RpLCAvXig/Oig/OlBST0dSQU1ccytTVFVESXxQUk9ESSlccypbOi5cLeKAk10/XHMqKSsvaXUpLAogIGZha3VsdGFzOiBzdHJpcChkYXRhLmZha3VsdGFzLCAvXig/OkZBS1VMVEFTXHMqWzouXC3igJNdP1xzKikrL2l1KSwKIH07Cn0KCicnJwpzb3VyY2U9cmVwbGFjZV9vbmNlKHNvdXJjZSxhbmNob3IsaGVscGVyK2FuY2hvciwnZnVuZ3NpIG5vcm1hbGlzYXNpIHByb2RpL2Zha3VsdGFzJykKc291cmNlPXJlcGxhY2Vfb25jZShzb3VyY2UsCiAnZXhwb3J0IGZ1bmN0aW9uIHBsYWluQ292ZXJJZGVudGl0eShkYXRhKXtcbiBjb25zdCBsYW5ndWFnZT1jb3Zlckxhbmd1YWdlKGRhdGEpLGVuZ2xpc2g9bGFuZ3VhZ2U9PT1cJ2VuXCc7JywKICdleHBvcnQgZnVuY3Rpb24gcGxhaW5Db3ZlcklkZW50aXR5KGRhdGEpe1xuIGRhdGE9bm9ybWFsaXplQ292ZXJBY2FkZW1pY0lkZW50aXR5KGRhdGEpO1xuIGNvbnN0IGxhbmd1YWdlPWNvdmVyTGFuZ3VhZ2UoZGF0YSksZW5nbGlzaD1sYW5ndWFnZT09PVwnZW5cJzsnLAogJ25vcm1hbGlzYXNpIHJlbmRlcmVyIGNvdmVyIFBvbG9zJykKY2xhc3NpZmllci53cml0ZV90ZXh0KHNvdXJjZSxlbmNvZGluZz0ndXRmLTgnKQoKc291cmNlPWVuZ2luZS5yZWFkX3RleHQoZW5jb2Rpbmc9J3V0Zi04JykKc291cmNlPXJlcGxhY2Vfb25jZShzb3VyY2UsCiAiaW1wb3J0IHtjYW5vbmljYWxVbml2ZXJzaXR5LHBsYWluQ292ZXJJZGVudGl0eX0gZnJvbSAnLi9jbGFzc2lmaWVyLmpzJzsiLAogImltcG9ydCB7Y2Fub25pY2FsVW5pdmVyc2l0eSxwbGFpbkNvdmVySWRlbnRpdHksbm9ybWFsaXplQ292ZXJBY2FkZW1pY0lkZW50aXR5fSBmcm9tICcuL2NsYXNzaWZpZXIuanMnOyIsCiAnaW1wb3J0IG5vcm1hbGlzYXNpIGtlIHBkZi1lbmdpbmUnKQpzb3VyY2U9cmVwbGFjZV9vbmNlKHNvdXJjZSwKICJleHBvcnQgYXN5bmMgZnVuY3Rpb24gZ2VuZXJhdGVQREYoZGF0YSxtbSxtb2RlPSdwb2xvcycsY3VzdG9tQ29sb3I9bnVsbCxjdXN0b21Mb2dvPW51bGwpe1xuIGF3YWl0IGVuc3VyZUFzc2V0cygpOyIsCiAiZXhwb3J0IGFzeW5jIGZ1bmN0aW9uIGdlbmVyYXRlUERGKGRhdGEsbW0sbW9kZT0ncG9sb3MnLGN1c3RvbUNvbG9yPW51bGwsY3VzdG9tTG9nbz1udWxsKXtcbiAvLyBOb3JtYWxpc2FzaSBzYXR1IGthbGkgc2ViZWx1bSBzZW11YSBqZW5pcyB0ZW1wbGF0ZSBtZW5hbWJhaGthbiBsYWJlbC5cbiBkYXRhPW5vcm1hbGl6ZUNvdmVyQWNhZGVtaWNJZGVudGl0eShkYXRhKTtcbiBhd2FpdCBlbnN1cmVBc3NldHMoKTsiLAogJ25vcm1hbGlzYXNpIHVudHVrIHNlbHVydWgga2VsdWFyYW4gUERGJykKZW5naW5lLndyaXRlX3RleHQoc291cmNlLGVuY29kaW5nPSd1dGYtOCcpCnByaW50KCdQYXRjaCBzZWxlc2FpOyB0YXRhIGxldGFrLCBsb2dvLCB3YXJuYSwgZ2FyaXMsIGRhbiBwdW5nZ3VuZyB0aWRhayBkaXViYWguJykK'), 'menu12_fix.py', 'exec'))
+          PYTHON
+
+      - name: Uji prodi dan fakultas (duplikasi, input bersih, dan bahasa Inggris)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { normalizeCoverAcademicIdentity, plainCoverIdentity } from './public/hardcover-link2/classifier.js';
+          const examples = [
+            ['PROGRAM STUDI PROGRAM STUDI PENDIDIKAN AGAMA ISLAM','FAKULTAS FAKULTAS TARBIYAH','PENDIDIKAN AGAMA ISLAM','TARBIYAH'],
+            ['Program Studi: Hukum Keluarga Islam','Fakultas: Syariah','Hukum Keluarga Islam','Syariah'],
+            ['PRODI HTN','FAKULTAS SYARIAH','HTN','SYARIAH'],
+            ['PENDIDIKAN AGAMA ISLAM','TARBIYAH','PENDIDIKAN AGAMA ISLAM','TARBIYAH'],
+            ['PROGRAM STUDI: PROGRAM STUDI EKONOMI SYARIAH','FAKULTAS: FAKULTAS EKONOMI DAN BISNIS ISLAM','EKONOMI SYARIAH','EKONOMI DAN BISNIS ISLAM'],
+          ];
+          for (const [prodi, fakultas, expectedProdi, expectedFaculty] of examples) {
+            const clean = normalizeCoverAcademicIdentity({prodi,fakultas});
+            assert.equal(clean.prodi,expectedProdi);
+            assert.equal(clean.fakultas,expectedFaculty);
+            const pdf = plainCoverIdentity({...clean,bahasa:'id'});
+            assert.equal(pdf.prodiLine,`PROGRAM STUDI ${expectedProdi.toUpperCase()}`);
+            assert.equal(pdf.fakultasLine,`FAKULTAS ${expectedFaculty.toUpperCase()}`);
+            assert.deepEqual(normalizeCoverAcademicIdentity(clean),clean);
+          }
+          const english=normalizeCoverAcademicIdentity({prodi:'Study Program of English Education',fakultas:'Faculty of Education'});
+          assert.equal(english.prodi,'Study Program of English Education');
+          assert.equal(english.fakultas,'Faculty of Education');
+          console.log('Tests passed: no duplicate prefixes and English remains unchanged.');
+          NODE
+          node --check public/hardcover-link2/classifier.js
+          node --check public/hardcover-link2/pdf-engine.js
+
+      - name: Install dan build website
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Commit dan push jika lolos pengujian
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add public/hardcover-link2/classifier.js public/hardcover-link2/pdf-engine.js
+          if git diff --cached --quiet; then
+            echo 'Source sudah sesuai, tidak perlu commit ulang.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(menu12): remove duplicate program studi and fakultas labels in cover PDFs'
+          git push origin HEAD:main

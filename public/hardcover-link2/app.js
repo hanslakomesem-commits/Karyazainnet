@@ -2,6 +2,7 @@ import {readPDF,readWord,readPhoto,withTimeout,setOCRProgress} from './document-
 import {resetOCR} from './ocr-fast.js';
 import {generatePDF,checkAssets,setUserFonts} from './pdf-engine.js?v=4.46';
 import {canonicalUniversity} from './classifier.js';
+import {recommendUinMaduraCoverStyle} from './cover-auto-style.js';
 import {readAbstractFromFile,isAbstractMetadata} from './abstract-reader.js';
 import {chooseDummyBackText,DUMMY_PAGE} from './dummybook-layout.js';
 import {setDummyArialFonts} from './font-arial-compatible.js';
@@ -240,7 +241,9 @@ function selectOrder(id,paint=true){
 function invalidateOrder(o){$('spineFontResult').textContent='Data diubah; buat PDF lagi untuk memeriksa ukuran font punggung.';releaseDownload('batch');o.pdfBlob=null;o.verified=false;if(o.status!=='membaca')o.status=(o.file&&!o.data.judul?'baru':'periksa');}
 function markDirty(){
   if(painting)return;const o=active();if(!o)return;
-  o.data=currentData();o.revision++;invalidateOrder(o);clearPDFPreview();
+  o.data=currentData();const coverChanged=applyUinCoverRecommendation(o);o.revision++;invalidateOrder(o);clearPDFPreview();
+  if(coverChanged){renderCoverStyle();renderThickness();}
+  else renderUinCoverAutoHint(o);
   $('approveOrder').textContent='✓ Tandai data sudah diperiksa';renderOrders();updateDummyParagraphPreview();refreshProgramJenjang();
 }
 function updateDummyParagraphPreview(){
@@ -255,8 +258,55 @@ function updateDummyParagraphPreview(){
   el.textContent=`PRATINJAU ${fit.paragraphCount} PARAGRAF TERAKHIR (hasil PDF dihitung ulang dengan font yang ditanam):\n\n${fit.paragraphs.join('\n\n')}`;
  }catch(e){el.textContent='Paragraf akhir belum muat atau pemisahan meragukan: '+(e.message||e);}
 }
+/** Pilihan otomatis hanya berlaku UIN Madura, per pesanan, jika belum diubah manual. */
+function applyUinCoverRecommendation(order){
+  if(!order || order.manualCoverStyle===true)return false;
+  const recommendation=recommendUinMaduraCoverStyle(order.data);
+  if(!recommendation?.style || order.style===recommendation.style)return false;
+  order.style=recommendation.style;
+  if(order.thickness!==null&&!validThickness(order))order.thickness=null;
+  order.verified=false;
+  order.pdfBlob=null;
+  return true;
+}
+
+/** Status kecil di bawah pilihan cover, dengan tombol kembali ke otomatis. */
+function renderUinCoverAutoHint(order){
+  const list=$('coverStyleOptions');if(!list)return;
+  let area=$('autoUinCoverArea');
+  if(!area){
+    area=document.createElement('div');area.id='autoUinCoverArea';
+    area.className='template-msg';area.style.marginTop='12px';
+    area.style.display='flex';area.style.alignItems='center';area.style.gap='12px';area.style.flexWrap='wrap';
+    const message=document.createElement('span');message.id='autoUinCoverMessage';message.style.flex='1';
+    const reset=document.createElement('button');reset.id='autoUinCoverReset';reset.type='button';reset.className='btn btn-outline';
+    reset.textContent='Aktifkan otomatis';
+    reset.addEventListener('click',()=>{
+      const current=active();if(!current)return;
+      current.manualCoverStyle=false;
+      if(applyUinCoverRecommendation(current)){
+        invalidateOrder(current);clearPDFPreview();
+      }
+      renderCoverStyle();renderThickness();renderOrders();
+      const selected=recommendUinMaduraCoverStyle(current.data);
+      notice(selected?.style?selected.reason:(selected?.reason||'Kampus ini tidak memiliki aturan otomatis khusus. Pilih jenis cover secara manual.'),'info');
+    });
+    area.append(message,reset);list.insertAdjacentElement('afterend',area);
+  }
+  const message=$('autoUinCoverMessage'),reset=$('autoUinCoverReset');
+  if(!order){area.classList.add('hidden');return;}
+  area.classList.remove('hidden');
+  const selected=recommendUinMaduraCoverStyle(order.data);
+  const manual=order.manualCoverStyle===true;
+  reset.classList.toggle('hidden',!manual);
+  message.textContent=manual
+    ? 'Pilihan manual aktif. Deteksi otomatis tidak akan mengganti jenis cover pesanan ini.'
+    : selected?.reason||'Aturan otomatis ini hanya berlaku untuk Universitas Islam Negeri Madura. Kampus lain mengikuti pilihan cover biasa.';
+}
+
 function renderCoverStyle(){
  const o=active();
+ renderUinCoverAutoHint(o);
  refreshProgramJenjang();
  document.querySelectorAll('[data-cover-style]').forEach(b=>{b.classList.toggle('selected',b.dataset.coverStyle===(o?.style||'polos'));b.disabled=!o;});
  $('studentIdLabel').innerHTML=o?.style==='unira'?'NPM <i>*</i>':'NIM <i>*</i>';
@@ -286,7 +336,8 @@ function renderCoverStyle(){
 function setStyle(id,style){
  const o=orders.find(x=>x.id===id);if(!o||!COVER_TYPES.includes(style))return;
  if(o.id===activeId)o.data=currentData();
- const previous=o.style;o.style=style;
+ o.manualCoverStyle=true; // Pilihan operator lebih tinggi prioritasnya daripada hasil OCR.
+  const previous=o.style;o.style=style;
  if(style==='coverartikel'){
   o.data.jenis_dokumen='ARTIKEL';
   if(o.id===activeId)document.querySelector('[name="jenis_dokumen"]').value='ARTIKEL';
@@ -365,8 +416,8 @@ async function ocrOne(order){
     const options={ detail:$('ocrAccuracy')?.value==='detail', preferGemini:$('ocrEngine')?.value!=='local', onProgress:setStage };
     const ocr=await withTimeout(method(order.file,options),timeout,`Pembacaan ${kind}`);
     if(revision!==order.revision){order.warnings=['Data berubah saat proses berlangsung; koreksi Anda dipertahankan.'];order.status='periksa';}
-    else {order.data={...newData(),...ocr,universitas:canonicalUniversity(ocr.universitas),abstract_text:order.data.abstract_text||ocr.abstract_text||''};order.warnings=Array.isArray(ocr.warnings)?ocr.warnings:[];order.status='periksa';order.verified=false;order.pdfBlob=null;}
-    if(activeId===order.id){paintData(order.data);showWarnings(order);clearPDFPreview();}
+    else {order.data={...newData(),...ocr,universitas:canonicalUniversity(ocr.universitas),abstract_text:order.data.abstract_text||ocr.abstract_text||''};applyUinCoverRecommendation(order);order.warnings=Array.isArray(ocr.warnings)?ocr.warnings:[];order.status='periksa';order.verified=false;order.pdfBlob=null;}
+    if(activeId===order.id){paintData(order.data);renderCoverStyle();renderThickness();showWarnings(order);clearPDFPreview();}
     renderOrders();
     if(!order.data?.judul && !order.data?.nama && !order.data?.nim){
       order.status='gagal';

@@ -1,0 +1,99 @@
+name: ZAIN.NET - Buka Menu 5 Link 2 untuk Umum
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: zainnet-menu5-link2-public
+  cancel-in-progress: false
+
+jobs:
+  allow-public-link2:
+    name: Buka Link 2, pertahankan Link 1 hanya admin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout kode ZAIN.NET
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Perbaiki klasifikasi akses modul
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/data/toolsData.ts')
+          source = path.read_text(encoding='utf-8')
+          anchor = "  if (id === 'split-3' || url === 'internal://pisah-skripsi' || url === '/pisah-skripsi') return false;"
+          addition = (
+              "  // Modul internal Menu 5 Link 2: dapat diakses pengguna umum/reseller dengan login dan kuota sah.\n"
+              "  // Link 1 tetap iframe eksternal dan tetap khusus admin.\n"
+              "  if (id === 'plag-2' || url === 'internal://plagiarism-v2') return false;"
+          )
+
+          if addition.splitlines()[-1] in source:
+              print('Perbaikan Link 2 sudah terpasang; tidak perlu mengganti ulang.')
+          else:
+              if source.count(anchor) != 1:
+                  raise SystemExit(f'Patokan kode berubah: ditemukan {source.count(anchor)} anchor, diharapkan 1. Tidak ada perubahan.')
+              source = source.replace(anchor, anchor + '\n' + addition, 1)
+              path.write_text(source, encoding='utf-8')
+              print('Link 2 kini modul internal (bukan iframe admin).')
+
+          # Pengaman: Link 1 harus tetap terdaftar sebagai URL eksternal,
+          # tanpa pengecualian di fungsi klasifikasi iframe.
+          if 'id: "plag-1"' not in source or 'id: "plag-2"' not in source:
+              raise SystemExit('Konfigurasi menu berubah; perlu pemeriksaan manual.')
+          fn = source.split('export function isIframeTool(', 1)[1].split('\nexport const categoriesData:', 1)[0]
+          if "id === 'plag-2'" not in fn or "id === 'plag-1'" in fn:
+              raise SystemExit('Peraturan akses Link 1/2 tidak sesuai.')
+          if '  return true;' not in fn:
+              raise SystemExit('Penguncian iframe umum hilang. Tidak melanjutkan.')
+          assert "url: \"https://aplikasi-parafrase-skripsi-revisi-plagiasi-docx-" in source
+          assert "url: \"internal://plagiarism-v2\"" in source
+          print('Lolos: Link 1 tetap admin-only; Link 2 mengikuti login/kuota. Harga dan transaksi tidak diubah.')
+          PY
+
+      - name: Periksa format perubahan
+        run: git diff --check
+
+      - name: Install dependensi
+        run: npm install --no-audit --no-fund
+
+      - name: Build frontend
+        env:
+          VITE_BASE_PATH: /
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: npm run build
+
+      - name: Commit dan push ke main jika ada perubahan
+        shell: bash
+        run: |
+          if git diff --quiet -- src/data/toolsData.ts; then
+            echo 'Kode Link 2 sudah sesuai. Tidak ada commit baru.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/data/toolsData.ts
+          git commit -m 'fix(menu5): open paid Link 2 to public and reseller, keep Link 1 admin only'
+          git push origin HEAD:main
+
+      - name: Minta publikasi ulang GitHub Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh workflow run pages.yml --ref main
+          echo 'Deployment GitHub Pages telah diminta. Periksa workflow Deploy ZAIN.NET to GitHub Pages.'

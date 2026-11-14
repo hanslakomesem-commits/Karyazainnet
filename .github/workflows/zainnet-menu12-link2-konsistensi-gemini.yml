@@ -1,0 +1,322 @@
+name: ZAIN.NET - Menu 12 Link 2 Konsistensi Gemini Semua Perangkat
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: menu12-link2-gemini-device-consistency
+  cancel-in-progress: false
+
+jobs:
+  fix-menu12:
+    name: Perbaiki sesi Gemini, italic, transliterasi, dan cache browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source terbaru
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Siapkan Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Terapkan perbaikan OCR lintas perangkat
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          ROOT = Path('public/hardcover-link2')
+
+          def replace_once(path, old, new, label):
+              p = ROOT / path
+              code = p.read_text(encoding='utf-8')
+              if old in code:
+                  if code.count(old) != 1:
+                      raise SystemExit(f'{label}: bagian ditemukan lebih dari sekali; dibatalkan.')
+                  code = code.replace(old, new, 1)
+                  p.write_text(code, encoding='utf-8')
+                  print('OK:', label)
+              elif new in code:
+                  print('OK: sudah terpasang:', label)
+              else:
+                  raise SystemExit(f'{label}: source tidak cocok; tidak ada commit.')
+
+          # Cache-bust: setiap perangkat dipaksa mengambil modul OCR terbaru.
+          replace_once('app.js',
+              "import {readPDF,readWord,readPhoto,withTimeout,setOCRProgress} from './document-reader.js';",
+              "import {readPDF,readWord,readPhoto,withTimeout,setOCRProgress} from './document-reader.js?v=4.47';",
+              'Cache-bust document-reader')
+          replace_once('document-reader.js',
+              """import {recognizeLocalResult, prepareOCRZones, setOCRProgress} from './ocr-fast.js';
+          import {normalizedLines, mergeZones} from './ocr-zones.js';
+          import {scanNameUnderline,underlineScore,pdfNameBox} from './name-underline.js';
+          import {alignTitleFormatting,pdfFontLooksItalic,titleHasTransliteration} from './title-format.js';
+          import {readCoverWithGemini} from './gemini-cover-ocr.js';""",
+              """import {recognizeLocalResult, prepareOCRZones, setOCRProgress} from './ocr-fast.js?v=4.47';
+          import {normalizedLines, mergeZones} from './ocr-zones.js?v=4.47';
+          import {scanNameUnderline,underlineScore,pdfNameBox} from './name-underline.js?v=4.47';
+          import {alignTitleFormatting,pdfFontLooksItalic,titleHasTransliteration} from './title-format.js?v=4.47';
+          import {readCoverWithGemini} from './gemini-cover-ocr.js?v=4.47';""",
+              'Cache-bust modul pembaca')
+          replace_once('ocr-fast.js',
+              "import {COVER_ZONES,zoneBounds} from './ocr-zones.js';",
+              "import {COVER_ZONES,zoneBounds} from './ocr-zones.js?v=4.47';",
+              'Cache-bust OCR lokal')
+
+          # Gemini dipakai sungguhan ketika dipilih. Jika gagal, jangan tampilkan hasil Tesseract seolah-olah hasil AI.
+          p = ROOT / 'document-reader.js'
+          code = p.read_text(encoding='utf-8')
+          old = """  let geminiIssue='';
+            if(options.preferGemini!==false){
+             try{
+              const online=await readCoverWithGemini(blob,{onProgress:stage});
+              return online;
+             }catch(error){
+              geminiIssue=String(error?.message||error).slice(0,220);
+              stage('Gemini belum tersedia, beralih ke pembaca lokal...');
+             }
+            }"""
+          new = """  if(options.preferGemini!==false){
+             stage('Mengirim foto ke Gemini 3.1 Flash-Lite...');
+             return await readCoverWithGemini(blob,{onProgress:stage});
+            }"""
+          if old in code:
+              code = code.replace(old, new, 1)
+          elif 'geminiIssue' in code:
+              raise SystemExit('Blok fallback Gemini berbeda; dibatalkan agar tidak salah ubah.')
+          else:
+              print('OK: fallback Gemini sudah dihapus')
+          code, removed = re.subn(r"^\s*if\(geminiIssue\)base\.warnings\.unshift\([^\n]*\);\s*\n", '', code, count=1, flags=re.M)
+          if removed:
+              print('OK: hapus warning fallback lama')
+          p.write_text(code, encoding='utf-8')
+
+          # Perbarui token Supabase yang kedaluwarsa sebelum memanggil endpoint Gemini.
+          p = ROOT / 'gemini-cover-ocr.js'
+          code = p.read_text(encoding='utf-8')
+          replace_pairs = [
+              ("""import {prepareOCRImage,prepareOCRZones} from './ocr-fast.js';
+          import {auditCoverTransliteration} from './transliteration-check.js';""",
+               """import {prepareOCRImage,prepareOCRZones} from './ocr-fast.js?v=4.47';
+          import {auditCoverTransliteration} from './transliteration-check.js?v=4.47';
+          import {alignTitleFormatting} from './title-format.js?v=4.47';"""),
+              ("""const API = 'https://zainnet-api.onrender.com/api/hardcover-cover-ocr/read';
+          const KEY = 'sb-pxseiytikiulxincoolh-auth-token';""",
+               """const API = 'https://zainnet-api.onrender.com/api/hardcover-cover-ocr/read';
+          const SUPABASE_URL = 'https://pxseiytikiulxincoolh.supabase.co';
+          const SUPABASE_PUBLIC_KEY = 'sb_publishable_KA2AwEzwuepbHm2yu95IkA_eUBb2sXK';
+          const KEY = 'sb-pxseiytikiulxincoolh-auth-token';""")
+          ]
+          for old, new in replace_pairs:
+              if old in code:
+                  if code.count(old) != 1:
+                      raise SystemExit('Konfigurasi Gemini ganda; dibatalkan.')
+                  code = code.replace(old, new, 1)
+              elif new not in code:
+                  raise SystemExit('Import/konfigurasi Gemini tidak cocok; dibatalkan.')
+
+          start = 'function accessToken() {'
+          end = '\nasync function toBase64'
+          if start in code:
+              a = code.index(start)
+              b = code.index(end, a)
+              access = r'''function readStoredSession() {
+            let raw;
+            try { raw = localStorage.getItem(KEY); }
+            catch { throw Error('Browser tidak mengizinkan akses sesi login. Buka Menu 12 Link 2 langsung dari situs ZAIN.NET, bukan dari tab privat atau mode yang memblokir penyimpanan.'); }
+            if (!raw) return null;
+            try { return JSON.parse(raw); }
+            catch { throw Error('Data sesi login pada browser rusak. Keluar dari ZAIN.NET, masuk kembali dengan akun admin, lalu buka ulang Menu 12 Link 2.'); }
+          }
+          function flattenSession(saved) {
+            const nested = saved?.currentSession && typeof saved.currentSession === 'object' ? saved.currentSession : {};
+            return { ...(saved || {}), ...nested };
+          }
+          async function refreshSession(saved) {
+            const current = flattenSession(saved);
+            const refreshToken = current.refresh_token;
+            if (!refreshToken) throw Error('Sesi admin pada perangkat ini tidak memiliki refresh token. Keluar dari ZAIN.NET, login kembali dengan akun admin, lalu ulangi pembacaan.');
+            let response;
+            try {
+              response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', apikey: SUPABASE_PUBLIC_KEY },
+                body: JSON.stringify({ refresh_token: refreshToken }),
+                cache: 'no-store'
+              });
+            } catch {
+              throw Error('Tidak dapat memperbarui sesi Supabase. Periksa koneksi internet dan coba login ulang.');
+            }
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok || !body.access_token) {
+              if (response.status === 400 || response.status === 401) throw Error('Sesi Supabase sudah kedaluwarsa. Keluar dari ZAIN.NET, login kembali dengan akun admin, lalu ulangi pembacaan.');
+              throw Error(String(body.msg || body.message || body.error_description || body.error || `Pembaruan sesi gagal (HTTP ${response.status}).`));
+            }
+            const next = { ...(saved || {}), ...body };
+            if (saved?.currentSession && typeof saved.currentSession === 'object') next.currentSession = { ...saved.currentSession, ...body };
+            try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* token tetap dapat dipakai untuk permintaan ini */ }
+            return next;
+          }
+          async function accessToken(forceRefresh = false) {
+            const saved = readStoredSession();
+            if (!saved) throw Error('Sesi login Supabase tidak ditemukan pada perangkat ini. Login ke www.zainnet.store menggunakan akun admin, lalu buka ulang Menu 12 Link 2.');
+            let session = flattenSession(saved);
+            const expiresAt = Number(session.expires_at || 0);
+            const expiringSoon = expiresAt > 0 && expiresAt <= Math.floor(Date.now() / 1000) + 60;
+            if (forceRefresh || !session.access_token || expiringSoon) session = flattenSession(await refreshSession(saved));
+            if (typeof session.access_token !== 'string' || !session.access_token) throw Error('Token admin tidak tersedia. Login kembali ke ZAIN.NET lalu ulangi pembacaan.');
+            return session.access_token;
+          }'''
+              code = code[:a] + access + code[b:]
+          elif 'function readStoredSession()' not in code:
+              raise SystemExit('Fungsi akses sesi Gemini tidak ditemukan.')
+
+          old_validation = """  if (segments.length && segments.map(x=>x.text).join('') === data.judul) {
+              data.title_segments = segments.map(x=>({text:x.text,italic:x.italic===true}));
+            } else {
+              data.title_segments = data.judul ? [{text:data.judul,italic:false}] : [];
+              data.warnings = [...(Array.isArray(data.warnings)?data.warnings:[]),'Format miring dari layanan pembacaan tidak cocok dengan teks judul; mohon periksa secara manual.'];
+            }"""
+          new_validation = """  if (segments.length && segments.map(x=>x.text).join('') === data.judul) {
+              data.title_segments = segments.map(x=>({text:x.text,italic:x.italic===true}));
+            } else {
+              const aligned = alignTitleFormatting(data.judul, segments);
+              if (aligned.length) {
+                data.title_segments = aligned;
+                data.warnings = [...(Array.isArray(data.warnings)?data.warnings:[]),'Format italic dipetakan ulang setelah normalisasi spasi/karakter. Tetap cocokkan dengan foto asli.'];
+              } else {
+                data.title_segments = data.judul ? [{text:data.judul,italic:false}] : [];
+                data.warnings = [...(Array.isArray(data.warnings)?data.warnings:[]),'Format miring dari layanan pembacaan tidak dapat dipetakan dengan aman; mohon periksa secara manual.'];
+              }
+            }"""
+          if old_validation in code:
+              code = code.replace(old_validation, new_validation, 1)
+          elif 'const aligned = alignTitleFormatting(data.judul, segments);' not in code:
+              raise SystemExit('Validasi italic Gemini tidak cocok; dibatalkan.')
+
+          marker = 'export async function readCoverWithGemini('
+          if marker not in code:
+              raise SystemExit('Fungsi readCoverWithGemini tidak ditemukan.')
+          reader = r'''export async function readCoverWithGemini(image, {onProgress=()=>{}}={}) {
+            let token = await accessToken();
+            onProgress('Menyiapkan foto resolusi tinggi untuk pembacaan Gemini...');
+            const full=await prepareOCRImage(image,{maxSide:2450,contrast:1.1});
+            let crop=null;
+            try {const zones=await prepareOCRZones(image,{threshold:false}); crop=zones.judul || null;} catch { /* gambar penuh tetap digunakan */ }
+            const [imageBase64,titleCropBase64]=await Promise.all([toBase64(full),crop?toBase64(crop):Promise.resolve('')]);
+            onProgress('Gemini memeriksa Q/O, tanda transliterasi, dan bagian judul italic...');
+            const controller = typeof AbortController === 'function' ? new AbortController() : null;
+            const timer = controller ? setTimeout(()=>controller.abort(),68_000) : null;
+            const send = async bearer => {
+              let response;
+              try {
+                response = await fetch(API,{
+                  method:'POST',
+                  headers:{'Content-Type':'application/json','Authorization':`Bearer ${bearer}`},
+                  body:JSON.stringify({imageBase64,mimeType:full.type||'image/png',titleCropBase64,titleCropMimeType:crop?.type||'image/png'}),
+                  ...(controller ? {signal:controller.signal} : {}),
+                  cache:'no-store'
+                });
+              } catch(error) {
+                if(error?.name==='AbortError') throw error;
+                throw Error(`Koneksi ke layanan Gemini gagal: ${String(error?.message||error)}. Periksa internet dan domain situs ZAIN.NET yang digunakan. Hasil tidak dialihkan diam-diam ke OCR lokal.`);
+              }
+              const body=await response.json().catch(()=>({}));
+              return {response,body};
+            };
+            try {
+              let result = await send(token);
+              if (result.response.status === 401) {
+                onProgress('Sesi admin diperbarui; mencoba koneksi Gemini kembali...');
+                token = await accessToken(true);
+                result = await send(token);
+              }
+              const {response,body}=result;
+              if(response.status===401) throw Error('Sesi admin tidak diterima oleh server. Login ulang ke ZAIN.NET, lalu coba kembali.');
+              if(response.status===403) throw Error('Akun yang digunakan belum dikenali sebagai admin Supabase. Gunakan akun admin ZAIN.NET.');
+              if(!response.ok || !body.success) throw Error(String(body.error || `Layanan OCR gagal (HTTP ${response.status}).`));
+              return validateGeminiResult(body.data);
+            } catch(e) {
+              if(e?.name==='AbortError') throw Error('Gemini tidak merespons dalam batas waktu 68 detik. Coba foto lebih kecil atau ulangi.');
+              throw e;
+            } finally {if(timer)clearTimeout(timer);}
+          }
+          '''
+          code = code[:code.index(marker)] + reader
+          p.write_text(code, encoding='utf-8')
+          print('OK: refresh sesi Supabase, error jelas, dan pemetaan ulang italic')
+
+          # Pesan status dan label agar pengguna tahu Gemini tidak boleh diam-diam diganti OCR lokal.
+          replace_once('app.js',
+              "notice('Word dan PDF teks dibaca lokal. Foto dan PDF scan dapat memakai Gemini 3.1 Flash-Lite melalui backend Render, dengan OCR Tesseract sebagai cadangan.','info');",
+              "notice('Word dan PDF teks dibaca lokal. Foto dan PDF scan memakai Gemini 3.1 Flash-Lite saat mode Gemini dipilih. OCR lokal hanya dijalankan jika dipilih manual; kegagalan Gemini akan ditampilkan.','info');",
+              'Pesan status OCR')
+          replace_once('index.html',
+              'Gemini 3.1 Flash-Lite — cek Q/O dan italic; cadangan OCR lokal',
+              'Gemini 3.1 Flash-Lite — utama untuk Q/O, italic, dan transliterasi',
+              'Label pilihan Gemini')
+          replace_once('index.html',
+              'Gemini 3.1 Flash-Lite untuk Q/O dan italic; cadangan OCR lokal',
+              'Gemini 3.1 Flash-Lite untuk Q/O, italic, dan transliterasi; kegagalan ditampilkan',
+              'Keterangan mode foto')
+          replace_once('index.html',
+              'jika gagal, OCR lokal digunakan dengan peringatan.',
+              'jika gagal, tampilkan penyebabnya; pilih OCR Lokal secara manual bila hanya membutuhkan teks biasa.',
+              'Keterangan kegagalan Gemini')
+          replace_once('index.html',
+              'COVER V4.46 GitHub Pages • OCR Gemini lewat backend Render dengan login admin, cadangan OCR lokal',
+              'COVER V4.47 GitHub Pages • Gemini utama; OCR lokal hanya jika dipilih manual',
+              'Nomor versi footer')
+          replace_once('app.js',
+              'GitHub Pages V4.40 • Dummybook spread A3 5–10 mm • Tanpa token',
+              'GitHub Pages V4.47 • Gemini utama lintas perangkat • Tanpa token di browser',
+              'Versi status aplikasi')
+          replace_once('index.html',
+              '<script type="module" src="./app.js?v=4.46"></script>',
+              '<script type="module" src="./app.js?v=4.47"></script>',
+              'Cache-bust aplikasi utama')
+          PY
+
+      - name: Periksa sintaks dan build website
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check public/hardcover-link2/app.js
+          node --check public/hardcover-link2/document-reader.js
+          node --check public/hardcover-link2/gemini-cover-ocr.js
+          node --check public/hardcover-link2/ocr-fast.js
+          npm install --no-audit --no-fund --package-lock=false
+          VITE_BASE_PATH=/ VITE_API_BASE_URL="${{ vars.API_BASE_URL }}" npm run build
+          test -s dist/hardcover-link2/gemini-cover-ocr.js
+          test -s dist/hardcover-link2/document-reader.js
+          git diff --check
+
+      - name: Commit pembaruan ke main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add public/hardcover-link2/app.js \
+                  public/hardcover-link2/document-reader.js \
+                  public/hardcover-link2/gemini-cover-ocr.js \
+                  public/hardcover-link2/ocr-fast.js \
+                  public/hardcover-link2/index.html
+          if git diff --cached --quiet; then
+            echo 'Source sudah menggunakan perbaikan ini; tidak membuat commit ganda.'
+          else
+            git commit -m 'fix(menu12-link2): consistent Gemini OCR across devices'
+            git push origin HEAD:main
+            echo 'Perbaikan tersimpan. Push ke main akan memicu deploy GitHub Pages.'
+          fi

@@ -1,0 +1,377 @@
+name: "ZAIN.NET - Menu 12 Link 2 Gemini Seragam & Italic V4.48"
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zainnet-menu12-gemini-uniform-italic
+  cancel-in-progress: false
+
+jobs:
+  patch-menu12-link2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Patch Gemini OCR source
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def splice_between(source, start_marker, end_marker, replacement, label):
+              start = source.find(start_marker)
+              if start < 0:
+                  raise SystemExit(f"GAGAL: awal blok {label} tidak ditemukan.")
+              end = source.find(end_marker, start)
+              if end < 0:
+                  raise SystemExit(f"GAGAL: akhir blok {label} tidak ditemukan.")
+              return source[:start] + replacement + source[end:]
+
+          def replace_once(source, old, new, label):
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"GAGAL: blok {label} ditemukan {count} kali; source tidak diubah.")
+              return source.replace(old, new, 1)
+
+          router_path = Path("server/hardcoverCoverOcr/router.ts")
+          router = router_path.read_text(encoding="utf-8")
+
+          image_helpers = r'''function getImage(input: unknown, mime: unknown, maxLength: number) {
+            if (typeof input !== 'string') return null;
+            const data = input.replace(/^data:image\/(?:jpeg|png|webp);base64,/i, '');
+            const type = typeof mime === 'string' ? mime : 'image/jpeg';
+            if (!allowedMime.has(type) || data.length < 80 || data.length > maxLength || !/^[a-z\d+/]+={0,2}$/i.test(data)) return null;
+            const buffer = Buffer.from(data, 'base64');
+            if (!buffer.length) return null;
+            return { buffer, mimeType: type };
+          }
+          type CoverImage = { buffer: Buffer; mimeType: string };
+          type GeminiImagePart = { inlineData: { mimeType: string; data: string } };
+          async function prepareGeminiImages(source: CoverImage): Promise<{ full: GeminiImagePart; titleCrop: GeminiImagePart | null }> {
+            const original: GeminiImagePart = { inlineData: { mimeType: source.mimeType, data: source.buffer.toString('base64') } };
+            try {
+              const canvasModule = await import('@napi-rs/canvas');
+              const image = await canvasModule.loadImage(source.buffer);
+              const sourceWidth = Number(image.width), sourceHeight = Number(image.height);
+              if (!sourceWidth || !sourceHeight || sourceWidth * sourceHeight > 80000000) throw new Error('Dimensi foto tidak valid atau terlalu besar.');
+              const scale = Math.min(1, 2600 / Math.max(sourceWidth, sourceHeight), Math.sqrt(5500000 / (sourceWidth * sourceHeight)));
+              const width = Math.max(1, Math.round(sourceWidth * scale)), height = Math.max(1, Math.round(sourceHeight * scale));
+              const canvas = canvasModule.createCanvas(width, height), context = canvas.getContext('2d');
+              context.fillStyle = '#ffffff'; context.fillRect(0, 0, width, height); context.drawImage(image, 0, 0, width, height);
+              const fullBuffer = canvas.toBuffer('image/jpeg');
+              const x = Math.floor(width * 0.035), y = Math.floor(height * 0.025);
+              const cropWidth = Math.max(1, Math.min(width - x, Math.round(width * 0.93)));
+              const cropHeight = Math.max(1, Math.min(height - y, Math.round(height * 0.255)));
+              const cropScale = Math.min(2, 4400 / Math.max(cropWidth, cropHeight), Math.sqrt(4000000 / (cropWidth * cropHeight)));
+              const cropCanvas = canvasModule.createCanvas(Math.max(1, Math.round(cropWidth * cropScale)), Math.max(1, Math.round(cropHeight * cropScale)));
+              const cropContext = cropCanvas.getContext('2d');
+              cropContext.fillStyle = '#ffffff'; cropContext.fillRect(0, 0, cropCanvas.width, cropCanvas.height);
+              cropContext.drawImage(canvas, x, y, cropWidth, cropHeight, 0, 0, cropCanvas.width, cropCanvas.height);
+              const cropBuffer = cropCanvas.toBuffer('image/jpeg');
+              return {
+                full: { inlineData: { mimeType: 'image/jpeg', data: fullBuffer.toString('base64') } },
+                titleCrop: { inlineData: { mimeType: 'image/jpeg', data: cropBuffer.toString('base64') } }
+              };
+            } catch (error: any) {
+              console.warn('[cover-ocr] Normalisasi server gagal; memakai foto asli:', String(error?.message || error).slice(0, 140));
+              return { full: original, titleCrop: null };
+            }
+          }
+          '''
+          router = splice_between(router, "function getImage(", "function tidy(", image_helpers, "getImage dan normalisasi server")
+
+          image_start = router.find("  const full = getImage(req.body?.imageBase64")
+          if image_start < 0:
+              raise SystemExit("GAGAL: baris input foto Menu 12 tidak ditemukan.")
+          old_end = router.find("\n", router.find("if (!full ||", image_start))
+          if old_end < 0:
+              raise SystemExit("GAGAL: akhir validasi foto lama tidak ditemukan.")
+          new_image_block = r'''  // Foto asli diproses di server. Crop dari browser lama sengaja diabaikan.
+            const full = getImage(req.body?.imageBase64, req.body?.mimeType, 35_000_000);
+            if (!full) return res.status(400).json({ error: 'Foto asli tidak valid atau melebihi batas 25 MB. Gunakan JPG/PNG/WebP.' });'''
+          router = router[:image_start] + new_image_block + router[old_end:]
+
+          format_helpers = r'''function parseGeminiJson(value: string) {
+            const fence = String.fromCharCode(96).repeat(3);
+            let text = String(value || '').trim();
+            if (text.startsWith(fence)) {
+              const newline = text.indexOf('\n');
+              text = newline >= 0 ? text.slice(newline + 1) : text.slice(fence.length);
+              if (text.endsWith(fence)) text = text.slice(0, -fence.length);
+            }
+            return JSON.parse(text.trim());
+          }
+          function appendTitleSegment(out: Array<{ text: string; italic: boolean }>, text: string, italic: boolean) {
+            if (!text) return;
+            const last = out[out.length - 1];
+            if (last && last.italic === italic) last.text += text;
+            else out.push({ text, italic });
+          }
+          function alignTitleSegments(title: string, parts: Array<{ text: string; italic: boolean }>) {
+            if (!title || !parts.length) return null;
+            const sourceText = parts.map((part) => part.text).join('');
+            const targetWords = Array.from(title.matchAll(/\S+/gu));
+            const sourceWords = Array.from(sourceText.matchAll(/\S+/gu));
+            if (!targetWords.length || targetWords.length !== sourceWords.length) return null;
+            const norm = (value: string) => value.normalize('NFC').toLocaleUpperCase('id-ID');
+            for (let i = 0; i < targetWords.length; i++) if (norm(targetWords[i][0]) !== norm(sourceWords[i][0])) return null;
+            const italicAt = (index: number) => {
+              let offset = 0;
+              for (const part of parts) {
+                const end = offset + part.text.length;
+                if (index < end) return part.italic;
+                offset = end;
+              }
+              return false;
+            };
+            const out: Array<{ text: string; italic: boolean }> = [];
+            let cursor = 0, previousItalic = false;
+            for (let i = 0; i < targetWords.length; i++) {
+              const target = targetWords[i], source = sourceWords[i];
+              const word = target[0], sourceWord = source[0], sourceStart = source.index ?? 0;
+              const formats = new Set<boolean>();
+              for (let j = 0; j < sourceWord.length; j++) formats.add(italicAt(sourceStart + j));
+              if (word.length !== sourceWord.length && formats.size > 1) return null;
+              const nextItalic = word.length === sourceWord.length ? italicAt(sourceStart) : formats.values().next().value === true;
+              appendTitleSegment(out, title.slice(cursor, target.index), previousItalic && nextItalic);
+              if (word.length === sourceWord.length) {
+                for (let j = 0; j < word.length; j++) appendTitleSegment(out, word[j], italicAt(sourceStart + j));
+                previousItalic = italicAt(sourceStart + sourceWord.length - 1);
+              } else {
+                appendTitleSegment(out, word, nextItalic);
+                previousItalic = nextItalic;
+              }
+              cursor = (target.index ?? 0) + word.length;
+            }
+            appendTitleSegment(out, title.slice(cursor), false);
+            return out.length ? out : null;
+          }
+          function applyItalicSpans(title: string, spans: unknown[]) {
+            const ranges: Array<[number, number]> = [];
+            for (const item of spans.slice(0, 20)) {
+              const phrase = typeof item === 'string' ? item.normalize('NFC').trim() : '';
+              if (!phrase) continue;
+              const start = title.indexOf(phrase);
+              if (start < 0 || title.indexOf(phrase, start + phrase.length) >= 0) return null;
+              ranges.push([start, start + phrase.length]);
+            }
+            if (!ranges.length) return [];
+            ranges.sort((a, b) => a[0] - b[0]);
+            const out: Array<{ text: string; italic: boolean }> = [];
+            let cursor = 0;
+            for (const [start, end] of ranges) {
+              if (start < cursor) return null;
+              appendTitleSegment(out, title.slice(cursor, start), false);
+              appendTitleSegment(out, title.slice(start, end), true);
+              cursor = end;
+            }
+            appendTitleSegment(out, title.slice(cursor), false);
+            return out;
+          }
+          async function detectItalicSpans(client: any, images: GeminiImagePart[], title: string) {
+            const prompt = [
+              'Tugas Anda HANYA memeriksa format tipografi judul pada gambar. Jangan OCR ulang, jangan mengubah ejaan, dan jangan menulis ulang judul.',
+              'Judul yang harus dipertahankan persis: ' + JSON.stringify(title),
+              'Periksa gambar penuh dan crop judul. Identifikasi kata atau rentang yang benar-benar tampak dicetak miring (italic/oblique) dibanding huruf tegak di sekitarnya.',
+              'Jangan menganggap istilah asing, bahasa Inggris, transliterasi Arab-Latin, atau huruf serif otomatis miring. Gunakan bentuk huruf pada gambar sebagai satu-satunya bukti.',
+              'Setiap hasil harus berupa SUBSTRING PERSIS dari judul di atas, dengan kapitalisasi, diakritik, tanda baca, dan spasi yang sama. Jika kata berulang dan rentangnya ambigu, jangan menebak.',
+              'Jika tidak ada bagian yang jelas miring, kembalikan array kosong. Jika ragu, jangan menebak.',
+              'Kembalikan JSON saja: {"italic_spans":[]}. '
+            ].join('\n');
+            const response = await new Promise<any>((resolve, reject) => {
+              const timer = setTimeout(() => reject(new Error('Pemeriksaan visual italic melewati 25 detik.')), 25000);
+              client.models.generateContent({
+                model: MODEL,
+                contents: { parts: [...images, { text: prompt }] },
+                config: { responseMimeType: 'application/json', temperature: 0 }
+              }).then((value: any) => { clearTimeout(timer); resolve(value); }, (error: any) => { clearTimeout(timer); reject(error); });
+            });
+            if (!response || !response.text) throw new Error('Pemeriksaan visual italic tidak mengembalikan hasil.');
+            const raw = parseGeminiJson(response.text);
+            return Array.isArray(raw.italic_spans) ? raw.italic_spans : [];
+          }
+          function decodeResult(text: string) {
+            let raw: any;
+            try { raw = parseGeminiJson(text); }
+            catch { throw new Error('Model tidak menghasilkan JSON yang valid.'); }
+            if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Struktur hasil pembacaan tidak sesuai.');
+            const result: Record<string, any> = {};
+            for (const field of fields) result[field] = tidy(raw[field], field === 'judul' ? 1800 : 250).normalize('NFC');
+            const parts = Array.isArray(raw.title_segments) ? raw.title_segments.slice(0, 60).filter((p: any) => p && typeof p.text === 'string') : [];
+            const normalizedParts = parts.map((p: any) => ({
+              text: String(p.text).replace(/\u0000/g, '').slice(0, 1200).normalize('NFC'),
+              italic: p.italic === true
+            }));
+            const aligned = alignTitleSegments(result.judul, normalizedParts);
+            result.title_segments = aligned || (result.judul ? [{ text: result.judul, italic: false }] : []);
+            const notes = Array.isArray(raw.uncertain_characters) ? raw.uncertain_characters.slice(0, 8).map((x: unknown) => tidy(x, 140)).filter(Boolean) : [];
+            const warnings = [
+              'Hasil Gemini harus dibandingkan dengan foto asli sebelum dicetak; periksa Q/O dan huruf miring.',
+              ...notes.map((x: string) => 'Karakter perlu diperiksa: ' + x)
+            ];
+            if (parts.some((p: any) => p.italic === true) && !aligned) warnings.push('Pemetaan italic awal berbeda pada spasi atau pemenggalan baris; sistem mencoba pencocokan ulang berbasis kata.');
+            const fieldsWithMarks = ['judul','nama','prodi','fakultas','universitas','kota','program_jenjang'].filter((key) => transliterationMarks.test(result[key] || ''));
+            result.transliteration_detected = fieldsWithMarks.length > 0;
+            if (fieldsWithMarks.length) warnings.push('Transliterasi Arab–Latin terdeteksi (' + fieldsWithMarks.join(', ') + '): verifikasi titik, garis panjang, hamzah/ain, dan kapitalisasi sesuai foto sebelum cetak.');
+            if (Object.values(result).some((v) => typeof v === 'string' && /\uFFFD|\u00ad/u.test(v))) warnings.push('Ada karakter Unicode rusak atau soft hyphen: periksa sebelum cetak.');
+            if (!result.judul) warnings.push('Judul belum terbaca jelas. Isi atau koreksi manual.');
+            result.nama_garis_bawah = raw.nama_garis_bawah === true;
+            result.warnings = warnings;
+            result.ocr_source = 'gemini-3.1-flash-lite';
+            return result;
+          }
+          '''
+          router = splice_between(router, "function decodeResult(", "\nhardcoverCoverOcrRouter.post('/read'", format_helpers, "decoder OCR dan format italic")
+
+          route_start = router.index("hardcoverCoverOcrRouter.post('/read'")
+          call_start = router.index("    const client = new GoogleGenAI", route_start)
+          call_marker = "    return res.status(200).json({ success: true, data });"
+          call_end = router.index(call_marker, call_start) + len(call_marker)
+          new_call = r'''    const client = new GoogleGenAI({ apiKey, httpOptions: { timeout: 58_000 } });
+              const prepared = await prepareGeminiImages(full);
+              const imageParts: GeminiImagePart[] = [prepared.full, ...(prepared.titleCrop ? [prepared.titleCrop] : [])];
+              const response = await client.models.generateContent({
+                model: MODEL,
+                contents: { parts: [...imageParts, { text: prompt }] },
+                config: { responseMimeType: 'application/json', temperature: 0 }
+              });
+              if (!response.text) return res.status(502).json({ error: 'Model tidak mengembalikan teks. Coba OCR lokal.' });
+              const data = decodeResult(response.text);
+              if (data.judul && !data.title_segments.some((part: any) => part.italic)) {
+                try {
+                  const visualSpans = await detectItalicSpans(client, imageParts, data.judul);
+                  const visualSegments = applyItalicSpans(data.judul, visualSpans);
+                  if (visualSegments && visualSegments.some((part: any) => part.italic)) {
+                    data.title_segments = visualSegments;
+                    data.title_format_source = 'gemini-visual-second-pass';
+                    data.warnings.push('Format italic ditemukan melalui pemeriksaan visual Gemini tahap kedua. Cocokkan dengan foto sebelum cetak.');
+                  } else {
+                    data.title_format_source = 'italic-not-confirmed';
+                    data.warnings.push('Pemeriksaan visual kedua belum menemukan bagian italic yang dapat dipastikan. Periksa foto asli secara manual.');
+                  }
+                } catch (italicError: any) {
+                  data.title_format_source = 'italic-check-unavailable';
+                  data.warnings.push('Pemeriksaan visual kedua untuk italic tidak selesai: ' + String(italicError?.message || 'layanan tidak tersedia').slice(0, 100) + '. Teks tetap terbaca; periksa format miring secara manual.');
+                }
+              } else {
+                data.title_format_source = 'gemini-primary-segments';
+              }
+              return res.status(200).json({ success: true, data });'''
+          router = router[:call_start] + new_call + router[call_end:]
+          router_path.write_text(router, encoding="utf-8")
+
+          gemini_path = Path("public/hardcover-link2/gemini-cover-ocr.js")
+          gemini = gemini_path.read_text(encoding="utf-8")
+          gemini = replace_once(gemini, "import {prepareOCRImage,prepareOCRZones} from './ocr-fast.js?v=4.47';\n", "", "import Canvas browser")
+          read_start = gemini.index("export async function readCoverWithGemini(")
+          new_read = r'''export async function readCoverWithGemini(image, {onProgress=()=>{}}={}) {
+            let token = await accessToken();
+            onProgress('Mengirim foto asli ke server agar hasilnya seragam di Android, iPhone, dan komputer...');
+            const imageBase64 = await toBase64(image);
+            const fileName = String(image.name || '').toLowerCase();
+            const mimeType = image.type || (fileName.endsWith('.png') ? 'image/png' : fileName.endsWith('.webp') ? 'image/webp' : 'image/jpeg');
+            onProgress('Server menormalkan foto dan crop judul; Gemini memeriksa Q/O, transliterasi, dan italic...');
+            const controller = typeof AbortController === 'function' ? new AbortController() : null;
+            const timer = controller ? setTimeout(()=>controller.abort(),100_000) : null;
+            const send = async bearer => {
+              let response;
+              try {
+                response = await fetch(API,{
+                  method:'POST',
+                  headers:{'Content-Type':'application/json','Authorization':'Bearer ' + bearer},
+                  body:JSON.stringify({imageBase64,mimeType}),
+                  ...(controller ? {signal:controller.signal} : {}),
+                  cache:'no-store'
+                });
+              } catch(error) {
+                if(error?.name==='AbortError') throw error;
+                throw Error('Koneksi ke layanan Gemini gagal: ' + String(error?.message||error) + '. Periksa internet dan domain situs ZAIN.NET yang digunakan. Hasil tidak dialihkan diam-diam ke OCR lokal.');
+              }
+              const body=await response.json().catch(()=>({}));
+              return {response,body};
+            };
+            try {
+              let result = await send(token);
+              if (result.response.status === 401) {
+                onProgress('Sesi admin diperbarui; mencoba koneksi Gemini kembali...');
+                token = await accessToken(true);
+                result = await send(token);
+              }
+              const {response,body}=result;
+              if(response.status===401) throw Error('Sesi admin tidak diterima oleh server. Login ulang ke ZAIN.NET, lalu coba kembali.');
+              if(response.status===403) throw Error('Akun yang digunakan belum dikenali sebagai admin Supabase. Gunakan akun admin ZAIN.NET.');
+              if(!response.ok || !body.success) throw Error(String(body.error || ('Layanan OCR gagal (HTTP ' + response.status + ').')));
+              return validateGeminiResult(body.data);
+            } catch(e) {
+              if(e?.name==='AbortError') throw Error('Gemini dan pemeriksaan visual melewati batas waktu 100 detik. Coba foto lebih kecil atau ulangi.');
+              throw e;
+            } finally {if(timer)clearTimeout(timer);}
+          }
+          '''
+          gemini = gemini[:read_start] + new_read
+          gemini_path.write_text(gemini, encoding="utf-8")
+
+          version_files = {
+              "public/hardcover-link2/app.js": ("document-reader.js?v=4.47", "document-reader.js?v=4.48"),
+              "public/hardcover-link2/document-reader.js": ("gemini-cover-ocr.js?v=4.47", "gemini-cover-ocr.js?v=4.48"),
+              "public/hardcover-link2/index.html": ("app.js?v=4.47", "app.js?v=4.48"),
+          }
+          for name, (old, new) in version_files.items():
+              p = Path(name)
+              content = p.read_text(encoding="utf-8")
+              if old not in content:
+                  raise SystemExit(f"GAGAL: penanda cache {old} tidak ditemukan di {name}.")
+              p.write_text(content.replace(old, new), encoding="utf-8")
+
+          checks = {
+              "normalisasi gambar server": "prepareGeminiImages(full)" in router,
+              "pemeriksaan italic tahap kedua": "detectItalicSpans(client, imageParts, data.judul)" in router,
+              "pencocokan italic per kata": "function alignTitleSegments" in router,
+              "browser mengirim foto asli": "toBase64(image)" in gemini and "prepareOCRImage" not in gemini,
+              "model tetap Gemini 3.1 Flash-Lite": "const MODEL = 'gemini-3.1-flash-lite'" in router,
+              "cache V4.48": "app.js?v=4.48" in Path("public/hardcover-link2/index.html").read_text(encoding="utf-8"),
+          }
+          if not all(checks.values()):
+              raise SystemExit("Pemeriksaan source gagal: " + repr(checks))
+          print("Source Menu 12 Link 2 berhasil diperbarui:")
+          for label, ok in checks.items():
+              print(("OK  " if ok else "FAIL ") + label)
+          PY
+
+      - name: Validate source and build
+        run: |
+          git diff --check
+          npm ci
+          npm run lint
+          npm run build
+
+      - name: Commit and push to main
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Tidak ada perubahan source yang perlu di-commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/hardcoverCoverOcr/router.ts \
+            public/hardcover-link2/gemini-cover-ocr.js \
+            public/hardcover-link2/app.js \
+            public/hardcover-link2/document-reader.js \
+            public/hardcover-link2/index.html
+          git commit -m "fix(menu12-link2): consistent Gemini OCR and visual italic"
+          git push origin HEAD:main

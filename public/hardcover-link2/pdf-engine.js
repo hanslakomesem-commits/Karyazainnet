@@ -12,7 +12,7 @@ import {getDummyArialFontBytes} from './font-arial-compatible.js';
 import {DUMMY_SIZES,DUMMY_PAGE,dummySpineGeometry,chooseDummyBackText} from './dummybook-layout.js';
 import {IPS_SIZES,IPS_REFERENCE,ipsSpineGeometry} from './soft-ips-layout.js';
 import {CD_PAGE_MM,CD_PAGE_PT,CD_LAYOUT,assertCDData,computeCDTitle} from './cover-cd-layout.js';
-import {canonicalUniversity,plainCoverIdentity} from './classifier.js';
+import {canonicalUniversity,plainCoverIdentity,normalizeCoverAcademicIdentity} from './classifier.js';
 import {PLAIN_V1,PLAIN_V2,PLAIN_V11,PLAIN_V22,PLAIN_VARIANTS,PLAIN_215_VARIANTS,plainFrontLayout,plainFrontFits} from './plain-variant-layout.js';
 const {PDFDocument, StandardFonts, degrees, rgb}=globalThis.PDFLib||{};
 const ALL=Array.from({length:19},(_,i)=>i+10);
@@ -1413,6 +1413,8 @@ async function generateArticleCoverPDF(data){
 
 /** Main public API, backward-compatible with V3.8 */
 export async function generatePDF(data,mm,mode='polos',customColor=null,customLogo=null){
+ // Normalisasi satu kali sebelum semua jenis template menambahkan label.
+ data=normalizeCoverAcademicIdentity(data);
  await ensureAssets();
  const c=validateCoverMode(mode,customColor);
  if(c.type==='coverartikel')return generateArticleCoverPDF(data);

@@ -33,7 +33,21 @@ export function coverLanguage(data){
  return detectCoverLanguage([data?.jenis_dokumen,data?.prodi,data?.fakultas,data?.universitas].map(x=>String(x||'')));
 }
 /** Exact footer wording in source: never translate an English program/faculty. */
+/**
+ * Kolom prodi/fakultas boleh berisi label lengkap hasil scan.
+ * Hilangkan label di awal agar renderer hanya menambahkannya sekali.
+ */
+export function normalizeCoverAcademicIdentity(data = {}) {
+ const strip = (value, pattern) => String(value ?? '').replace(/\s+/gu, ' ').trim().replace(pattern, '').trim();
+ return {
+  ...data,
+  prodi: strip(data.prodi, /^(?:(?:PROGRAM\s+STUDI|PRODI)\s*[:.\-–]?\s*)+/iu),
+  fakultas: strip(data.fakultas, /^(?:FAKULTAS\s*[:.\-–]?\s*)+/iu),
+ };
+}
+
 export function plainCoverIdentity(data){
+ data=normalizeCoverAcademicIdentity(data);
  const language=coverLanguage(data),english=language==='en';
  const prodi=compact(data.prodi).toLocaleUpperCase('id-ID');
  const fakultas=compact(data.fakultas).toLocaleUpperCase('id-ID');

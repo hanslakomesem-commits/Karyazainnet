@@ -61,6 +61,7 @@ import { journal7Router } from './server/journal7/router.ts';
 import { pisahSkripsiRouter } from './server/pisahSkripsi/router.ts';
 import { plagiarismV2Router } from './server/plagiarismV2/router.ts';
 import { hardcoverCoverOcrRouter } from './server/hardcoverCoverOcr/router.ts';
+import { hardcoverCustomLayoutRouter } from './server/hardcoverCoverOcr/customLayout.ts';
 
 const nodeRequire = typeof require !== 'undefined' ? require : createRequire(import.meta.url);
 
@@ -450,6 +451,7 @@ app.use(pisahSkripsiRouter);
 app.use('/api/plagiarism-v2', plagiarismV2Router);
 // Menu 12 Link 2: OCR foto Gemini 3.1 Flash-Lite dengan Supabase admin auth.
 app.use('/api/hardcover-cover-ocr', hardcoverCoverOcrRouter);
+app.use('/api/hardcover-custom-layout', hardcoverCustomLayoutRouter);
 
 // R2 Storage configuration file path for runtime persistence
 const R2_CONFIG_FILE = path.join(process.cwd(), 'r2_config.json');

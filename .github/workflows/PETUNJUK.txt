@@ -1,28 +1,29 @@
-ZAIN.NET — MENU 12 LINK 2
-PATCH GABUNGAN OCR GEMINI 3.1 FLASH-LITE + Q/O + ITALIC + TRANSLITERASI ARAB–LATIN
-Tanggal: 14 November 2026
+ZAIN.NET — Mode Cover Custom Scan (Menu 12 Link 2)
 
-Pembaruan yang disatukan:
-1. Foto (JPG/PNG/WebP) dan halaman 1 PDF scan dibaca via Gemini 3.1 Flash-Lite melalui Render.
-2. Periksa Q versus O dari bentuk asli pada gambar dan potongan judul resolusi tinggi.
-3. Pertahankan italic per potongan kata di title_segments; hasil mengikuti editor judul dan PDF.
-4. Deteksi serta pertahankan huruf transliterasi yang benar-benar terlihat: ā ī ū ḥ ṣ ḍ ṭ ẓ ṡ ż, hamzah/ain (ʾ ʿ ‘ ’), dan tanda gabungan.
-5. Jika suatu tanda tidak terbaca, tampilkan peringatan untuk koreksi pengguna. JANGAN mengarang transliterasi yang tidak ada di scan.
-6. Hasil JSON menggunakan Unicode NFC tanpa menghapus tanda diakritik. PDF tetap menggunakan font Unicode yang sudah didukung V4.46.
-7. Jika Gemini atau login gagal, cadangan Tesseract lokal tetap dapat dipakai, dengan peringatan pemeriksaan manual.
-8. DOCX/PDF digital tetap diolah di browser; template, garis, ukuran, serta Menu 12 Link 1 tidak diubah.
+Fitur baru:
+1. Rekonstruksi scan cover kampus baru per baris, tanpa template tetap.
+2. Gemini 3.1 Flash-Lite membaca semua baris dan koordinat yang diperkirakan.
+3. Editor teks, posisi X/Y, lebar, ukuran font, italic, bold, dan garis bawah.
+4. Audit baris yang kurang cocok dengan transkripsi penuh.
+5. PDF vektor 480 x 330 atau 475 x 320 mm, front panel 215 x 297 mm.
+6. Scan logo dipotong sebagai gambar, boleh diganti logo resmi.
+7. Bagian belakang kosong; teks punggung harus diisi manual sesuai ukuran cetak.
+8. Template sebelumnya tidak diubah. Mode hanya khusus admin Supabase.
 
-CARA PASANG (SATU WORKFLOW SAJA):
-1. Unggah file ZAINNET_MENU12_LINK2_GEMINI_QO_ITALIC_TRANSLITERASI_GABUNGAN.yml ke repo Karyazainnet folder .github/workflows/ (branch main).
+CARA PASANG:
+1. Unggah workflow .yml ke .github/workflows pada branch main.
 2. Commit changes.
-3. GitHub → Actions → ZAIN.NET - Menu 12 Link 2 OCR Gemini QO Italic dan Transliterasi → Run workflow → main.
-4. Periksa semua langkah sukses, termasuk npm run build dan commit.
-5. Deploy frontend GitHub Pages dan backend Render dari commit terbaru (GEMINI_API_KEY tetap hanya di Render).
-6. Reload www.zainnet.store dan uji Menu 12 Link 2 sebagai admin pada 1 foto cover yang memuat huruf Q, italic, dan transliterasi.
+3. Actions > "ZAIN.NET - Tambah Cover Custom Scan Layout Asli" > Run workflow (main).
+4. Setelah commit sukses: jalankan deployment GitHub Pages & Render dengan commit terbaru.
+5. Masuk sebagai admin > Menu 12 > Link 2 > klik Custom Scan — Ikuti Layout Asli.
+6. Unggah JPG/PNG/PDF, klik Baca, audit seluruh baris, pilih ukuran, periksa PDF.
 
-PERHATIAN:
-- OCR model gambar tidak menjamin pembacaan 100%. Wajib audit sebelum cetak.
-- Foto dikirim dari browser melalui Render ke layanan Google bila mode Gemini aktif.
-- Modul memerlukan login admin Supabase. File PDF yang dibuat perlu diperiksa dengan font Unicode.
-- Workflow ini independen dari workflow OCR Gemini sebelumnya; jangan jalankan kedua workflow sekaligus.
-- Simulasi dan uji JavaScript bukan pengganti uji foto produksi.
+PERINGATAN PENTING:
+- Akurasi posisi, font, ketebalan, Q/O, diakritik, dan italics bergantung pada scan.
+- Ini fitur proof/percobaan; belum diuji dengan scan cover kampus nyata.
+- Semua teks harus diverifikasi manusia sebelum dicetak.
+- Model tidak dapat menjamin reproduksi 100% identik. Foto scan dapat miring/distorsi.
+- Logo dari scan berupa crop raster; file logo bersih dianjurkan.
+- Tidak merekayasa desain belakang atau punggung yang tidak terlihat pada scan.
+- File diunggah ke Render lalu layanan Gemini Google untuk analisis.
+- Server harus memiliki GEMINI_API_KEY dan Supabase Auth yang sesuai.

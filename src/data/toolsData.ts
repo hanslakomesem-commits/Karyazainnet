@@ -190,6 +190,9 @@ export function isIframeTool(tool: { id?: string; url?: string } | null | undefi
   if (id === 'label-103' || url === 'internal://label-103') return false;
   if (id === 'gabung-1' || url === 'internal://gabung-file') return false;
   if (id === 'split-3' || url === 'internal://pisah-skripsi' || url === '/pisah-skripsi') return false;
+  // Modul internal Menu 5 Link 2: dapat diakses pengguna umum/reseller dengan login dan kuota sah.
+  // Link 1 tetap iframe eksternal dan tetap khusus admin.
+  if (id === 'plag-2' || url === 'internal://plagiarism-v2') return false;
 
   return true;
 }
